@@ -39,8 +39,8 @@ def test_load_raw_normalises_schema(mini_movebank_csv):
     # event_id #4 vino con visible=false → debe seguir presente (load no filtra)
     # pero su valor visible es False.
     row_4 = df[df["event_id"] == 4].iloc[0]
-    assert row_4["visible"] is False or row_4["visible"] == False  # noqa: E712
+    assert not row_4["visible"]
 
     # event_id #5 vino con outlier=true.
     row_5 = df[df["event_id"] == 5].iloc[0]
-    assert row_5["manually_marked_outlier"] is True or row_5["manually_marked_outlier"] == True  # noqa: E712
+    assert row_5["manually_marked_outlier"]

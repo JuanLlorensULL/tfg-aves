@@ -113,8 +113,8 @@ def df_speed() -> pd.DataFrame:
 
     Distancias aproximadas (haversine) entre consecutivos a 1 hora:
       1→2: ~10 km (≈10 km/h) — OK
-      2→3: ~3700 km (≈3700 km/h) — OUTLIER
-      3→4: ~3700 km (≈3700 km/h) — OUTLIER si #3 sigue presente
+      2→3: ~5800 km (≈5800 km/h) — OUTLIER
+      3→4: ~5800 km (≈5800 km/h) — OUTLIER si #3 sigue presente
       4→5: ~10 km — OK
     Al descartar iterativamente, el algoritmo debe quitar #3 y reconocer
     que 2→4 es de nuevo razonable (~10 km en 2 h ≈ 5 km/h).

@@ -36,11 +36,10 @@ def test_drop_invalid_coords_and_dupes(df_coords_dupes):
 def test_drop_speed_outliers_removes_impossible_fix(df_speed):
     out, report = drop_speed_outliers(df_speed, max_speed_kmh=200.0)
 
-    # El fix #3 está a ~3700 km de los vecinos en 1 h → debe descartarse.
-    assert 3 not in out["event_id"].tolist()
+    # El fix #3 está a ~5800 km de los vecinos en 1 h → debe descartarse.
     # Los inocentes 1, 2, 4, 5 sobreviven.
     assert sorted(out["event_id"].tolist()) == [1, 2, 4, 5]
-    assert report["discarded_speed"] == 1
+    assert report == {"discarded_speed": 1}
 
 
 def test_drop_speed_outliers_no_outliers_returns_intact():
