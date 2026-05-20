@@ -36,6 +36,9 @@ models/
 # Note: reports/figures, reports/tables, reports/captions and reports/INDEX.md
 # are versioned — they are evidence cited by the memoria.
 
+# --- AI usage log (local only, feeds memoria appendix) ------------------
+reports/ai-log/
+
 # --- Editors / OS -------------------------------------------------------
 .vscode/
 .idea/
