@@ -1,0 +1,48 @@
+# --- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual envs -------------------------------------------------------
+.venv/
+venv/
+env/
+
+# --- Notebooks ----------------------------------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# --- Data ---------------------------------------------------------------
+# The raw Movebank dataset is large and should be obtained from source
+# (see README). Interim and processed artefacts are reproducible from raw.
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# --- Models (large binaries, reproducible from code) --------------------
+models/
+# Note: reports/figures, reports/tables, reports/captions and reports/INDEX.md
+# are versioned — they are evidence cited by the memoria.
+
+# --- Editors / OS -------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Misc ---------------------------------------------------------------
+*.log
+.env
+.env.local
