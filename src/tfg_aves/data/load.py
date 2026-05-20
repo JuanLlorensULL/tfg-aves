@@ -36,12 +36,14 @@ def load_raw(path: Path = RAW_CSV) -> pd.DataFrame:
     - Convierte ``timestamp`` a ``datetime64[ns, UTC]``.
     - Tipa ``visible`` y ``manually_marked_outlier`` como ``bool``.
     - Ordena por ``(bird_id, timestamp)`` y reindexa.
-    - El CSV de Movebank duplica la columna ``visible``; se conserva la
-      primera ocurrencia.
+    - En la cabecera Movebank aparece la columna ``visible`` por duplicado;
+      pandas la renombra a ``visible.1`` al leerla y luego se descarta
+      porque no entra en la selección final de columnas.
     """
-    df = pd.read_csv(path)
-    # Algunos exports de Movebank repiten 'visible'; nos quedamos con la
-    # primera ocurrencia.
+    df = pd.read_csv(path, low_memory=False)
+    # Guardia defensiva ante eventuales duplicados estrictos de nombre de
+    # columna; en el dataset actual no se activa porque pandas ya renombra
+    # el segundo 'visible'.
     df = df.loc[:, ~df.columns.duplicated()]
     df = df[list(_RENAME_MAP.keys())].rename(columns=_RENAME_MAP)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)

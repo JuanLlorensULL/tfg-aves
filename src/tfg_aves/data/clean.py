@@ -1,6 +1,8 @@
 """Filtros de outliers sobre fixes GPS de Movebank."""
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -12,15 +14,18 @@ def drop_movebank_flags(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]
     """Descarta fixes con ``visible=False`` o ``manually_marked_outlier=True``.
 
     Devuelve el DataFrame filtrado y un dict con el conteo de descartes
-    por causa.
+    por causa. Las dos causas se contabilizan con precedencia para
+    ``manually_marked_outlier`` (las filas con ambos flags computan como
+    descartes por outlier), de modo que la suma de ambas claves coincida
+    con el número total de filas eliminadas.
     """
-    visible_false = (~df["visible"]).sum()
-    outlier_true = df["manually_marked_outlier"].sum()
-    mask = df["visible"] & (~df["manually_marked_outlier"])
-    out = df[mask].reset_index(drop=True)
+    outlier_mask = df["manually_marked_outlier"]
+    visible_only_mask = (~df["visible"]) & (~outlier_mask)
+    discard_mask = outlier_mask | (~df["visible"])
+    out = df[~discard_mask].reset_index(drop=True)
     report = {
-        "discarded_movebank_outlier": int(outlier_true),
-        "discarded_visible_false": int(visible_false),
+        "discarded_movebank_outlier": int(outlier_mask.sum()),
+        "discarded_visible_false": int(visible_only_mask.sum()),
     }
     return out, report
 
@@ -107,10 +112,12 @@ def drop_speed_outliers(
 
     current = df.sort_values(["bird_id", "timestamp"]).reset_index(drop=True)
     total_discarded = 0
+    converged = False
     for _ in range(_MAX_SPEED_ITERATIONS):
         speed = _compute_speed_kmh(current)
         bad = speed > max_speed_kmh
         if not bad.any():
+            converged = True
             break
         # `nanargmax` sobre la máscara: usamos -inf para los no-bad de
         # forma que el argmax recaiga siempre en un fix culpable.
@@ -120,5 +127,14 @@ def drop_speed_outliers(
             current.drop(current.index[worst]).reset_index(drop=True)
         )
         total_discarded += 1
+
+    if not converged:
+        warnings.warn(
+            "drop_speed_outliers alcanzó el cap de "
+            f"{_MAX_SPEED_ITERATIONS} iteraciones sin converger; "
+            "el DataFrame devuelto puede contener fixes con velocidad "
+            f"> {max_speed_kmh:g} km/h.",
+            stacklevel=2,
+        )
 
     return current, {"discarded_speed": total_discarded}
