@@ -64,6 +64,40 @@ Resumen del dataset:
 | Registros | 89.867 GPS |
 | Formato | CSV Movebank estándar |
 
+## Convención de figuras, tablas y decisiones
+
+Toda decisión no trivial de este TFG (umbrales, hiperparámetros, fronteras
+estacionales, comparativas de modelos, etc.) **debe** ir respaldada por una
+figura y/o una tabla, junto con un *caption* en castellano listo para pegar
+en la memoria. Para garantizar nomenclatura uniforme y un índice centralizado,
+usa siempre el helper `save_artifact`:
+
+```python
+from tfg_aves.reporting import save_artifact
+
+save_artifact(
+    "gap-distribution",
+    objective="o1",
+    num=3,
+    decision="Umbral de gap temporal fijado en 2h.",
+    caption_es=(
+        "Distribución de los intervalos entre registros GPS consecutivos. "
+        "El umbral de 2h se sitúa en el percentil 95, equilibrando "
+        "continuidad de las secuencias diarias frente a pérdida de datos."
+    ),
+    fig=fig,                  # matplotlib Figure (opcional)
+    table=df_summary,         # DataFrame (opcional)
+    fig_format="png",         # "png" | "pdf" | "both"
+)
+```
+
+El resultado se guarda en:
+- `reports/figures/o1_fig03_gap-distribution.png`
+- `reports/tables/o1_tab03_gap-distribution.csv`
+- `reports/captions/o1_fig03_gap-distribution.md`
+
+y añade automáticamente una fila al índice general `reports/INDEX.md`.
+
 ## Uso
 
 ```bash
