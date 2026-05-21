@@ -520,3 +520,114 @@ save_artifact(
     table=streak_table,
 )
 plt.close(fig)
+
+# %% [markdown]
+# ## C6 — Distribución temporal: mensual y estacional
+
+# %%
+# Se calcula la distribución de filas diarias válidas (post-resample y
+# filtro de aves) por mes y por estación. Permite identificar el sesgo
+# temporal del seguimiento agregado: cuándo está mejor representado el
+# dataset y qué estaciones del ciclo migratorio cubre con más densidad.
+
+daily_dates = pd.to_datetime(daily_final.loc[daily_final["is_valid"], "date_utc"])
+month_counts = (
+    daily_dates.dt.month
+    .value_counts()
+    .reindex(range(1, 13), fill_value=0)
+    .sort_index()
+)
+
+_nombres_meses = [
+    "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
+
+
+def _asignar_estacion(mes: int) -> str:
+    if mes in (12, 1, 2):
+        return "Invierno"
+    if mes in (3, 4, 5):
+        return "Primavera"
+    if mes in (6, 7, 8):
+        return "Verano"
+    return "Otoño"
+
+
+estacion_counts = (
+    daily_dates.dt.month.map(_asignar_estacion)
+    .value_counts()
+    .reindex(["Invierno", "Primavera", "Verano", "Otoño"])
+    .fillna(0)
+    .astype(int)
+)
+
+fig, (ax_mes, ax_est) = plt.subplots(1, 2, figsize=(14, 5), gridspec_kw={"width_ratios": [2, 1]})
+
+bars_mes = ax_mes.bar(
+    range(12), month_counts.values,
+    color="#4682B4", edgecolor="black", linewidth=0.6,
+)
+for i, v in enumerate(month_counts.values):
+    ax_mes.text(i, v + max(month_counts) * 0.01, f"{int(v):,}",
+                ha="center", fontsize=9)
+ax_mes.set_xticks(range(12))
+ax_mes.set_xticklabels(_nombres_meses)
+ax_mes.set_ylabel("Filas diarias válidas")
+ax_mes.set_xlabel("Mes")
+ax_mes.set_title("Por mes (todos los años agregados)")
+
+colores_est = ["#90B4DE", "#90DEA6", "#F7E27D", "#E2A45C"]
+bars_est = ax_est.bar(
+    estacion_counts.index, estacion_counts.values,
+    color=colores_est, edgecolor="black", linewidth=0.6,
+)
+for i, v in enumerate(estacion_counts.values):
+    ax_est.text(i, v + max(estacion_counts) * 0.01, f"{int(v):,}",
+                ha="center", fontsize=9)
+ax_est.set_ylabel("Filas diarias válidas")
+ax_est.set_title("Por estación (hemisferio norte)")
+ax_est.tick_params(axis="x", rotation=15)
+
+fig.suptitle("Distribución temporal de las filas diarias válidas del dataset O1")
+fig.tight_layout()
+
+mensual_estacional_table = pd.DataFrame(
+    {
+        "mes": _nombres_meses,
+        "n_filas_validas": month_counts.values.astype(int),
+    }
+)
+estacional_table = pd.DataFrame(
+    {
+        "estacion": estacion_counts.index.tolist(),
+        "n_filas_validas": estacion_counts.values.astype(int),
+    }
+)
+mes_est_table = pd.concat(
+    [
+        mensual_estacional_table.assign(agrupacion="mes").rename(columns={"mes": "etiqueta"}),
+        estacional_table.assign(agrupacion="estacion").rename(columns={"estacion": "etiqueta"}),
+    ],
+    ignore_index=True,
+)[["agrupacion", "etiqueta", "n_filas_validas"]]
+
+save_artifact(
+    "monthly-seasonal-coverage",
+    objective="o1",
+    num=10,
+    decision="Caracterización del sesgo temporal del seguimiento agregado",
+    caption_es=(
+        "Distribución temporal de las filas diarias válidas del dataset "
+        "O1, agregadas por mes y por estación (hemisferio norte). "
+        "Permite identificar el sesgo del seguimiento del dataset "
+        "Movebank de Larus fuscus: qué meses y estaciones del ciclo "
+        "anual están mejor representados. Este sesgo condiciona la "
+        "interpretación de las transiciones modeladas por la cadena de "
+        "Markov, especialmente en lo relativo a fases migratorias o de "
+        "permanencia estacional."
+    ),
+    fig=fig,
+    table=mes_est_table,
+)
+plt.close(fig)

@@ -201,6 +201,20 @@ transiciones de un solo paso pero pocas rachas largas en la mayor
 parte de la muestra. El diseño de la cadena deberá considerar si
 entrenar sobre todas las rachas o sólo sobre las de longitud mínima.
 
+### Distribución temporal del seguimiento (C6)
+
+Fuente: `o1_fig10_monthly-seasonal-coverage`
+(`reports/figures/o1_fig10_monthly-seasonal-coverage.png`,
+`reports/tables/o1_tab10_monthly-seasonal-coverage.csv`).
+
+Distribución agregada de las filas diarias válidas por mes y por estación
+del hemisferio norte. Permite ver el sesgo del seguimiento Movebank en el
+ciclo anual: qué meses concentran más observaciones y qué fases
+migratorias o de permanencia estacional están mejor representadas. Es un
+contexto necesario para interpretar las transiciones de la cadena de
+Markov, dado que las transiciones se aprenden con la representatividad
+estacional que muestre este artefacto.
+
 ### Salidas materializadas
 
 - `data/processed/daily.parquet` — 24 444 filas × 82 aves.
