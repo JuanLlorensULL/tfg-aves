@@ -631,3 +631,83 @@ save_artifact(
     table=mes_est_table,
 )
 plt.close(fig)
+
+# %% [markdown]
+# ## C7 — Línea de tiempo del individuo 91916A
+
+# %%
+# Muestra la cobertura temporal de un individuo concreto (91916A) tras
+# el resample diario. El ave 91916A tiene tracking de varios años y es
+# un buen ejemplo ilustrativo de la heterogeneidad del dataset: rachas
+# de días consecutivos válidos separadas por huecos.
+
+BIRD_OF_INTEREST = "91916A"
+
+sub = daily_final[daily_final["bird_id"] == BIRD_OF_INTEREST].copy()
+sub["date_utc"] = pd.to_datetime(sub["date_utc"])
+sub = sub.sort_values("date_utc")
+
+valid_dates = sub.loc[sub["is_valid"], "date_utc"]
+gap_dates = sub.loc[~sub["is_valid"], "date_utc"]
+
+fig, ax = plt.subplots(figsize=(14, 2.6))
+ax.hlines(
+    y=1,
+    xmin=sub["date_utc"].min(),
+    xmax=sub["date_utc"].max(),
+    colors="lightgray", linewidth=1, zorder=1,
+)
+ax.plot(
+    valid_dates, [1] * len(valid_dates),
+    "|", color="#1f77b4", markersize=14, markeredgewidth=1.2,
+    label=f"Días válidos ({len(valid_dates):,})",
+)
+if len(gap_dates) > 0:
+    ax.plot(
+        gap_dates, [1] * len(gap_dates),
+        "|", color="#C04040", markersize=14, markeredgewidth=1.2,
+        alpha=0.55,
+        label=f"Huecos ({len(gap_dates):,})",
+    )
+ax.set_title(
+    f"Línea de tiempo del individuo {BIRD_OF_INTEREST} — "
+    f"{len(valid_dates):,} días válidos sobre {len(sub):,} días calendario"
+)
+ax.set_xlabel("Fecha")
+ax.set_yticks([])
+ax.legend(loc="upper right")
+ax.grid(axis="x", alpha=0.3)
+
+timeline_table = pd.DataFrame(
+    {
+        "bird_id": [BIRD_OF_INTEREST],
+        "first_date": [sub["date_utc"].min().date().isoformat()],
+        "last_date": [sub["date_utc"].max().date().isoformat()],
+        "n_dias_calendario": [len(sub)],
+        "n_dias_validos": [int(sub["is_valid"].sum())],
+        "n_huecos": [int((~sub["is_valid"]).sum())],
+        "pct_validez": [float(sub["is_valid"].mean() * 100)],
+    }
+)
+
+save_artifact(
+    "timeline-91916a",
+    objective="o1",
+    num=11,
+    decision="Caracterización de la heterogeneidad de tracking por individuo",
+    caption_es=(
+        "Línea de tiempo del individuo 91916A (Larus fuscus, seguimiento "
+        "2009–2015) tras el resample diario y el filtro de validez. Los "
+        "trazos azules indican días con fix válido en la ventana 08:00 "
+        "UTC ± 60 min; los rojos, días sin fix dentro de tolerancia "
+        "(huecos explícitos en la tabla diaria). Ilustra la "
+        "heterogeneidad del tracking: rachas largas de continuidad "
+        "intercaladas con huecos puntuales o tramos de varios días sin "
+        "fix válido. Esta distribución es típica del dataset y motiva "
+        "la representación de huecos explícitos como filas con NaN, en "
+        "lugar de elidirlos."
+    ),
+    fig=fig,
+    table=timeline_table,
+)
+plt.close(fig)

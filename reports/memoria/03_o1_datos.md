@@ -215,6 +215,18 @@ contexto necesario para interpretar las transiciones de la cadena de
 Markov, dado que las transiciones se aprenden con la representatividad
 estacional que muestre este artefacto.
 
+### Línea de tiempo de un individuo (C7)
+
+Fuente: `o1_fig11_timeline-91916a`
+(`reports/figures/o1_fig11_timeline-91916a.png`,
+`reports/tables/o1_tab11_timeline-91916a.csv`).
+
+Línea de tiempo del individuo 91916A como ejemplo de tracking
+multi-anual (2009–2015). Permite visualizar la alternancia entre rachas
+de continuidad y huecos. Es contexto cualitativo de la heterogeneidad
+del dataset y justifica la decisión de representar los huecos de forma
+explícita en lugar de elidirlos.
+
 ### Salidas materializadas
 
 - `data/processed/daily.parquet` — 24 444 filas × 82 aves.
