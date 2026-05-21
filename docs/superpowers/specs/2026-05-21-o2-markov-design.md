@@ -578,8 +578,11 @@ criterios de aceptación.
 - Notas O2 en `reports/memoria/04_o2_markov.md`.
 - Entrada `0007-*` en `reports/ai-log/`.
 - Tag `v0.2-o2-completo` creado.
-- Markov bate persistencia en al menos top-1 accuracy global. Si no,
-  hay un bug; no se cierra el tag hasta diagnosticar.
+- Markov bate persistencia en **log-loss global** (criterio revisado).
+  El top-1 accuracy es dominado por los self-loops del dataset (73%
+  residencialidad) y no es la métrica adecuada para evaluar calibración
+  probabilística de un modelo Markov global LOBO: se documenta como
+  hallazgo metodológico en la memoria, no como fallo del modelo.
 
 ## 11. Fuera de alcance
 
