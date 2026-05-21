@@ -8,8 +8,8 @@
 Se carga y limpia el dataset GPS de *Larus fuscus* del repositorio
 Movebank (89 867 fixes, 126 individuos, 2009–2015), se filtra por
 velocidad imposible y se construye una tabla diaria alineada a las
-07:00 UTC ±120 min. El resultado son 22 511 filas diarias válidas
-sobre 83 individuos, lista como entrada directa para la cadena de
+08:00 UTC ±60 min. El resultado son 21 823 filas diarias válidas
+sobre 82 individuos, lista como entrada directa para la cadena de
 Markov de O2.
 
 ## Contexto y motivación
@@ -41,30 +41,45 @@ Markov de O2.
   120 km/h solo se descartan 20 fixes (0,022 % del total); la
   no-convergencia es irrelevante en la práctica.
 
-### D2 — Hora de referencia: 07:00 UTC
+### D2 — Hora de referencia: 08:00 UTC
 
-- **Alternativas consideradas:** hora solar local, medianoche UTC,
-  hora de máxima actividad, hora de mediana de fixes diarios por
-  individuo.
-- **Criterio:** la figura `o1_fig04_hourly-coverage` muestra que el
-  dataset concentra fixes en torno a las 07:00 UTC; esa hora maximiza
-  la cobertura (porcentaje de pares ave-día con al menos un fix en la
-  ventana de ±120 min). La elección es *data-driven*, no a priori.
+- **Alternativas consideradas:** elegir uno de los cuatro picos
+  discretos del muestreo Movebank (05, 08, 14 o 20 UTC).
+- **Criterio:** el muestreo de Movebank no es continuo; concentra los
+  fixes en cuatro ventanas programadas con volúmenes muy similares
+  (~15 500 fixes por pico). Se elige el pico de las **08:00 UTC**
+  por tres razones convergentes:
+  1. Coincide con un pico real del muestreo (15 591 fixes brutos),
+     a diferencia de las 07:00 UTC del análisis preliminar, que era
+     un compromiso entre los picos de 05:00 y 08:00.
+  2. *Larus fuscus* es una especie diurna; las 08:00 UTC coinciden
+     con el inicio del ciclo diario de actividad en gran parte de su
+     rango migratorio (Europa septentrional durante la cría, costas
+     atlánticas e ibéricas durante la migración). La posición a esa
+     hora capta el **lugar de roost nocturno** o el punto
+     inmediatamente posterior al despegue matinal — un estado
+     espacialmente estacionario, bien definido.
+  3. Para una cadena de Markov día-a-día, las transiciones son más
+     informativas cuando se observan ambos extremos en el mismo
+     punto del ciclo biológico diario. Las 08:00 UTC anclan las
+     observaciones al inicio del día biológico del ave, evitando
+     posiciones transitorias asociadas a fases activas de vuelo.
 - **Evidencia:** `o1_fig04_hourly-coverage`
   (`reports/figures/o1_fig04_hourly-coverage.png`,
-  `reports/tables/o1_tab04_hourly-coverage.csv`).
-- **Implicación:** la "posición diaria" del ave corresponde al
-  amanecer/inicio de actividad (07:00 UTC ≈ amanecer en gran parte
-  del rango de migración). Hay que tenerlo presente al interpretar
-  transiciones.
+  `reports/tables/o1_tab04_hourly-coverage.csv`). Histograma horario
+  con los cuatro picos resaltados y la ventana elegida sombreada.
 
-### D3 — Tolerancia: ±120 min
+### D3 — Tolerancia: ±60 min
 
-- **Alternativas consideradas:** ±60, ±120, ±180 min.
-- **Criterio:** la figura `o1_fig05_tolerance-tradeoff` muestra que
-  pasar de ±60 a ±120 min aumenta la cobertura de forma notable;
-  el salto a ±180 min es marginal. Se elige ±120 min como equilibrio
-  entre cobertura y precisión temporal.
+- **Alternativas consideradas:** ±30, ±60, ±90, ±120, ±180 min.
+- **Criterio:** la separación entre el pico elegido (08:00) y el
+  pico vecino más cercano (05:00) es de 3 horas. Una tolerancia de
+  ±60 min recoge el pico de las 08:00 y sus vecinos minoritarios
+  (07:00 y 09:00) sin solapar con el pico vecino. Tolerancias
+  mayores capturarían fixes de picos distintos, mezclando muestras
+  en distintos puntos del ciclo diario. Frente a ±30 min, ±60 min
+  recupera la pequeña fracción de fixes que el GPS emitió en las
+  horas inmediatamente adyacentes al pico.
 - **Evidencia:** `o1_fig05_tolerance-tradeoff`
   (`reports/figures/o1_fig05_tolerance-tradeoff.png`,
   `reports/tables/o1_tab05_tolerance-tradeoff.csv`).
@@ -74,7 +89,7 @@ Markov de O2.
 - **Alternativas consideradas:** 10, 20, 30, 50 días.
 - **Criterio:** la figura `o1_fig06_valid-days-per-bird` muestra la
   distribución de días válidos por individuo; con el umbral de 30 se
-  retienen 83 de los 126 individuos (65,9 %), manteniendo suficiente
+  retienen 82 de los 126 individuos (65,1 %), manteniendo suficiente
   diversidad y descartando individuos con tracking demasiado escaso
   para aprender transiciones.
 - **Evidencia:** `o1_fig06_valid-days-per-bird`
@@ -98,8 +113,8 @@ Markov de O2.
   - Huecos representados explícitamente como filas con
     `lat = NaN, lon = NaN` (no eliminados).
 - **Parámetros finales:**
-  `max_speed_kmh=120.0`, `reference_hour_utc=7`,
-  `tolerance_min=120`, `min_valid_days=30`.
+  `max_speed_kmh=120.0`, `reference_hour_utc=8`,
+  `tolerance_min=60`, `min_valid_days=30`.
 
 ## Resultados y validación
 
@@ -115,9 +130,9 @@ Markov de O2.
 | Descartados (velocidad > 120 km/h) | 20 |
 | **Fixes limpios** | **89 847** |
 | Aves iniciales | 126 |
-| **Aves conservadas (≥ 30 días)** | **83** |
-| **Filas diarias totales** (incluye NaN-gap) | **24 492** |
-| **Filas diarias válidas** (con fix real) | **22 511** |
+| **Aves conservadas (≥ 30 días)** | **82** |
+| **Filas diarias totales** (incluye NaN-gap) | **24 444** |
+| **Filas diarias válidas** (con fix real) | **21 823** |
 
 ### Caracterización del dataset original (C1)
 
@@ -158,8 +173,8 @@ El único filtro activo es velocidad > 120 km/h: se descartan 20 fixes
 (0,022 % del total). No hay fixes con flags de Movebank, coordenadas
 inválidas ni duplicados en este dataset.
 
-A nivel de individuo, se descartan 43 aves (126 − 83) por tener menos
-de 30 días válidos tras el resample. Representan el 34,1 % de los
+A nivel de individuo, se descartan 44 aves (126 − 82) por tener menos
+de 30 días válidos tras el resample. Representan el 34,9 % de los
 individuos pero aportan escasa información de transición.
 
 ### Fragmentación de las series diarias (C5)
@@ -188,14 +203,14 @@ entrenar sobre todas las rachas o sólo sobre las de longitud mínima.
 
 ### Salidas materializadas
 
-- `data/processed/daily.parquet` — 405 KB, 24 492 filas × 83 aves.
-- `data/processed/fixes_clean.parquet` — 1,6 MB, 89 847 fixes.
+- `data/processed/daily.parquet` — 24 444 filas × 82 aves.
+- `data/processed/fixes_clean.parquet` — 89 847 fixes.
 - Ambos ficheros son reproducibles ejecutando:
 
 ```python
 from tfg_aves.data import build_o1
-build_o1(max_speed_kmh=120.0, reference_hour_utc=7,
-         tolerance_min=120, min_valid_days=30)
+build_o1(max_speed_kmh=120.0, reference_hour_utc=8,
+         tolerance_min=60, min_valid_days=30)
 ```
 
 ### Validación
@@ -214,13 +229,17 @@ build_o1(max_speed_kmh=120.0, reference_hour_utc=7,
   <0,03 % de los fixes por calidad de señal.
 
 **Limitaciones detectadas:**
-1. **Sesgo temporal de la posición diaria.** Las 07:00 UTC corresponden
-   al amanecer/inicio de actividad de *Larus fuscus* en gran parte de
-   su área de distribución. La "posición diaria" no representa el
-   centroide de actividad sino un instante concreto. Al interpretar
-   transiciones hay que tener presente este sesgo.
-2. **Descarte total de aves con < 30 días.** Se pierden 43 individuos
-   (34,1 %); su tracking parcial no se aprovecha. Si O3/O4 demandan
+1. **Sesgo temporal de la posición diaria al inicio de actividad.**
+   Las 08:00 UTC se alinean con el inicio del ciclo diario de
+   actividad de *Larus fuscus*. La "posición diaria" representa el
+   lugar de roost nocturno o el punto inmediatamente posterior al
+   despegue, no el centroide de actividad ni una posición durante
+   el vuelo. Esta elección es coherente con la biología de la
+   especie y proporciona un anclaje estable para la cadena de
+   Markov, pero hay que tenerlo presente al interpretar transiciones
+   como "lugares donde el ave duerme/despega de un día a otro".
+2. **Descarte total de aves con < 30 días.** Se pierden 44 individuos
+   (34,9 %); su tracking parcial no se aprovecha. Si O3/O4 demandan
    mayor diversidad de individuos, podría revisarse el umbral.
 3. **No convergencia del outlier de velocidad.** El algoritmo iterativo
    alcanza el cap de 20 iteraciones. Con sólo 20 fixes eliminados
@@ -244,8 +263,8 @@ build_o1(max_speed_kmh=120.0, reference_hour_utc=7,
   selección del fix más cercano (con fórmula LaTeX).
 - Citar bibliografía de Movebank (Wikelski et al. 2015) y las
   convenciones de formato Movebank.
-- Conectar el sesgo de las 07:00 UTC con la biología de *Larus fuscus*
-  (literatura sobre ritmos circadianos de gaviotas).
+- Conectar el anclaje de las 08:00 UTC con la biología de *Larus fuscus*
+  (literatura sobre ritmos circadianos de gaviotas y roost nocturno).
 - Tabla resumen de D1–D4 para el capítulo (una fila por decisión).
 - Añadir nota sobre la limitación del cap de iteraciones del outlier
   con cita al código fuente.

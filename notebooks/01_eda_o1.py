@@ -189,57 +189,96 @@ df_clean, report_speed = drop_speed_outliers(df_coord_clean, max_speed_kmh=MAX_S
 print(f"Tras limpieza: {len(df_clean):,} fixes ({len(df_clean)/len(df_raw):.1%} del original)")
 
 # %% [markdown]
-# ## D2 — Hora UTC de referencia para el resample diario
+# ## D2 — Hora UTC de referencia (anclaje a pico discreto del muestreo)
 
 # %%
-tolerances = [60, 120, 180]
-cov_long = []
-for tol in tolerances:
-    cov = coverage_by_hour(df_clean, tolerance_min=tol)
-    cov["tolerance_min"] = tol
-    cov_long.append(cov)
-cov_table = pd.concat(cov_long, ignore_index=True)
+# El muestreo de Movebank no es continuo: concentra los fixes en cuatro
+# ventanas programadas (≈ 05, 08, 14, 20 UTC). Mostramos la distribución
+# horaria del dataset limpio y elegimos el pico de las 08:00 UTC.
 
-fig, ax = plt.subplots(figsize=(8, 4))
-for tol, sub in cov_table.groupby("tolerance_min"):
-    ax.plot(sub["hour"], sub["coverage"] * 100, marker="o", label=f"±{tol} min")
-ax.set_xticks(range(0, 24, 2))
-ax.set_xlabel("Hora UTC")
-ax.set_ylabel("% (ave, día) con fix en la ventana")
-ax.set_title("Cobertura horaria a distintas tolerancias")
-ax.legend()
-ax.grid(alpha=0.3)
+REFERENCE_HOUR_UTC = 8
+TOLERANCE_MIN = 60
 
-REFERENCE_HOUR_UTC, _ = pick_reference_hour(df_clean, tolerance_min=120)
+hour_counts = (
+    df_clean["timestamp"].dt.tz_convert("UTC").dt.hour
+    .value_counts()
+    .reindex(range(24), fill_value=0)
+    .sort_index()
+)
+
+peak_hours = sorted(hour_counts.nlargest(4).index.tolist())
+peaks_table = pd.DataFrame(
+    {
+        "hora_pico_utc": peak_hours,
+        "n_fixes_pico": [int(hour_counts[h]) for h in peak_hours],
+        "n_fixes_h_menos_1": [int(hour_counts[(h - 1) % 24]) for h in peak_hours],
+        "n_fixes_h_mas_1": [int(hour_counts[(h + 1) % 24]) for h in peak_hours],
+    }
+)
+
+fig, ax = plt.subplots(figsize=(12, 5))
+bars = ax.bar(
+    hour_counts.index, hour_counts.values,
+    color="#B0C4DE", edgecolor="black", linewidth=0.6,
+)
+for h in peak_hours:
+    bars[h].set_color("#C04040")
+ax.axvspan(
+    REFERENCE_HOUR_UTC - TOLERANCE_MIN / 60,
+    REFERENCE_HOUR_UTC + TOLERANCE_MIN / 60,
+    alpha=0.18, color="#C04040",
+    label=f"Ventana elegida: {REFERENCE_HOUR_UTC:02d}:00 ± {TOLERANCE_MIN} min",
+)
+for h, v in hour_counts.items():
+    if v > 0:
+        ax.text(h, v + max(hour_counts) * 0.012, f"{int(v):,}",
+                ha="center", fontsize=8)
+ax.set_xticks(range(24))
+ax.set_xlabel("Hora del día (UTC)")
+ax.set_ylabel("Número de fixes")
+ax.set_title("Distribución horaria de fixes — cuatro picos discretos de muestreo Movebank")
+ax.legend(loc="upper left")
+
 save_artifact(
     "hourly-coverage",
     objective="o1",
     num=4,
-    decision=f"Hora UTC de referencia fijada en {REFERENCE_HOUR_UTC:02d}:00 (cobertura máxima a ±120 min)",
+    decision=f"Hora UTC de referencia fijada en {REFERENCE_HOUR_UTC:02d}:00 (pico de muestreo Movebank, ±{TOLERANCE_MIN} min)",
     caption_es=(
-        "Cobertura del dataset diaria por hora UTC para tres tolerancias "
-        "(±60, ±120 y ±180 minutos). Cada punto indica el porcentaje de "
-        "pares (ave, día calendario) con al menos un fix GPS en la "
-        "ventana centrada en la hora dada. La hora UTC elegida maximiza "
-        "la cobertura, asegurando series diarias completas en la mayoría "
-        "de individuos."
+        "Distribución horaria del número de fixes GPS del dataset Movebank "
+        "tras la limpieza. El muestreo no se distribuye de forma continua: "
+        "se concentra en cuatro ventanas programadas a las 05:00, 08:00, "
+        "14:00 y 20:00 UTC, con un volumen muy similar entre ellas "
+        "(~15 500 fixes brutos por pico, resaltados en rojo). "
+        "La ventana sombreada indica la elegida (08:00 ± 60 min), que "
+        "coincide con el inicio del ciclo diario de actividad de Larus "
+        "fuscus en gran parte de su rango migratorio. La posición a esa "
+        "hora capta el lugar de roost nocturno o el punto inmediatamente "
+        "posterior al despegue matinal — un estado espacialmente estable "
+        "y bien definido, adecuado para alimentar una cadena de Markov "
+        "día-a-día."
     ),
     fig=fig,
-    table=cov_table,
+    table=peaks_table,
 )
 plt.close(fig)
-print(f"Hora de referencia elegida: {REFERENCE_HOUR_UTC:02d}:00 UTC")
+print(f"Hora de referencia elegida: {REFERENCE_HOUR_UTC:02d}:00 UTC ± {TOLERANCE_MIN} min")
 
 # %% [markdown]
 # ## D3 — Tolerancia ± min alrededor de la hora de referencia
 
 # %%
+# Evaluamos cobertura y desfase medio para distintas tolerancias alrededor
+# de la hora de referencia ya fijada. La elegida (±60 min) no solapa con
+# el pico vecino más cercano (05:00, a 3 h de distancia).
+
 rows = []
-for tol in [30, 60, 90, 120, 180, 240]:
-    cov = coverage_by_hour(df_clean, tolerance_min=tol)
-    cov_at_ref = float(cov.loc[cov["hour"] == REFERENCE_HOUR_UTC, "coverage"].iloc[0])
-    # Delta medio: para cada (ave, día) con fix en ventana, calculamos su
-    # |Δt| al objetivo y promediamos.
+for tol in [30, 60, 90, 120, 180]:
+    cov_at_ref = float(
+        coverage_by_hour(df_clean, tolerance_min=tol)
+        .loc[lambda d: d["hour"] == REFERENCE_HOUR_UTC, "coverage"]
+        .iloc[0]
+    )
     work = df_clean.copy()
     work["date_utc"] = work["timestamp"].dt.tz_convert("UTC").dt.date
     target = pd.Timedelta(hours=REFERENCE_HOUR_UTC)
@@ -267,23 +306,30 @@ ax1.plot(tol_table["tolerance_min"], tol_table["coverage_pct"],
          marker="o", color="#1f77b4", label="Cobertura (%)")
 ax1.set_xlabel("Tolerancia (min)")
 ax1.set_ylabel("Cobertura (%)", color="#1f77b4")
+ax1.axvline(TOLERANCE_MIN, color="#C04040", linestyle="--",
+            alpha=0.6, label=f"Tolerancia elegida ({TOLERANCE_MIN} min)")
 ax2 = ax1.twinx()
 ax2.plot(tol_table["tolerance_min"], tol_table["delta_mean_min"],
          marker="s", color="#d62728", label="Δ medio (min)")
 ax2.set_ylabel("Δ medio al objetivo (min)", color="#d62728")
-fig.suptitle("Trade-off cobertura vs precisión temporal")
+fig.suptitle("Trade-off cobertura vs. precisión temporal en torno a 08:00 UTC")
+ax1.legend(loc="upper left")
+fig.tight_layout()
 
-TOLERANCE_MIN = 120
 save_artifact(
     "tolerance-tradeoff",
     objective="o1",
     num=5,
-    decision=f"Tolerancia alrededor de la hora de referencia fijada en ±{TOLERANCE_MIN} min",
+    decision=f"Tolerancia alrededor de las {REFERENCE_HOUR_UTC:02d}:00 UTC fijada en ±{TOLERANCE_MIN} min",
     caption_es=(
-        "Trade-off entre cobertura del dataset y precisión temporal "
-        "del fix elegido a distintas tolerancias alrededor de la hora "
-        "UTC de referencia. La tolerancia elegida equilibra una "
-        "cobertura alta con un desfase medio aceptable."
+        "Trade-off entre cobertura del dataset y precisión temporal del "
+        "fix elegido a distintas tolerancias alrededor de las 08:00 UTC. "
+        "La tolerancia de ±60 min recoge únicamente fixes del pico de "
+        "muestreo de las 08:00 (incluyendo los vecinos minoritarios "
+        "de 07:00 y 09:00) sin solapar con el pico vecino más cercano "
+        "(05:00, a 3 h de distancia). Tolerancias mayores aumentan "
+        "marginalmente la cobertura a costa de mezclar muestras de "
+        "distintos picos del muestreo."
     ),
     fig=fig,
     table=tol_table,

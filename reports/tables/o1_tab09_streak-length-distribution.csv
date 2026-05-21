@@ -1,8 +1,8 @@
 percentil,longitud_dias
 p10,1
 p25,3
-p50,12
-p75,61
-p90,142
-p95,261
-max,1330
+p50,8
+p75,32
+p90,96
+p95,160
+max,1326
