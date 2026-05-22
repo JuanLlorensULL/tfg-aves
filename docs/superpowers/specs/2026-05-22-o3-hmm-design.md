@@ -85,14 +85,59 @@ Decididas en el brainstorming previo, sin EDA:
 | F3 | Alcance del modelo | **Global**: un HMM por modelo, las 82 aves comparten parámetros. Viterbi se ejecuta por ave para asignar estados |
 | F4 | Tipo de HMM | **`GaussianHMM`** de `hmmlearn 0.3.3`, `covariance_type='diag'` |
 | F5 | Inicialización + restarts | **K-means con `k=2`** para inicializar `means_init` y varianza diagonal; **10 restarts** con seeds distintos, se retiene el modelo con mayor log-likelihood en train |
-| F6 | Estandarización | **`StandardScaler` ajustado en train, aplicado a holdout** con las mismas medias y desviaciones |
+| F6 | Estandarización | **Sin estandarización** (revisado, ver §3 bis). Las features se pasan al HMM en escala original |
 | F7 | Split train/holdout | **80/20 por ave**, estratificado por número de días válidos por ave; seed fijo (`random_state=0`) |
 | F8 | Validación | **Triángulo**: log-likelihood en holdout + coherencia biológica (mes, latitud, fotoperiodo, vegetación) + acuerdo A-B con análisis de desacuerdos |
-| F9 | Features Modelo A | `log_displacement_km` y `abs_turning_angle_rad` (2 features) |
+| F9 | Features Modelo A | `step_length_km` (raw, km, sin log) y `cos_turning_angle` (∈ [-1, 1], 2 features). Revisado, ver §3 bis |
 | F10 | Features Modelo B | features de A + `veg_low` + `veg_high` + `daylight_hours` (5 features) |
 | F11 | Tratamiento de huecos | Sólo se calcula observación para días con **3 días consecutivos válidos** (t-1, t, t+1). Tramos consecutivos se pasan a `hmmlearn` vía `lengths` |
-| F12 | Re-etiquetado de estados | Convención post-hoc: el estado con menor `μ[log_displacement_km]` recibe etiqueta `estacionario` (0); el otro `migración` (1) |
+| F12 | Re-etiquetado de estados | Convención post-hoc: el estado con mayor `μ[step_length_km]` recibe etiqueta `migración` (1); el otro `estacionario` (0). Revisado, ver §3 bis |
 | F13 | Entregable principal | **Parquet enriquecido completo**: una fila por (bird_id, date_utc) con features crudos + estado Viterbi de A y B + posteriores de A y B + flag de validez |
+
+### 3 bis. Revisión post-implementación (2026-05-22)
+
+Tras una primera ejecución del build con F6 y F9 en su forma
+original (`StandardScaler` + `log_displacement_km`), el diagnóstico
+empírico mostró que ambas decisiones **degradaban la capacidad
+discriminativa del HMM** y producían la circularidad geográfica que F2
+estaba diseñada para detectar:
+
+- **Síntoma observable**: las medias aprendidas para los dos estados
+  caían a `μ[disp]` = 5,4 km (etiquetado "migración") y 3,8 km
+  (etiquetado "estacionario"), un ratio 1,4×. La separación
+  efectiva no la marcaba el desplazamiento sino `daylight_hours`
+  (17,3 h vs 12 h) y `veg_high` (0,94 vs 0,09), que codifican
+  estación y bioma — el modelo se reducía a "verano en bosque del
+  norte vs invierno en África".
+- **Causa raíz**: `log1p` comprime la separación natural del step
+  (~30-100× en km → ~3-4× en log-espacio) y `StandardScaler`
+  iguala las varianzas de las 5 features, por lo que k-means (que
+  usa distancia euclídea sin ponderar) ya no inicializa los centros
+  por step sino por la combinación que da el cluster más limpio en
+  el espacio estandarizado — la combinación estacional/geográfica.
+- **Precedente**: la iteración previa del autor (v2
+  `notebooks/HMM5.ipynb`) había encontrado y documentado esto
+  explícitamente: *"Sin escalar: la varianza de `step_length` debe
+  seguir dominando para no diluir la bimodalidad natural"*. v3
+  ignoró esta lección en el brainstorm y reaprendió empíricamente
+  el mismo resultado.
+- **Decisión revisada**: usar `step_length_km` en escala original (km,
+  sin log) y no aplicar `StandardScaler`. Esto restaura la
+  bimodalidad natural — la varianza del step (~10⁴ km²) domina la
+  inicialización k-means y ancla los estados a "se mueve poco / se
+  mueve mucho". Las features contextuales (`daylight`, `veg_*`)
+  contribuyen como información secundaria de menor peso, no como
+  motor de la separación.
+- **Consecuencia para la ablación A vs B**: sin escalar, las features
+  contextuales pesan poco frente al step en kilómetros. Si Modelo B
+  produce asignaciones prácticamente idénticas a Modelo A, esa **es
+  la conclusión de la ablación**: las features contextuales no aportan
+  discriminación adicional una vez que el step puede dominar. Es un
+  resultado defendible y honesto.
+- **Implicación para la memoria**: el rework se documenta como
+  contribución metodológica del TFG. La narración para el tribunal es
+  *"v3 verificó empíricamente la advertencia de circularidad incluida
+  en F2; la corrección replicó la decisión validada en v2"*.
 
 Decisiones que se materializan en `reports/INDEX.md` con
 `decision=...` y se resuelven en el EDA con figura:
@@ -447,31 +492,65 @@ descartada / Implicación para la memoria**.
   features de B sea 5-dimensional. Se menciona en el apartado de
   preparación de datos del capítulo 5.
 
-**8.2 Estandarización con `StandardScaler` ajustada en train y aplicada a holdout**
+**8.2 Sin estandarización: las features se pasan al HMM en escala original** (revisado, ver §3 bis)
 
-- **Decisión**: aplicar `StandardScaler` (resta media, divide por
-  desviación típica) a las features antes del HMM. El scaler se
-  ajusta exclusivamente sobre el conjunto de entrenamiento y se
-  aplica con las mismas estadísticas al holdout.
-- **Por qué**: la emisión gaussiana del HMM es sensible a la escala
-  de las features. `daylight_hours` (rango 8-18) tendría peso
-  desproporcionado sobre `log_displacement_km` (rango 0-6) si no
-  estandarizamos: la inicialización por k-means agruparía puntos por
-  horas de luz en lugar de por comportamiento, y la convergencia de
-  EM sería más lenta y menos estable. Estandarizando, todas las
-  features contribuyen por igual a la geometría del espacio de
-  observaciones.
-- **Alternativa descartada**: no escalar. Forzaría al HMM a "absorber"
-  la diferencia de escala via la varianza diagonal aprendida, pero
-  el sesgo en la inicialización (k-means se ejecuta antes de EM)
-  sería difícil de corregir.
-- **Por qué fit en train y no en train+holdout combinados**: si el
-  scaler usa estadísticas del holdout, hay *data leakage*:
-  información del conjunto de evaluación contamina el preprocesamiento.
-  La métrica de log-likelihood en holdout dejaría de ser honesta.
-- **Implicación para la memoria**: mencionar como un paso estándar
-  de higiene de pipeline, con una frase justificativa sobre la
-  escala desigual de features.
+- **Decisión**: **no** aplicar `StandardScaler` a las features. Cada
+  feature entra al HMM en sus unidades naturales (`step_length_km` en
+  km, `abs_turning_angle_rad` en radianes, `daylight_hours` en horas,
+  `veg_low/high` en [0, 1]).
+- **Por qué**: el razonamiento inicial favorable a escalar (debajo,
+  conservado en cursiva) resultó **incorrecto** en la práctica. El
+  experimento empírico de la primera ejecución mostró que escalar
+  destruye la bimodalidad natural del `step_length_km` (varianza
+  ~10⁴ km², dos modos en ~5 km y ~170 km separados por dos órdenes de
+  magnitud) y desplaza la inicialización por k-means hacia la
+  combinación de features contextuales (`daylight_hours`, `veg_high`)
+  que codifican estación + bioma. El HMM resultante no detecta
+  comportamiento sino geografía/estacionalidad — exactamente la
+  circularidad que F2 estaba diseñada para diagnosticar.
+- **Alternativa descartada (la opción anterior)**: *aplicar
+  `StandardScaler` ajustado en train para igualar pesos entre
+  features. Fundamento: la emisión gaussiana es sensible a escala y
+  daylight_hours podría tener peso desproporcionado sobre el step en
+  log-espacio.* — Refutado empíricamente: con escalado, el step pierde
+  exactamente el contraste de varianzas que el HMM necesitaba para
+  separar los dos regímenes.
+- **Por qué `covariance_type='diag'` lo permite**: cada estado tiene
+  su propia σ por feature; un estado puede ser una Gaussiana estrecha
+  centrada en 6 km (σ ~9) y el otro una Gaussiana ancha centrada en
+  170 km (σ ~240). El likelihood discrimina por sí solo aunque la
+  marginal no sea gaussiana.
+- **Precedente**: la versión 2 del proyecto (`v2/notebooks/HMM5.ipynb`)
+  ya había documentado esta lección — *"Sin escalar: la varianza de
+  `step_length` debe seguir dominando para no diluir la bimodalidad
+  natural"*. Ver §3 bis.
+- **Implicación para la memoria**: documentar como hallazgo
+  metodológico — la ablación A vs B detectó empíricamente el riesgo
+  de circularidad antes de cerrar el modelo, y la corrección está
+  citada y reproducible.
+
+**8.2 bis Linealización del cambio de rumbo: `cos(turning_angle)` en lugar de `|turning_angle|`** (revisado, ver §3 bis)
+
+- **Decisión**: codificar el cambio de rumbo entre días consecutivos como
+  `cos_turning_angle = cos(bearing_out - bearing_in)` ∈ [-1, 1] en lugar
+  de `|turning_angle|` ∈ [0, π].
+- **Por qué**: dos motivos. (1) `cos` es **suave en toda la recta real**
+  y se aproxima mejor a una emisión gaussiana, mientras que el valor
+  absoluto tiene una "esquina" en 0 que distorsiona la forma de la
+  distribución condicional al estado. (2) `cos` colapsa giros simétricos
+  (izquierda vs derecha) igual que el absoluto, pero conserva la
+  semántica natural del producto escalar: `cos = 1` → mismo rumbo
+  (vuelo rectilíneo, característico de migración), `cos = -1` →
+  inversión, `cos = 0` → giro de 90° (forrajeo errático).
+- **Alternativa descartada**: `|turning_angle|` ∈ [0, π]. Refutada en
+  v2 por la misma razón pedagógica: la marginal condicional al estado
+  bajo `abs` tiende a un half-normal truncado en 0, peor ajustada por
+  una gaussiana con `covariance_type='diag'`.
+- **Precedente**: replica la convención de
+  `v2/notebooks/HMM5.ipynb` sección 2.
+- **Implicación para la memoria**: mencionar como elección de
+  parametrización (no de información — el contenido es el mismo módulo
+  signo, que ya se descartaba con `abs`).
 
 ### Bloque B — Sobre el modelo y su entrenamiento
 
