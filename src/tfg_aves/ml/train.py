@@ -93,6 +93,11 @@ class _XGBoostWrapper(BaseEstimator, ClassifierMixin):
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         return self._xgb.predict(self._enc.transform(X))
 
+    @property
+    def best_iteration(self) -> int | None:
+        """Iteración óptima detectada por early stopping (None si no aplica)."""
+        return getattr(self._xgb, "best_iteration", None)
+
 
 class _LightGBMWrapper(BaseEstimator, ClassifierMixin):
     """Wrapper fino sobre LGBMClassifier para manejar categóricas nativas.
