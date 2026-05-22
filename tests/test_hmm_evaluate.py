@@ -46,8 +46,9 @@ def test_log_likelihood_per_obs_finito() -> None:
     model, scaler, _, _ = fit_hmm_with_restarts(X, lengths, n_restarts=2, random_state=0)
     ll = log_likelihood_per_obs(model, scaler, X, lengths)
     assert np.isfinite(ll)
-    # LL por observación es negativa pero acotada para datos bien separados.
-    assert -10.0 < ll < 0.0
+    # LL por observación acotada (puede ser ligeramente positiva si la densidad Gaussiana
+    # supera 1 con clusters muy separados y covarianza pequeña).
+    assert -10.0 < ll < 10.0
 
 
 def test_ab_agreement_total() -> None:
@@ -69,7 +70,7 @@ def test_ab_agreement_mitad() -> None:
         "bird_id": ["A"] * 10,
         "date_utc": [dt.date(2010, 1, 1) + dt.timedelta(days=i) for i in range(10)],
         "state_a": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        "state_b": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "state_b": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         "is_observation_valid": [True] * 10,
     })
     out = ab_agreement(df)
