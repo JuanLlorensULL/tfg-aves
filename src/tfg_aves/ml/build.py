@@ -9,12 +9,12 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from tfg_aves.ml._paths import (
+from ._paths import (
     CELLS_PARQUET,
     FEATURES_O3_PARQUET,
     O4_OUT_DIR,
 )
-from tfg_aves.ml.evaluate import (
+from .evaluate import (
     compare_models,
     compute_markov_baseline,
     compute_persistence_baseline,
@@ -23,11 +23,11 @@ from tfg_aves.ml.evaluate import (
     predict_with_meta,
     top_k_accuracy,
 )
-from tfg_aves.ml.features import (
+from .features import (
     build_feature_matrix,
     split_temporal_per_bird,
 )
-from tfg_aves.ml.train import (
+from .train import (
     train_lightgbm,
     train_random_forest,
     train_xgboost,
@@ -125,8 +125,8 @@ def build_o4(
 
         # LabelEncoder ajustado SÓLO sobre el conjunto de entrenamiento. Esto
         # garantiza que np.unique(y_train) == [0, 1, ..., N-1], requisito de
-        # XGBoost/LightGBM. Las celdas de val o test no vistas en train se
-        # mapean a la clase 0 (dummy) para y_val/y_test; evaluate_global usa
+        # XGBoost/LightGBM. Las celdas de val no vistas en train se mapean a
+        # la clase 0 (dummy) para y_val; evaluate_global usa
         # meta["cell_id_t_next"] directamente para log_loss, por lo que el
         # dummy no afecta a las métricas.
         le_train = LabelEncoder().fit(train["cell_id_t_next"].astype(str))
@@ -137,7 +137,6 @@ def build_o4(
         X_test = test[feature_cols]
         y_train = le_train.transform(train["cell_id_t_next"].astype(str))
         y_val = _safe_encode_cells(val["cell_id_t_next"], le_train, known_cells)
-        y_test = _safe_encode_cells(test["cell_id_t_next"], le_train, known_cells)
 
         for family in _FAMILIES:
             model = _train_one(
@@ -148,13 +147,13 @@ def build_o4(
             # Métricas en test y train: evaluate_global usa meta["cell_id_t_next"]
             # directamente para log_loss, por lo que le_train es suficiente
             metrics_test = evaluate_global(
-                model, X_test, y_test, test,
+                model, X_test, test,
                 cells=cells, label_encoder_y=le_train,
             )
             metrics_test["split"] = "test"
 
             metrics_train = evaluate_global(
-                model, X_train, y_train, train,
+                model, X_train, train,
                 cells=cells, label_encoder_y=le_train,
             )
             metrics_train["split"] = "train"

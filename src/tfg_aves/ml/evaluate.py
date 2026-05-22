@@ -122,7 +122,6 @@ def predict_with_meta(
 def evaluate_global(
     model: ClassifierMixin,
     X: pd.DataFrame,
-    y: np.ndarray,
     meta: pd.DataFrame,
     *,
     cells: pd.DataFrame,
