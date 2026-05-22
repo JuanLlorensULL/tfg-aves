@@ -121,3 +121,34 @@ def test_split_temporal_per_bird_fractions() -> None:
     assert abs(n_test / n_total - 0.20) <= 0.05
     assert abs(n_val / n_total - 0.08) <= 0.05
     assert abs(n_train / n_total - 0.72) <= 0.05
+
+
+def test_build_feature_matrix_excludes_rows_around_calendar_gap() -> None:
+    """Una fila cuyo día t+1 (calendario) no existe queda fuera (§8.11)."""
+    cells = _build_synthetic_cells()
+    # Ave única con un gap real: días 1, 2, 4, 5 (falta el día 3).
+    rows = []
+    for i, d in enumerate(["2020-01-01", "2020-01-02", "2020-01-04", "2020-01-05"]):
+        rows.append({
+            "bird_id": "G",
+            "date_utc": pd.Timestamp(d),
+            "lat": 40.0 + 0.05 * i, "lon": -3.0 + 0.05 * i,
+            "step_length_km": 10.0,
+            "cos_turning_angle": 0.0,
+            "daylight_hours": 12.0,
+            "veg_low": 0.5, "veg_high": 0.5,
+            "state_a": 0, "state_b": 0,
+            "posterior_a_estacionario": 0.5, "posterior_a_migracion": 0.5,
+            "posterior_b_estacionario": 0.5, "posterior_b_migracion": 0.5,
+            "is_observation_valid": True,
+            "in_holdout": False,
+        })
+    df = pd.DataFrame(rows)
+    out = build_feature_matrix(df, cells, include_bird_id=True)
+    # Días esperados en la salida:
+    #   - día 1 → t+1 es día 2 (válido)         → SÍ entra
+    #   - día 2 → t+1 sería día 3 (no existe)   → NO entra (gap)
+    #   - día 4 → t+1 es día 5 (válido)         → SÍ entra
+    #   - día 5 → t+1 sería día 6 (no existe)   → NO entra (último día)
+    out_dates = set(out["date_utc"].dt.date.astype(str))
+    assert out_dates == {"2020-01-01", "2020-01-04"}

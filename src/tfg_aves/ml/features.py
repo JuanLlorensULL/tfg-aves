@@ -75,8 +75,8 @@ def build_feature_matrix(
     Pasos:
         1. Filtra filas con ``is_observation_valid=True`` (heredado de O3).
         2. Asigna ``cell_id_t`` y ``cell_id_t_next`` vía ``cells``.
-        3. Filtra filas con ``cell_id_t_next`` no nulo (gap-aware, §8.11).
-        4. Añade ``sin_doy``, ``cos_doy``.
+        3. Añade ``sin_doy``, ``cos_doy``.
+        4. Filtra filas con ``cell_id_t_next`` no nulo (gap-aware, §8.11).
         5. Devuelve DataFrame con columnas:
             - clave: ``bird_id``, ``date_utc``
             - features: ``lat``, ``lon``, ``sin_doy``, ``cos_doy``,
