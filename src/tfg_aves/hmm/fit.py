@@ -27,6 +27,9 @@ def stratified_holdout_split(
     n_bins = min(5, max(2, len(bird_ids) // 3))
     try:
         strata = pd.qcut(valid_days.values, q=n_bins, labels=False, duplicates="drop")
+        # qcut con duplicates='drop' puede devolver todo NaN si los valores son iguales.
+        if np.isnan(strata.astype(float)).any():
+            raise ValueError("strata all-NaN")
     except ValueError:
         strata = np.zeros(len(bird_ids), dtype=int)
     train_idx, holdout_idx = train_test_split(
