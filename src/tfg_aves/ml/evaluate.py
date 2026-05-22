@@ -15,6 +15,19 @@ def _cell_centroid_lookup(cells: pd.DataFrame) -> dict[str, tuple[float, float]]
     return {row.cell_id: (row.lat_c, row.lon_c) for row in cells.itertuples()}
 
 
+def _haversine_to_centroid(
+    pred_cell: str,
+    lat_next: float,
+    lon_next: float,
+    centroids: dict[str, tuple[float, float]],
+) -> float:
+    """Distancia haversine del centroide de ``pred_cell`` a (lat_next, lon_next)."""
+    if pd.isna(lat_next) or pd.isna(lon_next) or pred_cell not in centroids:
+        return np.nan
+    c_lat, c_lon = centroids[pred_cell]
+    return haversine_km(c_lat, c_lon, lat_next, lon_next)
+
+
 def top_k_accuracy(predictions: pd.DataFrame, k: int = 1) -> float:
     """Fracción de filas donde ``true_cell`` está en el top-k."""
     if k == 1:
@@ -86,14 +99,8 @@ def predict_with_meta(
 
     centroids = _cell_centroid_lookup(cells)
 
-    def _dist(pred_cell: str, lat_next: float, lon_next: float) -> float:
-        if pd.isna(lat_next) or pd.isna(lon_next) or pred_cell not in centroids:
-            return np.nan
-        c_lat, c_lon = centroids[pred_cell]
-        return haversine_km(c_lat, c_lon, lat_next, lon_next)
-
     dists = [
-        _dist(pc, lt, ln) for pc, lt, ln in
+        _haversine_to_centroid(pc, lt, ln, centroids) for pc, lt, ln in
         zip(pred_top1, meta["lat_t_next"], meta["lon_t_next"], strict=True)
     ]
 
@@ -143,12 +150,6 @@ def compute_persistence_baseline(
     """Persistencia trivial: mañana = hoy."""
     centroids = _cell_centroid_lookup(cells)
 
-    def _dist(cell: str, lat_n: float, lon_n: float) -> float:
-        if pd.isna(lat_n) or pd.isna(lon_n) or cell not in centroids:
-            return np.nan
-        c_lat, c_lon = centroids[cell]
-        return haversine_km(c_lat, c_lon, lat_n, lon_n)
-
     return pd.DataFrame({
         "bird_id": matrix_test["bird_id"].values,
         "date_utc": matrix_test["date_utc"].values,
@@ -157,7 +158,7 @@ def compute_persistence_baseline(
         "pred_cell_topk": [[c] for c in matrix_test["cell_id_t"].values],
         "pred_prob_top1": [1.0] * len(matrix_test),
         "pred_dist_km": [
-            _dist(c, lt, ln) for c, lt, ln in zip(
+            _haversine_to_centroid(c, lt, ln, centroids) for c, lt, ln in zip(
                 matrix_test["cell_id_t"],
                 matrix_test["lat_t_next"],
                 matrix_test["lon_t_next"],
@@ -183,15 +184,17 @@ def compute_markov_baseline(
         ["bird_id", "date_utc", "lat", "lon", "cell_id"]
     ].copy()
     train_t["is_valid"] = True
-    train_next = matrix_train.rename(
-        columns={
-            "cell_id_t_next": "cell_id",
-            "lat_t_next": "lat",
-            "lon_t_next": "lon",
-        },
-    )[["bird_id", "date_utc", "lat", "lon", "cell_id"]].copy()
-    train_next["date_utc"] = train_next["date_utc"] + pd.Timedelta(days=1)
-    train_next["is_valid"] = True
+    train_next = (
+        matrix_train
+        .assign(
+            cell_id=matrix_train["cell_id_t_next"],
+            lat=matrix_train["lat_t_next"],
+            lon=matrix_train["lon_t_next"],
+            date_utc=matrix_train["date_utc"] + pd.Timedelta(days=1),
+            is_valid=True,
+        )[["bird_id", "date_utc", "lat", "lon", "cell_id", "is_valid"]]
+        .copy()
+    )
     train_input = (
         pd.concat([train_t, train_next])
         .drop_duplicates(subset=["bird_id", "date_utc"])
@@ -207,12 +210,6 @@ def compute_markov_baseline(
     centroids = _cell_centroid_lookup(cells)
     cell_to_idx = {c: i for i, c in enumerate(cell_list)}
     n_cells = len(cell_list)
-
-    def _dist(cell: str, lat_n: float, lon_n: float) -> float:
-        if pd.isna(lat_n) or pd.isna(lon_n) or cell not in centroids:
-            return np.nan
-        c_lat, c_lon = centroids[cell]
-        return haversine_km(c_lat, c_lon, lat_n, lon_n)
 
     rows = []
     for r in matrix_test.itertuples():
@@ -234,7 +231,9 @@ def compute_markov_baseline(
             "pred_cell_top1": pred_top1,
             "pred_cell_topk": topk,
             "pred_prob_top1": prob,
-            "pred_dist_km": _dist(pred_top1, r.lat_t_next, r.lon_t_next),
+            "pred_dist_km": _haversine_to_centroid(
+                pred_top1, r.lat_t_next, r.lon_t_next, centroids
+            ),
             "state_b": r.state_b,
         })
     return pd.DataFrame(rows)
