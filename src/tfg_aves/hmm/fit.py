@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
+from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
@@ -12,8 +14,31 @@ def stratified_holdout_split(
     holdout_frac: float = 0.20,
     random_state: int = 0,
 ) -> tuple[list[str], list[str]]:
-    """Reparte aves en train/holdout estratificando por nº de días válidos."""
-    raise NotImplementedError
+    """Reparte aves en train/holdout estratificando por nº de días válidos.
+
+    Estratifica por quintiles del número de observaciones válidas por ave.
+    """
+    valid_days = (
+        df_features[df_features["is_observation_valid"]]
+        .groupby("bird_id").size().sort_index()
+    )
+    bird_ids = valid_days.index.tolist()
+    # Quintiles (5 niveles); si hay pocas aves, cuantiles automáticos.
+    n_bins = min(5, max(2, len(bird_ids) // 3))
+    try:
+        strata = pd.qcut(valid_days.values, q=n_bins, labels=False, duplicates="drop")
+    except ValueError:
+        strata = np.zeros(len(bird_ids), dtype=int)
+    train_idx, holdout_idx = train_test_split(
+        np.arange(len(bird_ids)),
+        test_size=holdout_frac,
+        random_state=random_state,
+        stratify=strata,
+    )
+    return (
+        [bird_ids[i] for i in train_idx],
+        [bird_ids[i] for i in holdout_idx],
+    )
 
 
 def build_sequences(
@@ -22,7 +47,56 @@ def build_sequences(
     feature_cols: list[str],
 ) -> tuple[np.ndarray, list[int]]:
     """Concatena tramos consecutivos válidos por ave en (X, lengths) para hmmlearn."""
-    raise NotImplementedError
+    X_parts: list[np.ndarray] = []
+    lengths: list[int] = []
+    for bid in bird_ids:
+        sub = df_features[
+            (df_features["bird_id"] == bid) & df_features["is_observation_valid"]
+        ].sort_values("date_utc")
+        if len(sub) == 0:
+            continue
+        # Detectar tramos consecutivos por fecha.
+        dates = pd.to_datetime(sub["date_utc"]).reset_index(drop=True)
+        gap = (dates.diff() != pd.Timedelta(days=1)).cumsum()
+        for _, segment in sub.groupby(gap.values):
+            if len(segment) > 0:
+                X_parts.append(segment[feature_cols].to_numpy(dtype=np.float64))
+                lengths.append(len(segment))
+    if not X_parts:
+        return np.zeros((0, len(feature_cols)), dtype=np.float64), []
+    return np.vstack(X_parts), lengths
+
+
+def _initialize_hmm_with_kmeans(
+    X_scaled: np.ndarray, n_components: int, random_state: int
+) -> GaussianHMM:
+    """Inicializa GaussianHMM con medias y varianzas de k-means."""
+    kmeans = KMeans(n_clusters=n_components, n_init=10, random_state=random_state)
+    labels = kmeans.fit_predict(X_scaled)
+    means_init = kmeans.cluster_centers_
+    covars_init = np.zeros((n_components, X_scaled.shape[1]))
+    for k in range(n_components):
+        mask = labels == k
+        if mask.sum() < 2:
+            covars_init[k] = np.ones(X_scaled.shape[1])
+        else:
+            covars_init[k] = np.var(X_scaled[mask], axis=0) + 1e-6
+
+    hmm = GaussianHMM(
+        n_components=n_components,
+        covariance_type="diag",
+        init_params="",
+        n_iter=200,
+        tol=1e-4,
+        random_state=random_state,
+    )
+    hmm.startprob_ = np.full(n_components, 1.0 / n_components)
+    transmat = np.full((n_components, n_components), 0.1 / (n_components - 1))
+    np.fill_diagonal(transmat, 0.9)
+    hmm.transmat_ = transmat
+    hmm.means_ = means_init
+    hmm.covars_ = covars_init
+    return hmm
 
 
 def fit_hmm_with_restarts(
@@ -32,13 +106,41 @@ def fit_hmm_with_restarts(
     n_restarts: int = 10,
     random_state: int = 0,
 ) -> tuple[GaussianHMM, StandardScaler, float, list[float]]:
-    """Ajusta StandardScaler en train, ejecuta k-means + EM n_restarts veces,
+    """Ajusta StandardScaler en train, ejecuta k-means+EM n_restarts veces,
     devuelve (mejor modelo, scaler, mejor LL, lista de todas las LL)."""
-    raise NotImplementedError
+    scaler = StandardScaler().fit(X_train)
+    X_scaled = scaler.transform(X_train)
+
+    best_model: GaussianHMM | None = None
+    best_ll = -np.inf
+    all_lls: list[float] = []
+
+    for restart in range(n_restarts):
+        seed = random_state + restart
+        model = _initialize_hmm_with_kmeans(X_scaled, n_components, seed)
+        model.fit(X_scaled, lengths_train)
+        ll = float(model.score(X_scaled, lengths_train))
+        all_lls.append(ll)
+        if ll > best_ll:
+            best_ll = ll
+            best_model = model
+
+    assert best_model is not None
+    return best_model, scaler, best_ll, all_lls
 
 
 def relabel_states(
-    hmm: GaussianHMM, scaler: StandardScaler, feature_cols: list[str]
+    hmm: GaussianHMM,
+    scaler: StandardScaler,
+    feature_cols: list[str],
 ) -> dict[int, str]:
     """Re-etiqueta: el estado con menor μ[log_displacement_km] = 'estacionario'."""
-    raise NotImplementedError
+    # Desescala las medias del HMM para razonar en unidades originales.
+    means_raw = scaler.inverse_transform(hmm.means_)
+    log_dist_idx = feature_cols.index("log_displacement_km")
+    log_dist_means = means_raw[:, log_dist_idx]
+    estacionario_idx = int(np.argmin(log_dist_means))
+    return {
+        i: ("estacionario" if i == estacionario_idx else "migración")
+        for i in range(hmm.n_components)
+    }
