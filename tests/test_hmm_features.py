@@ -33,9 +33,27 @@ def test_turning_angle_linea_recta() -> None:
     """Tres puntos en línea recta hacia el norte → turning_angle ≈ 0."""
     df = _make_daily(
         [
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 1), "lat": 50.0, "lon": 0.0, "source_event_id": 1},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 2), "lat": 50.5, "lon": 0.0, "source_event_id": 2},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 3), "lat": 51.0, "lon": 0.0, "source_event_id": 3},
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 1),
+                "lat": 50.0,
+                "lon": 0.0,
+                "source_event_id": 1,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 2),
+                "lat": 50.5,
+                "lon": 0.0,
+                "source_event_id": 2,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 3),
+                "lat": 51.0,
+                "lon": 0.0,
+                "source_event_id": 3,
+            },
         ]
     )
     out = compute_observation_features(df, df_raw=None)
@@ -49,9 +67,27 @@ def test_turning_angle_giro_180() -> None:
     """Norte-norte-sur: turning_angle ≈ π."""
     df = _make_daily(
         [
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 1), "lat": 50.0, "lon": 0.0, "source_event_id": 1},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 2), "lat": 50.5, "lon": 0.0, "source_event_id": 2},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 3), "lat": 50.0, "lon": 0.0, "source_event_id": 3},
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 1),
+                "lat": 50.0,
+                "lon": 0.0,
+                "source_event_id": 1,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 2),
+                "lat": 50.5,
+                "lon": 0.0,
+                "source_event_id": 2,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 3),
+                "lat": 50.0,
+                "lon": 0.0,
+                "source_event_id": 3,
+            },
         ]
     )
     out = compute_observation_features(df, df_raw=None)
@@ -78,11 +114,41 @@ def test_huecos_rompen_triplete() -> None:
     """Día con vecino inválido → is_observation_valid=False."""
     df = _make_daily(
         [
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 1), "lat": 50.0, "lon": 0.0, "source_event_id": 1},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 2), "lat": np.nan, "lon": np.nan, "source_event_id": 2},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 3), "lat": 50.5, "lon": 0.0, "source_event_id": 3},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 4), "lat": 51.0, "lon": 0.0, "source_event_id": 4},
-            {"bird_id": "A", "date_utc": dt.date(2010, 6, 5), "lat": 51.5, "lon": 0.0, "source_event_id": 5},
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 1),
+                "lat": 50.0,
+                "lon": 0.0,
+                "source_event_id": 1,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 2),
+                "lat": np.nan,
+                "lon": np.nan,
+                "source_event_id": 2,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 3),
+                "lat": 50.5,
+                "lon": 0.0,
+                "source_event_id": 3,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 4),
+                "lat": 51.0,
+                "lon": 0.0,
+                "source_event_id": 4,
+            },
+            {
+                "bird_id": "A",
+                "date_utc": dt.date(2010, 6, 5),
+                "lat": 51.5,
+                "lon": 0.0,
+                "source_event_id": 5,
+            },
         ]
     )
     out = compute_observation_features(df, df_raw=None)
