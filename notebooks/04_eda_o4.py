@@ -117,4 +117,124 @@ save_artifact(
         "sin garantía de mejora significativa para los seis modelos del estudio."
     ),
     table=d1,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ## Fase B — Diagnóstico del overfit
+# ### C1 — Gap train-test por modelo
+
+# %%
+gap = (
+    metrics
+    .pivot_table(index=["modelo", "modo"], columns="split",
+                 values=["top1", "log_loss", "dist_median_km"])
+    .reset_index()
+)
+gap.columns = [
+    "_".join([str(c) for c in col if c]).strip("_") for col in gap.columns
+]
+gap["gap_top1"] = gap["top1_train"] - gap["top1_test"]
+gap["gap_log_loss"] = gap["log_loss_test"] - gap["log_loss_train"]
+gap_view = gap[gap["modelo"].isin(["rf", "xgb", "lgbm"])].copy()
+gap_view.sort_values(["modo", "modelo"])
+
+# %%
+fig_c1, axes = plt.subplots(1, 2, figsize=(13, 4))
+fams_order = ["rf", "xgb", "lgbm"]
+modes_order = ["personalizado", "poblacional"]
+x = np.arange(len(fams_order))
+width = 0.35
+
+for ax_idx, (col_train, col_test, title) in enumerate([
+    ("top1_train", "top1_test", "Top-1 (mayor mejor)"),
+    ("log_loss_train", "log_loss_test", "Log-loss (menor mejor)"),
+]):
+    ax = axes[ax_idx]
+    for i, mode in enumerate(modes_order):
+        sub = gap_view[gap_view["modo"] == mode].set_index("modelo")
+        train_v = sub.loc[fams_order, col_train].to_numpy()
+        test_v = sub.loc[fams_order, col_test].to_numpy()
+        offset = (i - 0.5) * width
+        ax.bar(x + offset - width / 4, train_v, width / 2, label=f"{mode} train", alpha=0.6)
+        ax.bar(x + offset + width / 4, test_v, width / 2, label=f"{mode} test")
+    ax.set_xticks(x); ax.set_xticklabels(fams_order)
+    ax.set_title(title); ax.legend(fontsize=8)
+fig_c1.suptitle("C1 — Diagnóstico de overfit: métricas train vs test por modelo y modo")
+fig_c1.tight_layout()
+
+save_artifact(
+    slug="train-test-gap",
+    objective="o4",
+    num=2,
+    decision="Diagnóstico del gap train-test para detectar overfit",
+    caption_es=(
+        "Comparativa de top-1 (panel izquierdo) y log-loss (panel derecho) "
+        "evaluados sobre train y test para los seis modelos (tres familias × "
+        "dos modos). La diferencia train→test es el indicador empírico del "
+        "overfit: un gap pequeño sugiere que el modelo aprende patrones "
+        "generalizables; un gap grande sugiere memorización. El modo "
+        "personalizado (que incluye bird_id) es el más expuesto a "
+        "memorización; su comparación contra el modo poblacional se analiza "
+        "explícitamente en C7."
+    ),
+    fig=fig_c1,
+    table=gap_view,
+)
+
+# %% [markdown]
+# ### C2 — Curvas de aprendizaje (XGBoost y LightGBM)
+
+# %%
+import joblib
+
+curves = {}
+for mode in ["personalizado", "poblacional"]:
+    for family in ["xgb", "lgbm"]:
+        bundle = joblib.load(result.model_paths[f"{mode}_{family}"])
+        model = bundle["model"]
+        if family == "xgb":
+            # _XGBoostWrapper expone el modelo en _xgb
+            inner = model._xgb
+            history = inner.evals_result()
+            losses = history["validation_0"]["mlogloss"]
+            best_iter = getattr(inner, "best_iteration", None)
+        else:
+            # _LightGBMWrapper expone el modelo en _lgbm
+            inner = model._lgbm
+            history = inner.evals_result_
+            losses = history["valid_0"]["multi_logloss"]
+            best_iter = getattr(inner, "best_iteration_", None)
+        curves[(mode, family)] = (losses, best_iter)
+
+# %%
+fig_c2, axes = plt.subplots(1, 2, figsize=(13, 4))
+for ax, family in zip(axes, ["xgb", "lgbm"]):
+    for mode in ["personalizado", "poblacional"]:
+        losses, best_iter = curves[(mode, family)]
+        ax.plot(losses, label=mode)
+        if best_iter is not None:
+            ax.axvline(best_iter, linestyle="--", alpha=0.4)
+    ax.set_xlabel("Iteración"); ax.set_ylabel("log-loss (val)")
+    ax.set_title(family.upper()); ax.legend()
+fig_c2.suptitle("C2 — Curvas de aprendizaje (val) — la línea punteada marca early stopping")
+fig_c2.tight_layout()
+
+save_artifact(
+    slug="learning-curves",
+    objective="o4",
+    num=3,
+    decision="Curvas de log-loss en validación interna para XGBoost y LightGBM",
+    caption_es=(
+        "Evolución del log-loss sobre la validación interna a lo largo de las "
+        "iteraciones de boosting, para XGBoost (izquierda) y LightGBM "
+        "(derecha), en ambos modos. La línea vertical punteada indica la "
+        "iteración óptima detectada por early stopping (paciencia 50). El que "
+        "el algoritmo se detenga claramente antes de las 1 000 iteraciones "
+        "máximas confirma que el control automático de complejidad está "
+        "operativo; un plateau muy temprano sugeriría subajuste y uno tardío, "
+        "sobreajuste — ambos guían un eventual ajuste manual de la "
+        "configuración de §8.6."
+    ),
+    fig=fig_c2,
 )
