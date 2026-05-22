@@ -34,7 +34,10 @@ def top_k_accuracy(predictions: pd.DataFrame, k: int = 1) -> float:
         return float((predictions["true_cell"] == predictions["pred_cell_top1"]).mean())
     return float(
         predictions.apply(
-            lambda r: r["true_cell"] in (r["pred_cell_topk"] or []), axis=1
+            lambda r: r["true_cell"] in (
+                list(r["pred_cell_topk"]) if r["pred_cell_topk"] is not None else []
+            ),
+            axis=1,
         ).mean()
     )
 

@@ -383,3 +383,194 @@ save_artifact(
     caption_es=recomendacion_es,
     table=c4_table,
 )
+
+# %% [markdown]
+# ## Fase D — Análisis del modelo ganador
+# ### C5 — Error por estado HMM (ganador personalizado)
+# ### C6 — Error por estado HMM (ganador poblacional)
+
+# %%
+from tfg_aves.ml.evaluate import evaluate_by_state
+
+
+def _table_for_winner(family: str, mode: str) -> pd.DataFrame:
+    sub = preds[(preds["modelo"] == family) & (preds["modo"] == mode)]
+    table = evaluate_by_state(sub, state_col="state_b")
+    table["modelo"] = family
+    table["modo"] = mode
+    return table
+
+
+c5_table = _table_for_winner(ganador_pers["modelo"], "personalizado")
+c6_table = _table_for_winner(ganador_pob["modelo"], "poblacional")
+display(c5_table)
+display(c6_table)
+
+# %%
+fig_state, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+for ax, (table, label) in zip(
+    axes, [(c5_table, "personalizado"), (c6_table, "poblacional")],
+):
+    metrics_to_plot = ["top1", "top3"]
+    states_order = ["global", "estacionario", "migración"]
+    x = np.arange(len(states_order))
+    width = 0.35
+    for i, met in enumerate(metrics_to_plot):
+        vals = [table[table["state"] == s][met].iloc[0] for s in states_order]
+        ax.bar(x + (i - 0.5) * width, vals, width, label=met)
+    ax.set_xticks(x)
+    ax.set_xticklabels(states_order)
+    ax.set_title(f"Ganador {label} ({table['modelo'].iloc[0]})")
+    ax.set_ylim(0, 1)
+    ax.legend()
+fig_state.suptitle("C5 + C6 — Top-1 y top-3 por estado HMM (estacionario vs migración)")
+fig_state.tight_layout()
+
+save_artifact(
+    slug="error-by-state-personalizado",
+    objective="o4",
+    num=6,
+    decision="Desglose de top-1 y top-3 por estado HMM para el ganador personalizado",
+    caption_es=(
+        f"Accuracy del modelo ganador personalizado ({ganador_pers['modelo']}) "
+        "desglosada por estado biológico inferido por O3 (Modelo B). La "
+        "comparación global vs estacionario vs migración revela cuándo falla "
+        "el modelo: una caída fuerte en migración indicaría que el modelo "
+        "acierta sólo los días triviales (estacionarios, donde la persistencia "
+        "ya lo hace bien). Esta es la pregunta que define el aporte real del "
+        "ML supervisado frente a las baselines."
+    ),
+    fig=fig_state,
+    table=c5_table,
+)
+save_artifact(
+    slug="error-by-state-poblacional",
+    objective="o4",
+    num=7,
+    decision="Desglose de top-1 y top-3 por estado HMM para el ganador poblacional",
+    caption_es=(
+        f"Idem C5 para el ganador poblacional ({ganador_pob['modelo']}, sin "
+        "bird_id). El descenso esperable respecto al personalizado en cada "
+        "estado cuantifica cuánto del rendimiento se debe a conocer la "
+        "identidad del ave frente a aprender patrones genéricos de movimiento "
+        "de la especie. Coherencia con la fenología de Larus fuscus: la "
+        "migración (15,3 % del dataset, concentrada en abr-may y sep-oct) "
+        "debe seguir aportando información útil incluso sin bird_id."
+    ),
+    fig=fig_state,
+    table=c6_table,
+)
+
+# %% [markdown]
+# ### C7 — Test de memorización: personalizado vs poblacional
+
+# %%
+c7_rows = []
+for family in ["rf", "xgb", "lgbm"]:
+    pers = metrics[(metrics["modelo"] == family) & (metrics["modo"] == "personalizado") & (metrics["split"] == "test")].iloc[0]
+    pob = metrics[(metrics["modelo"] == family) & (metrics["modo"] == "poblacional") & (metrics["split"] == "test")].iloc[0]
+    pers_tr = metrics[(metrics["modelo"] == family) & (metrics["modo"] == "personalizado") & (metrics["split"] == "train")].iloc[0]
+    pob_tr = metrics[(metrics["modelo"] == family) & (metrics["modo"] == "poblacional") & (metrics["split"] == "train")].iloc[0]
+    c7_rows.append({
+        "familia": family,
+        "top1_pers_train": pers_tr["top1"], "top1_pers_test": pers["top1"],
+        "gap_pers": pers_tr["top1"] - pers["top1"],
+        "top1_pob_train": pob_tr["top1"], "top1_pob_test": pob["top1"],
+        "gap_pob": pob_tr["top1"] - pob["top1"],
+        "diff_test_pers_vs_pob": pers["top1"] - pob["top1"],
+    })
+c7_table = pd.DataFrame(c7_rows)
+
+fig_c7, ax = plt.subplots(figsize=(8, 4.5))
+x = np.arange(len(c7_table))
+width = 0.4
+ax.bar(x - width / 2, c7_table["gap_pers"], width, label="gap personalizado")
+ax.bar(x + width / 2, c7_table["gap_pob"], width, label="gap poblacional")
+ax.set_xticks(x)
+ax.set_xticklabels(c7_table["familia"])
+ax.set_ylabel("gap top-1 (train - test)")
+ax.set_title("C7 — Gap train-test por familia: personalizado vs poblacional")
+ax.legend()
+fig_c7.tight_layout()
+
+save_artifact(
+    slug="personalizado-vs-poblacional",
+    objective="o4",
+    num=8,
+    decision="Cuantificar cuánto del rendimiento se debe a memorizar bird_id frente a generalización",
+    caption_es=(
+        "Diferencia train-test (gap) en top-1 para cada familia, contrastando "
+        "el modo personalizado (con bird_id) frente al poblacional (sin "
+        "bird_id). Un gap_pers >> gap_pob sería evidencia directa de que "
+        "bird_id se está usando para memorizar el train más que para extraer "
+        "patrones generalizables — es decir, el modo personalizado estaría "
+        "sobreajustando a las trayectorias específicas de las 82 aves vistas. "
+        "Si los gaps son similares y diff_test_pers_vs_pob > 0, entonces "
+        "bird_id aporta señal generalizable real."
+    ),
+    fig=fig_c7,
+    table=c7_table,
+)
+
+# %% [markdown]
+# ### C8 — Importancia de features de los dos ganadores
+
+# %%
+def _feature_importance(mode: str, family: str) -> pd.DataFrame:
+    bundle = joblib.load(result.model_paths[f"{mode}_{family}"])
+    model = bundle["model"]
+    feature_cols = bundle["feature_cols"]
+    if family == "rf":
+        inner = model.named_steps["model"]
+        imp = inner.feature_importances_
+    elif family == "xgb":
+        imp = model._xgb.feature_importances_
+    else:  # lgbm
+        imp = model._lgbm.booster_.feature_importance(importance_type="gain")
+    df = pd.DataFrame({"feature": feature_cols, "importance": imp})
+    df = df.sort_values("importance", ascending=False).reset_index(drop=True)
+    df["modo"] = mode
+    df["modelo"] = family
+    return df
+
+
+imp_pers = _feature_importance("personalizado", ganador_pers["modelo"])
+imp_pob = _feature_importance("poblacional", ganador_pob["modelo"])
+
+fig_c8, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+for ax, df, title in zip(
+    axes,
+    [imp_pers, imp_pob],
+    [
+        f"Ganador personalizado ({ganador_pers['modelo']})",
+        f"Ganador poblacional ({ganador_pob['modelo']})",
+    ],
+):
+    ax.barh(df["feature"], df["importance"])
+    ax.invert_yaxis()
+    ax.set_title(title)
+fig_c8.suptitle("C8 — Importancia de features de los dos ganadores")
+fig_c8.tight_layout()
+
+c8_table = pd.concat([imp_pers, imp_pob], ignore_index=True)
+save_artifact(
+    slug="feature-importance-winners",
+    objective="o4",
+    num=9,
+    decision=(
+        "Verificar que state_b y posterior_b_migracion son usados; cuantificar "
+        "el peso de bird_id en el modelo personalizado"
+    ),
+    caption_es=(
+        "Importancia relativa de las features para los dos modelos ganadores. "
+        "En el modelo personalizado, la importancia de bird_id indica el "
+        "peso de la identidad individual frente al resto de señales (posición "
+        "actual, ciclo anual, cinemática, régimen biológico). En el modelo "
+        "poblacional, la ausencia de bird_id obliga al modelo a apoyarse "
+        "completamente en lat/lon, doy cíclico, cinemática y state_b — "
+        "confirmar que state_b y posterior_b_migracion ocupan posiciones "
+        "altas valida que el aporte de O3 al pipeline supervisado es real."
+    ),
+    fig=fig_c8,
+    table=c8_table,
+)
