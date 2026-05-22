@@ -449,6 +449,36 @@ redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
   discriminación y que el contexto aporta refinamiento marginal — la
   evidencia métrica detrás del 93 % de acuerdo A-B y de la decisión
   metodológica §9.2 (sin StandardScaler).
+- **C7** (`o3_fig08_bird-trajectory-by-state`): trayectoria del ave
+  91916A (la de mayor cobertura del dataset, 2 051 días válidos) sobre
+  mapa cartográfico (cartopy con coastlines + fronteras nacionales),
+  con puntos coloreados según el estado Viterbi para Modelo A y
+  Modelo B. Validación visual individual: el ave migra desde el norte
+  de Europa hasta el delta del Nilo / Mar Rojo siguiendo el corredor
+  mediterráneo, con los puntos rojos (migración) concentrados a lo
+  largo del paso y los azules (estacionario) agrupados en la zona de
+  cría norte y en la zona de invernada africana. Ambos modelos
+  identifican el mismo patrón general; el modelo B marca 257 días de
+  migración vs 485 en A (menor sobre-clasificación en la zona ambigua).
+- **C8** (`o3_fig09_all-birds-spatial-by-state`): distribución
+  espacial de las 20 672 observaciones de las 82 aves sobre mapa
+  cartográfico, coloreadas por estado HMM. Revela los tres clusters
+  poblacionales esperados: (1) cría en N Europa (~55-65°N) en azul;
+  (2) corredor migratorio mediterráneo (Italia, Grecia, Levante) en
+  rojo; (3) invernada en Sahel/Sudán (~0-10°N) en azul. La similitud
+  entre los paneles A y B confirma visualmente el 93 % de acuerdo
+  cuantitativo. Sirve como sanity-check biológico fuerte: la
+  separación geográfica obtenida coincide con la ruta migratoria
+  conocida de *Larus fuscus* (Wikelski et al. 2015).
+- **C9** (`o3_fig10_state-proportion-pie`): gráfico de tarta de la
+  proporción global de observaciones (ave, día) clasificadas como
+  estacionario vs migración por cada modelo. Modelo A: 78,8 %
+  estacionario / 21,2 % migración. Modelo B: 84,7 % estacionario /
+  15,3 % migración. Ambas proporciones son biológicamente plausibles
+  para *Larus fuscus* (la migración activa ocupa 2-3 meses al año,
+  ~17-25 % de los días anuales); el ligero exceso del Modelo A se
+  concentra en la zona ambigua step 10-50 km/día que el Modelo B
+  reclasifica como estacionario gracias al contexto.
 
 ### Validación
 

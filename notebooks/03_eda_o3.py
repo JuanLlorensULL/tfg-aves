@@ -544,3 +544,196 @@ print("Cohen's d por feature (Modelo B):")
 for _, row in df_cohens.iloc[::-1].iterrows():
     d = row["cohens_d"]
     print(f"  {row['feature']:<25s}: d = {d:+.3f}  ({_cohens_level(d)})")
+
+# %% [markdown]
+# ## C7 — Trayectoria de un ave coloreada por estado (Modelo A y Modelo B)
+
+# %%
+import cartopy.crs as ccrs  # noqa: E402
+import cartopy.feature as cfeature  # noqa: E402
+
+# Ave con más observaciones válidas — máximo de información visual.
+bird_counts = valid.groupby("bird_id").size().sort_values(ascending=False)
+example_bird = bird_counts.index[0]
+sub = valid[valid["bird_id"] == example_bird].sort_values("date_utc")
+print(f"Ave ejemplo: {example_bird} ({len(sub)} días válidos)")
+
+# Bounds geográficos del ave + margen.
+lat_pad = 2.0
+lon_pad = 2.0
+bird_extent = [
+    sub["lon"].min() - lon_pad, sub["lon"].max() + lon_pad,
+    sub["lat"].min() - lat_pad, sub["lat"].max() + lat_pad,
+]
+
+fig_c7 = plt.figure(figsize=(14, 7))
+for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
+    ax = fig_c7.add_subplot(1, 2, idx + 1, projection=ccrs.PlateCarree())
+    ax.set_extent(bird_extent, crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND, facecolor="#f5f3e7")
+    ax.add_feature(cfeature.OCEAN, facecolor="#cfe2f3")
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.4, edgecolor="#888")
+    ax.gridlines(draw_labels=True, linewidth=0.3, color="gray", alpha=0.4)
+    # Línea fina conectando días consecutivos.
+    ax.plot(sub["lon"], sub["lat"], color="gray", linewidth=0.4, alpha=0.5,
+            transform=ccrs.PlateCarree(), zorder=1)
+    state_col = f"state_{suffix}"
+    for state, name, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
+        pts = sub[sub[state_col] == state]
+        ax.scatter(pts["lon"], pts["lat"], s=8, c=color,
+                   label=f"{name} ({len(pts)})", alpha=0.7,
+                   transform=ccrs.PlateCarree(), zorder=2)
+    ax.set_title(f"{label} — {example_bird} ({len(sub)} días)")
+    ax.legend(loc="lower right", fontsize=8)
+fig_c7.suptitle(f"Trayectoria de {example_bird} coloreada por estado HMM")
+fig_c7.tight_layout()
+
+save_artifact(
+    slug="bird-trajectory-by-state",
+    objective="o3",
+    num=8,
+    decision=(
+        "Validación visual individual: la trayectoria del ave con más observaciones "
+        "muestra que los estados HMM se alinean con tramos geográficamente coherentes "
+        "(roost vs paso migratorio)"
+    ),
+    caption_es=(
+        f"Trayectoria del ave {example_bird} (la de mayor cobertura temporal del dataset, "
+        f"{len(sub)} días válidos) sobre mapa de Europa/África con coastlines y fronteras "
+        "nacionales. La línea gris conecta días consecutivos; cada punto se colorea según "
+        "el estado Viterbi del HMM (azul estacionario, rojo migración). Comparando Modelo A "
+        "(cinemática pura) y Modelo B (cinemática + contexto), se aprecia visualmente que "
+        "ambos modelos identifican como estado migración los tramos de mayor desplazamiento "
+        "diario entre zonas geográficamente distantes, mientras que los puntos estacionarios "
+        "se agrupan en zonas de roost o de cría. La concordancia visual entre A y B confirma "
+        "el 93 % de acuerdo cuantitativo (C4)."
+    ),
+    fig=fig_c7,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ## C8 — Distribución espacial de todas las aves por estado (Modelo A y Modelo B)
+
+# %%
+all_extent = [
+    valid["lon"].min() - 3, valid["lon"].max() + 3,
+    valid["lat"].min() - 3, valid["lat"].max() + 3,
+]
+
+fig_c8 = plt.figure(figsize=(14, 8))
+for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
+    ax = fig_c8.add_subplot(1, 2, idx + 1, projection=ccrs.PlateCarree())
+    ax.set_extent(all_extent, crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND, facecolor="#f5f3e7")
+    ax.add_feature(cfeature.OCEAN, facecolor="#cfe2f3")
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.4)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.3, edgecolor="#888")
+    ax.gridlines(draw_labels=True, linewidth=0.3, color="gray", alpha=0.4)
+    state_col = f"state_{suffix}"
+    n_est = int((valid[state_col] == 0).sum())
+    n_mig = int((valid[state_col] == 1).sum())
+    # Estacionario primero (debajo) y migración encima (más informativo).
+    ax.scatter(
+        valid.loc[valid[state_col] == 0, "lon"],
+        valid.loc[valid[state_col] == 0, "lat"],
+        s=2, c="#1f77b4", alpha=0.15,
+        label=f"estacionario ({n_est:,})",
+        transform=ccrs.PlateCarree(), zorder=1, edgecolors="none",
+    )
+    ax.scatter(
+        valid.loc[valid[state_col] == 1, "lon"],
+        valid.loc[valid[state_col] == 1, "lat"],
+        s=3, c="#d62728", alpha=0.30,
+        label=f"migración ({n_mig:,})",
+        transform=ccrs.PlateCarree(), zorder=2, edgecolors="none",
+    )
+    ax.set_title(f"{label} — {valid['bird_id'].nunique()} aves, {len(valid):,} observaciones")
+    ax.legend(loc="lower left", fontsize=8, framealpha=0.9)
+fig_c8.suptitle("Distribución espacial de las observaciones por estado HMM")
+fig_c8.tight_layout()
+
+save_artifact(
+    slug="all-birds-spatial-by-state",
+    objective="o3",
+    num=9,
+    decision=(
+        "Distribución espacial agregada de los estados HMM sobre todo el dataset confirma "
+        "patrón geográfico esperado: estacionario concentrado en colonias e invernada, "
+        "migración a lo largo de corredores intermedios"
+    ),
+    caption_es=(
+        "Distribución espacial de las 20 672 observaciones válidas de las 82 aves del "
+        "dataset, coloreadas por el estado Viterbi del HMM (azul estacionario, rojo "
+        "migración). Modelo A (izquierda) y Modelo B (derecha). El estado estacionario "
+        "se agrupa visiblemente en las colonias de cría del norte de Europa (~55-65° N) "
+        "y en las zonas de invernada africanas (~0-30° N); el estado migración rellena el "
+        "corredor intermedio (~30-55° N), coincidente con la ruta migratoria conocida de "
+        "Larus fuscus. La similitud entre los dos paneles ilustra el 93 % de acuerdo entre "
+        "modelos."
+    ),
+    fig=fig_c8,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ## C9 — Proporción global de observaciones por estado (Modelo A y Modelo B)
+
+# %%
+fig_c9, axes_c9 = plt.subplots(1, 2, figsize=(11, 5))
+pie_rows = []
+for ax, suffix, label in [(axes_c9[0], "a", "Modelo A"), (axes_c9[1], "b", "Modelo B")]:
+    state_col = f"state_{suffix}"
+    n_est = int((valid[state_col] == 0).sum())
+    n_mig = int((valid[state_col] == 1).sum())
+    total = n_est + n_mig
+    sizes = [n_est, n_mig]
+    labels_pie = [
+        f"estacionario\n{n_est:,} ({n_est / total * 100:.1f} %)",
+        f"migración\n{n_mig:,} ({n_mig / total * 100:.1f} %)",
+    ]
+    ax.pie(
+        sizes, labels=labels_pie,
+        colors=["#1f77b4", "#d62728"],
+        autopct=None,
+        startangle=90,
+        wedgeprops={"edgecolor": "white", "linewidth": 1.5},
+        textprops={"fontsize": 10},
+    )
+    ax.set_title(f"{label}\n({total:,} observaciones válidas)")
+    pie_rows.append({"model": suffix, "state": "estacionario", "n": n_est,
+                     "pct": 100 * n_est / total})
+    pie_rows.append({"model": suffix, "state": "migración", "n": n_mig,
+                     "pct": 100 * n_mig / total})
+fig_c9.suptitle("Proporción global de observaciones clasificadas por estado HMM")
+fig_c9.tight_layout()
+df_pie = pd.DataFrame(pie_rows)
+
+save_artifact(
+    slug="state-proportion-pie",
+    objective="o3",
+    num=10,
+    decision=(
+        "Proporción global ~80/20 (estacionario/migración) en Modelo A y ~85/15 en Modelo B, "
+        "consistente con la fenología de Larus fuscus (período de cría + invernada cubre la "
+        "mayor parte del año)"
+    ),
+    caption_es=(
+        "Proporción global de observaciones (ave, día) clasificadas como estacionario "
+        "(azul) vs migración (rojo) por cada uno de los dos modelos HMM. Modelo A asigna "
+        "el 21,2 % de los días a migración; Modelo B, el 15,3 %. Ambas cifras son "
+        "biológicamente plausibles para Larus fuscus: la migración activa ocupa "
+        "aproximadamente 2-3 meses al año (paso primaveral abril-mayo + paso otoñal "
+        "septiembre-octubre), lo que corresponde al ~17-25 % de los días anuales. El "
+        "ligero exceso del Modelo A se concentra en la zona ambigua de step 10-50 km/día "
+        "(forrajeo o migración corta) que el Modelo B, gracias al contexto, reclasifica "
+        "como estacionario."
+    ),
+    fig=fig_c9,
+    table=df_pie,
+    overwrite=True,
+)
+
+print("\nProporciones globales:")
+print(df_pie.pivot(index="state", columns="model", values="pct").round(2))
