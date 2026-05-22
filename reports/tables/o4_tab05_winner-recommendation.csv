@@ -1,0 +1,5 @@
+rol,modelo,modo,top1,log_loss,dist_median_km
+ganador personalizado,rf,personalizado,0.6440426058954669,5.223658243502516,23.13196680979708
+ganador poblacional,xgb,poblacional,0.6098588060440921,5.518495294240408,23.961988855606272
+baseline persistencia,persistencia,—,0.7730988357691355,,20.941073780492637
+baseline markov,markov,—,0.5496655932623236,,24.84248689242599

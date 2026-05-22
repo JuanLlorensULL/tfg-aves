@@ -249,3 +249,137 @@ save_artifact(
     fig=fig_c2,
     overwrite=True,
 )
+
+# %% [markdown]
+# ## Fase C — Comparativa global y recomendación del ganador
+# ### C3 — Tabla comparativa de los 8 modelos
+
+# %%
+test_metrics = metrics[metrics["split"] == "test"].copy()
+test_metrics["combo"] = (
+    test_metrics["modelo"] + "_" + test_metrics["modo"].fillna("—")
+)
+display_cols = ["modelo", "modo", "top1", "top3", "log_loss", "dist_median_km"]
+c3_table = test_metrics[display_cols].sort_values(
+    "log_loss", ascending=True,
+).reset_index(drop=True)
+c3_table
+
+# %%
+fig_c3, axes = plt.subplots(1, 4, figsize=(18, 4.5))
+for ax, metric, title, ascending in [
+    (axes[0], "top1", "Top-1", False),
+    (axes[1], "top3", "Top-3", False),
+    (axes[2], "log_loss", "Log-loss (menor mejor)", True),
+    (axes[3], "dist_median_km", "Dist mediana (km, menor mejor)", True),
+]:
+    sub = c3_table.sort_values(metric, ascending=ascending)
+    labels = sub.apply(lambda r: f"{r['modelo']}/{r['modo']}", axis=1)
+    ax.barh(range(len(sub)), sub[metric].values)
+    ax.set_yticks(range(len(sub))); ax.set_yticklabels(labels, fontsize=8)
+    ax.invert_yaxis(); ax.set_title(title)
+fig_c3.suptitle("C3 — Comparativa global de los 8 modelos sobre el test temporal")
+fig_c3.tight_layout()
+
+save_artifact(
+    slug="models-comparison",
+    objective="o4",
+    num=4,
+    decision="Tabla comparativa de las 8 combinaciones (3 familias × 2 modos + 2 baselines)",
+    caption_es=(
+        "Métricas globales sobre el conjunto de test temporal (último 20 % de "
+        "días de cada ave). Las cuatro métricas se reportan en paneles "
+        "separados para destacar al ganador en cada criterio. Persistencia "
+        "trivial y Markov(1) se incluyen como baselines de referencia "
+        "heredadas de O2. LightGBM queda visualmente diferenciado por sus "
+        "valores anómalos en log-loss y distancia mediana, coherente con la "
+        "divergencia observada en C2. Conviene leer este artefacto junto a "
+        "C4, que argumenta la recomendación final del algoritmo ganador "
+        "priorizando log-loss como criterio principal."
+    ),
+    fig=fig_c3,
+    table=c3_table,
+)
+
+# %% [markdown]
+# ### C4 — Recomendación del algoritmo ganador (criterio principal: log-loss)
+
+# %%
+ml_only = c3_table[c3_table["modelo"].isin(["rf", "xgb", "lgbm"])].copy()
+
+# Ganadores por criterio
+winners = {
+    "log_loss": ml_only.sort_values("log_loss").iloc[0],
+    "top1": ml_only.sort_values("top1", ascending=False).iloc[0],
+    "top3": ml_only.sort_values("top3", ascending=False).iloc[0],
+    "dist_median_km": ml_only.sort_values("dist_median_km").iloc[0],
+}
+winners_table = pd.DataFrame([
+    {"métrica": k,
+     "ganador_modelo": v["modelo"],
+     "ganador_modo": v["modo"],
+     "valor": v[k]}
+    for k, v in winners.items()
+])
+
+# Ganador absoluto por modo (log-loss)
+ganador_pers = ml_only[ml_only["modo"] == "personalizado"].sort_values("log_loss").iloc[0]
+ganador_pob = ml_only[ml_only["modo"] == "poblacional"].sort_values("log_loss").iloc[0]
+print(f"Ganador personalizado: {ganador_pers['modelo']} (log-loss={ganador_pers['log_loss']:.3f})")
+print(f"Ganador poblacional:   {ganador_pob['modelo']} (log-loss={ganador_pob['log_loss']:.3f})")
+winners_table
+
+# %%
+recomendacion_es = (
+    "**Criterio principal: log-loss** (consistente con la decisión metodológica "
+    "heredada de O2). El log-loss penaliza la sobreconfianza en predicciones "
+    "incorrectas y recompensa una buena calibración probabilística, lo que es "
+    "esencial para alimentar O5 con distribuciones de probabilidad por celda. "
+    "\n\n"
+    f"**Ganador del modo personalizado:** `{ganador_pers['modelo']}` con "
+    f"log-loss = {ganador_pers['log_loss']:.3f}. "
+    f"**Ganador del modo poblacional:** `{ganador_pob['modelo']}` con "
+    f"log-loss = {ganador_pob['log_loss']:.3f}. "
+    "\n\n"
+    "LightGBM queda descartado en ambos modos por la divergencia documentada "
+    "en C2 — su configuración conservadora de §8.6 no extrae señal "
+    "generalizable de este dataset con ~849 clases activas. "
+    "\n\n"
+    "Ambos ganadores se utilizarán como base para los artefactos siguientes "
+    "(C5/C6 análisis de error por estado, C7 comparativa memorización, C8 "
+    "feature importance). En O5, se cargarán por defecto como combinación "
+    "recomendada de los dos selectores; el usuario podrá cambiar a las otras "
+    "combinaciones para comparar visualmente."
+)
+
+# Tabla expandida: ganador por modo (log-loss) + comparativa con baselines
+final_rows = []
+for tag, model_row in [("personalizado", ganador_pers), ("poblacional", ganador_pob)]:
+    final_rows.append({
+        "rol": f"ganador {tag}",
+        "modelo": model_row["modelo"], "modo": tag,
+        "top1": model_row["top1"], "log_loss": model_row["log_loss"],
+        "dist_median_km": model_row["dist_median_km"],
+    })
+for name in ["persistencia", "markov"]:
+    row = c3_table[c3_table["modelo"] == name].iloc[0]
+    final_rows.append({
+        "rol": f"baseline {name}",
+        "modelo": name, "modo": "—",
+        "top1": row["top1"], "log_loss": row["log_loss"],
+        "dist_median_km": row["dist_median_km"],
+    })
+c4_table = pd.DataFrame(final_rows)
+
+save_artifact(
+    slug="winner-recommendation",
+    objective="o4",
+    num=5,
+    decision=(
+        f"Algoritmo ganador personalizado = {ganador_pers['modelo']}; "
+        f"ganador poblacional = {ganador_pob['modelo']}. "
+        "Criterio: log-loss en test temporal."
+    ),
+    caption_es=recomendacion_es,
+    table=c4_table,
+)
