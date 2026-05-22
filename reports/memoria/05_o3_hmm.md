@@ -21,9 +21,14 @@ de "ave volando" (~129 km/día) con un patrón estacional defensible;
 Modelo B replica esa estructura añadiendo un refinamiento marginal del
 contexto. El acuerdo entre modelos es del 93 %, lo que confirma que las
 features contextuales aportan poco una vez que el step en km puede
-dominar la inicialización por k-means. El entregable principal es
-`features.parquet` con 17 columnas — incluyendo `state_a`, `state_b` y
-las probabilidades posteriores — que O4 y O5 consumirán directamente.
+dominar la inicialización por k-means. **El modelo canónico elegido
+para O4 y O5 es Modelo B**, conservando la propuesta original de la
+tutora (validada empíricamente tras el rework, sin circularidad
+residual — ver §7) y aprovechando su patrón estacional ligeramente
+más nítido en la temporada de cría. Modelo A queda como alternativa
+documentada en §7 bis. El entregable principal es `features.parquet`
+con 17 columnas — incluyendo `state_a`, `state_b` y las probabilidades
+posteriores — que O4 y O5 consumirán directamente.
 
 ## Contexto y motivación
 
@@ -284,12 +289,123 @@ y reproducible.
 
 ### Implicación para O4 y O5
 
-La recomendación canónica para downstream es **Modelo A** (o
-indistintamente Modelo B, dado el 93 % de acuerdo). La aportación del
-contexto es marginal una vez que el step en km puede dominar; la
-narrativa del TFG es que el ave se comporta de manera
-detectable-en-cinemática y el contexto añade refinamiento, no
-información esencial.
+La recomendación canónica para downstream es **Modelo B**. Ambos
+modelos son válidos (no hay circularidad en B tras el rework — ver
+§7), pero el autor elige B por dos razones convergentes: (a) conserva
+la propuesta original de la tutora y honra su criterio, validándolo
+empíricamente en lugar de descartarlo; (b) `state_b` muestra un patrón
+estacional ligeramente más nítido en jun-jul (~3 % migración vs ~16-21 %
+en A), lo que indica que el contexto refina genuinamente la
+clasificación en la zona de frontera cinemática. La alternativa
+(Modelo A) queda documentada en §7.bis para auditoría futura.
+
+## 7. ¿Hay circularidad residual en Modelo B?
+
+Pregunta legítima que surgió tras revisar C6: si las features
+contextuales tienen Cohen's d no nulo (`veg_high` −0,46, `daylight`
+−0,41), ¿no significa eso que B sigue siendo parcialmente circular?
+**No, y la evidencia es triple.**
+
+### Comparación cuantitativa B pre-rework vs post-rework
+
+| Magnitud | B pre-rework (broken) | B post-rework |
+|---|---|---|
+| Δμ[step] entre estados | 5,4 vs 3,8 km (ratio 1,4×) | **5,8 vs 164 km (ratio 28×)** |
+| Δμ[daylight] entre estados | 17,3 vs 12,0 h (5,3 h) | 13,1 vs 12,3 h (0,8 h) |
+| Δμ[veg_high] entre estados | 0,94 vs 0,09 (0,85) | 0,33 vs 0,18 (0,15) |
+| Discriminador efectivo | contexto (daylight + veg) | **step (cinemática)** |
+
+Pre-rework, el step apenas separaba (1,4×) y daylight + veg_high
+hacían el trabajo. Post-rework, el step separa por 28× y daylight +
+veg_high se reducen a un papel marginal.
+
+### Tres tests independientes confirman ausencia de circularidad
+
+1. **El step domina la geometría del cluster.** Con ratio 28× entre
+   medias y σ comparable, una observación cae en un estado u otro
+   casi exclusivamente por `step_length_km`. Las features contextuales
+   contribuyen al margen.
+
+2. **Cohen's d ordena correctamente la influencia.** `step` (+0,99,
+   grande) y `cos_turn` (+0,71, medio) son los discriminadores
+   principales. Las tres contextuales caen en magnitud "efecto pequeño"
+   (|d|<0,5) — el rango característico de una feature de refinamiento,
+   no de dominio.
+
+3. **El 93 % de acuerdo con Modelo A es la prueba definitiva.**
+   Modelo A no tiene acceso a daylight ni a vegetación. Si B fuera
+   circular (decidiera principalmente por contexto), A y B discreparían
+   en al menos 30-50 % de las observaciones. El 93 % de acuerdo
+   sólo puede explicarse si B también está decidiendo principalmente
+   por cinemática.
+
+### Matiz: micro-influencia del contexto en la zona de frontera
+
+En el 7 % de desacuerdos (la zona ambigua donde el step cae en el
+intervalo 10-50 km/día), el contexto sí inclina el voto — y eso es
+exactamente lo que se espera de una feature de refinamiento. Cuando
+la cinemática es ambigua, B usa daylight/veg para resolver. Esto no
+es la circularidad fuerte que F2 estaba diseñada para detectar (donde
+el contexto domina toda la clasificación); es la función propia de
+una feature secundaria bien calibrada.
+
+### Conclusión
+
+B post-rework es un modelo metodológicamente válido y defendible. El
+diagnóstico que motivó el rework se aplica a la primera ejecución y se
+documenta en §6 como hallazgo metodológico, no al modelo actual.
+
+## 7 bis. Alternativa documentada: ¿por qué Modelo A también sería defendible?
+
+El autor ha elegido Modelo B como canónico (ver §5 "Implicación para
+O4 y O5"). Esta subsección preserva los argumentos a favor de Modelo A
+para auditoría futura — si en algún momento la decisión se revisa, la
+justificación de A está aquí íntegra.
+
+**Argumentos a favor de Modelo A:**
+
+1. **Parsimonia (regla de Ockham).** A usa 2 features, B usa 5. Si
+   la ganancia discriminativa de añadir las 3 contextuales es marginal
+   (Cohen's d en rango "pequeño" para las tres), el principio de
+   parsimonia favorece el modelo más simple.
+
+2. **Independencia de fuentes externas.** A se calcula sólo a partir
+   de `daily.parquet`. B requiere el join con `migration_original.csv`
+   para `veg_low`/`veg_high` (columnas ECMWF) y la fórmula astronómica
+   para `daylight_hours`. Cualquier cosa que se pueda romper, B tiene
+   más superficie de ataque.
+
+3. **Evitar colinealidad en O4.** Si O4 (ML supervisado) recibe como
+   inputs tanto `state_b` **como** `daylight_hours`, `veg_low`,
+   `veg_high` por separado, esas tres features están presentes dos
+   veces en el espacio de features: una vez como entrada cruda al ML y
+   otra vez codificadas dentro del `state_b`. Eso introduce
+   colinealidad innecesaria. Con `state_a`, el HMM aporta exactamente
+   una cosa que el ML no puede aprender solo (un estado latente
+   derivado de la secuencia temporal cinemática), y las features
+   contextuales entran por su canal supervisado, separadas.
+
+4. **Riesgo cero de circularidad residual.** A no usa ninguna feature
+   contextual; no puede caer en circularidad ni siquiera en el matiz
+   "micro" descrito en §7.
+
+**Si se reconsidera la decisión:** el cambio operativo es mínimo —
+basta con sustituir `state_b` por `state_a` (y sus posteriores) en los
+features de entrada de los modelos de O4. Ambas columnas están
+materializadas en `features.parquet`; el cambio no requiere
+re-entrenar el HMM ni regenerar artefactos. Esta subsección queda como
+checkpoint reversible.
+
+**Cómo se llegó a la decisión actual:** el autor consideró ambos
+modelos tras revisar C6 (Cohen's d). La elección por B refleja (a) la
+conservación de la propuesta de la tutora y (b) el patrón estacional
+ligeramente más nítido en jun-jul (~3 % vs ~16-21 %), que sugiere que
+el contexto resuelve la zona de frontera cinemática de manera
+biológicamente sensata. La colinealidad mencionada arriba es un costo
+asumido conscientemente y se gestionará en el brainstorm de O4
+(probablemente: usar `state_b` SIN incluir adicionalmente `daylight` y
+`veg_*` como features supervisadas, o sí incluirlas y aceptar la
+redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
 
 ## Caracterización de artefactos
 
@@ -614,12 +730,13 @@ alternativa descartada.*
   Patterson et al. (2017) en la elección de `covariance_type='diag'`.
 - Aclarar en el texto que LL Modelo A ≠ LL Modelo B porque los
   espacios de observación son distintos (§9.10).
-- La recomendación de qué modelo usar como "el modelo O3" (A o B) puede
-  ser una sola: dado el 93 % de acuerdo y la marginalidad de las
-  features contextuales, Modelo A es suficiente y más parsimonioso.
-  Si se prefiere mantener la propuesta original de la tutora, Modelo B
-  produce resultados ~equivalentes y es defendible. Conversación
-  pendiente.
+- **Modelo canónico para O4 y O5: Modelo B.** Decisión del autor
+  documentada en §5. Razones: (a) conservación de la propuesta original
+  de la tutora, validada empíricamente tras el rework; (b) patrón
+  estacional ligeramente más nítido en jun-jul. La alternativa
+  (Modelo A) queda documentada íntegramente en §7 bis como checkpoint
+  reversible — el cambio operativo, si se reconsidera, es sustituir
+  `state_b` por `state_a` en los inputs de O4.
 - Bibliografía pendiente:
   - Wikelski M et al. (2015): dataset Movebank.
   - Patterson et al. (2017): HMM para movimiento animal.
