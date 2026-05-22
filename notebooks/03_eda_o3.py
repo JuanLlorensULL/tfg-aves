@@ -61,7 +61,7 @@ print(
 
 # %%
 train_ids, _ = stratified_holdout_split(df_features, holdout_frac=0.20, random_state=0)
-FEATURE_COLS_A = ["step_length_km", "abs_turning_angle_rad"]
+FEATURE_COLS_A = ["step_length_km", "cos_turning_angle"]
 X_train, lengths_train = build_sequences(df_features, train_ids, FEATURE_COLS_A)
 print(f"Train: {len(X_train)} observaciones, {len(lengths_train)} secuencias")
 
@@ -163,13 +163,13 @@ print(f"Filas válidas: {len(valid)}")
 fig_c1, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, col, title, log_x in [
     (axes[0], "step_length_km", "step_length (km)", True),
-    (axes[1], "abs_turning_angle_rad", "|cambio de rumbo| (rad)", False),
+    (axes[1], "cos_turning_angle", "cos(cambio de rumbo)", False),
 ]:
     for state, label, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
         sub = valid[valid["state_a"] == state]
         if log_x:
             data = sub[col].clip(lower=0.1)
-            ax.hist(data, bins=40, range=(0.1, 2000), alpha=0.5, label=label, color=color)
+            ax.hist(data, bins=np.logspace(-1, 3.5, 40), alpha=0.5, label=label, color=color)
         else:
             ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
     if log_x:
@@ -194,9 +194,9 @@ save_artifact(
         "Viterbi (estacionario en azul, migración en rojo). La feature step_length_km se muestra "
         "en escala logarítmica para hacer visible la bimodalidad entre pocos km (estado "
         "estacionario) y decenas-cientos de km (estado migración). El estado estacionario "
-        "concentra masa en step_length_km bajo y abs_turning_angle_rad alto/aleatorio "
-        "(direcciones erráticas, sin rumbo sostenido). El estado migración presenta el patrón "
-        "contrario: step_length_km alto y abs_turning_angle_rad bajo (movimiento dirigido). "
+        "concentra masa en step_length_km bajo y cos_turning_angle cercano a 0 o negativo "
+        "(giros erráticos, sin rumbo sostenido). El estado migración presenta el patrón "
+        "contrario: step_length_km alto y cos_turning_angle cercano a +1 (vuelo rectilíneo). "
         "La separación visual confirma que el HMM A descubre estados con semántica biológica clara."
     ),
     fig=fig_c1,
@@ -209,7 +209,7 @@ save_artifact(
 # %%
 fig_c2, axes = plt.subplots(2, 3, figsize=(15, 8))
 cols_b = [
-    "step_length_km", "abs_turning_angle_rad", "daylight_hours",
+    "step_length_km", "cos_turning_angle", "daylight_hours",
     "veg_low", "veg_high",
 ]
 for ax, col in zip(axes.flat, cols_b, strict=False):
@@ -217,7 +217,7 @@ for ax, col in zip(axes.flat, cols_b, strict=False):
         sub = valid[valid["state_b"] == state]
         if col == "step_length_km":
             data = sub[col].clip(lower=0.1)
-            ax.hist(data, bins=40, range=(0.1, 2000), alpha=0.5, label=label, color=color)
+            ax.hist(data, bins=np.logspace(-1, 3.5, 40), alpha=0.5, label=label, color=color)
         else:
             ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
     if col == "step_length_km":
@@ -240,8 +240,10 @@ save_artifact(
     caption_es=(
         "Distribución de las cinco features del Modelo B condicionada al estado Viterbi. "
         "La primera feature (step_length_km) se muestra en escala logarítmica. "
-        "Las dos primeras (step_length_km, abs_turning_angle_rad) replican el patrón "
-        "del Modelo A: bimodalidad entre pocos km (estacionario) y decenas-cientos km (migración). "
+        "Las dos primeras (step_length_km, cos_turning_angle) replican el patrón "
+        "del Modelo A: bimodalidad en step_length entre pocos km (estacionario) y "
+        "decenas-cientos km (migración); cos_turning_angle bimodal entre ~+1 "
+        "(vuelo rectilíneo, migración) y ~0/negativo (giros erráticos, estacionario). "
         "Las tres adicionales (daylight_hours, veg_low, veg_high) muestran si "
         "los estados resultantes están condicionados también por contexto temporal y "
         "ambiental: comparar con C1 permite ver si el contexto refina la separación o si la "
