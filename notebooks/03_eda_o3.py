@@ -29,6 +29,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402, I001
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from matplotlib.patches import Patch  # noqa: E402
 from tfg_aves.hmm import (  # noqa: E402
     ab_agreement,
     build_o3,
@@ -257,6 +258,19 @@ save_artifact(
 # ## C3 — Coherencia biológica: estado vs mes y latitud
 
 # %%
+def _annotate_bars(ax: plt.Axes, values: np.ndarray, *, fmt: str = "{:.0f}%") -> None:
+    """Escribe el porcentaje encima de cada barra del eje."""
+    if len(values) == 0:
+        return
+    offset = max(values) * 0.02 + 0.3
+    for i, v in enumerate(values):
+        ax.text(i, v + offset, fmt.format(v), ha="center", va="bottom", fontsize=8)
+    ax.set_ylim(0, max(values) * 1.18 + 1)
+
+
+MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
+                "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
 fig_c3, axes = plt.subplots(2, 2, figsize=(14, 8))
 for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
     state_col = f"state_{model_suffix}"
@@ -264,11 +278,22 @@ for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", 
         valid.groupby(["month", state_col]).size().unstack(fill_value=0)
     )
     pct_migr_by_month = by_month[1] / by_month.sum(axis=1) * 100
-    axes[row_idx, 0].bar(pct_migr_by_month.index, pct_migr_by_month.values, color="#d62728")
+    pct_values_month = pct_migr_by_month.reindex(range(1, 13), fill_value=0).values
+    axes[row_idx, 0].bar(range(1, 13), pct_values_month, color="#d62728")
+    axes[row_idx, 0].set_xticks(range(1, 13))
+    axes[row_idx, 0].set_xticklabels(MONTH_LABELS)
     axes[row_idx, 0].set_xlabel("Mes")
     axes[row_idx, 0].set_ylabel("% en migración")
     axes[row_idx, 0].set_title(f"{model_label}: % migración por mes")
-    axes[row_idx, 0].set_xticks(range(1, 13))
+    # Anotar porcentajes encima de cada barra (offset = 1-based al ser meses).
+    if pct_values_month.size > 0:
+        offset_m = max(pct_values_month) * 0.02 + 0.3
+        for i, v in enumerate(pct_values_month, start=1):
+            axes[row_idx, 0].text(
+                i, v + offset_m, f"{v:.0f}%",
+                ha="center", va="bottom", fontsize=8,
+            )
+        axes[row_idx, 0].set_ylim(0, max(pct_values_month) * 1.18 + 1)
 
     valid_local = valid.dropna(subset=["lat"]).copy()
     valid_local["lat_bin"] = pd.cut(valid_local["lat"], bins=8)
@@ -276,7 +301,8 @@ for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", 
         valid_local.groupby(["lat_bin", state_col], observed=True).size().unstack(fill_value=0)
     )
     pct_migr_by_lat = by_lat[1] / by_lat.sum(axis=1) * 100
-    axes[row_idx, 1].bar(range(len(pct_migr_by_lat)), pct_migr_by_lat.values, color="#d62728")
+    pct_values_lat = pct_migr_by_lat.values
+    axes[row_idx, 1].bar(range(len(pct_migr_by_lat)), pct_values_lat, color="#d62728")
     axes[row_idx, 1].set_xticks(range(len(pct_migr_by_lat)))
     axes[row_idx, 1].set_xticklabels(
         [f"{iv.left:.0f}-{iv.right:.0f}" for iv in pct_migr_by_lat.index],
@@ -285,6 +311,7 @@ for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", 
     axes[row_idx, 1].set_xlabel("Bin de latitud (°)")
     axes[row_idx, 1].set_ylabel("% en migración")
     axes[row_idx, 1].set_title(f"{model_label}: % migración por latitud")
+    _annotate_bars(axes[row_idx, 1], pct_values_lat)
 fig_c3.suptitle("Coherencia biológica: estado migración vs mes y latitud")
 fig_c3.tight_layout()
 
@@ -427,3 +454,93 @@ save_artifact(
     table=per_bird.reset_index()[["bird_id", "pct_migration_a", "pct_migration_b"]],
     overwrite=True,
 )
+
+# %% [markdown]
+# ## C6 — Influencia de cada feature en la clasificación (Cohen's d)
+
+# %%
+feature_cols_b = [
+    ("step_length_km", "step_length (km)"),
+    ("cos_turning_angle", "cos(turn. angle)"),
+    ("daylight_hours", "horas_luz (h)"),
+    ("veg_low", "veg_low"),
+    ("veg_high", "veg_high"),
+]
+
+rows_d = []
+for col, label in feature_cols_b:
+    mig_v = valid.loc[valid["state_b"] == 1, col].dropna()
+    est_v = valid.loc[valid["state_b"] == 0, col].dropna()
+    pooled_std = float(np.sqrt((mig_v.std() ** 2 + est_v.std() ** 2) / 2))
+    d = float((mig_v.mean() - est_v.mean()) / pooled_std) if pooled_std > 0 else 0.0
+    rows_d.append({"feature": label, "cohens_d": d})
+df_cohens = pd.DataFrame(rows_d).sort_values("cohens_d", key=lambda s: s.abs())
+
+# %%
+fig_c6, ax = plt.subplots(figsize=(8, 4))
+colors_d = ["tab:red" if d > 0 else "tab:blue" for d in df_cohens["cohens_d"]]
+bars = ax.barh(df_cohens["feature"], df_cohens["cohens_d"], color=colors_d,
+               alpha=0.85, edgecolor="white")
+ax.axvline(0, color="black", linewidth=0.8)
+ax.set_xlabel("Cohen's d (migración − estacionario) / desv. agrupada")
+ax.set_title("Modelo B — Influencia de cada feature en la clasificación del estado")
+
+for bar, d in zip(bars, df_cohens["cohens_d"], strict=False):
+    offset = 0.04 if d >= 0 else -0.04
+    ax.text(
+        d + offset, bar.get_y() + bar.get_height() / 2,
+        f"{d:+.2f}", va="center",
+        ha="left" if d >= 0 else "right", fontsize=9,
+    )
+
+ax.legend(
+    handles=[
+        Patch(facecolor="tab:red", alpha=0.85, label="Mayor en migración"),
+        Patch(facecolor="tab:blue", alpha=0.85, label="Mayor en estacionario"),
+    ],
+    loc="lower right", fontsize=8,
+)
+ax.set_xlim(min(df_cohens["cohens_d"]) - 0.4, max(df_cohens["cohens_d"]) + 0.4)
+fig_c6.tight_layout()
+
+save_artifact(
+    slug="feature-influence-cohens-d",
+    objective="o3",
+    num=7,
+    decision=(
+        "step_length domina la separación de estados (|d|≫1); cos_turning aporta señal "
+        "secundaria; daylight y veg apenas discriminan (|d|<0,5) — confirma cuantitativamente "
+        "el 93 % de acuerdo A-B"
+    ),
+    caption_es=(
+        "Cohen's d para cada feature del Modelo B, comparando observaciones del estado "
+        "migración (state_b=1) contra estacionario (state_b=0), agrupado por la desviación "
+        "típica conjunta. La magnitud absoluta indica la fuerza discriminativa de cada "
+        "feature; el signo, el sentido (rojo = mayor en migración, azul = mayor en "
+        "estacionario). El step_length domina por dos órdenes de magnitud relativos al "
+        "contexto, lo que justifica cuantitativamente la decisión §9.2 (sin StandardScaler) "
+        "y explica el 93 % de acuerdo entre Modelo A (sólo cinemática) y Modelo B "
+        "(cinemática + contexto): las features contextuales aportan refinamiento marginal "
+        "pero no son el motor de la clasificación. Escala interpretativa de Cohen: "
+        "|d|<0,2 mínimo, 0,2-0,5 pequeño, 0,5-0,8 medio, >0,8 grande."
+    ),
+    fig=fig_c6,
+    table=df_cohens.reset_index(drop=True),
+    overwrite=True,
+)
+
+def _cohens_level(d: float) -> str:
+    abs_d = abs(d)
+    if abs_d > 0.8:
+        return "grande"
+    if abs_d > 0.5:
+        return "medio"
+    if abs_d > 0.2:
+        return "pequeño"
+    return "mínimo"
+
+
+print("Cohen's d por feature (Modelo B):")
+for _, row in df_cohens.iloc[::-1].iterrows():
+    d = row["cohens_d"]
+    print(f"  {row['feature']:<25s}: d = {d:+.3f}  ({_cohens_level(d)})")

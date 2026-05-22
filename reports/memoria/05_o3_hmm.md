@@ -186,12 +186,12 @@ más baja porque mide la probabilidad conjunta de 5 features, no 2. Ver
 
 | Mes | % migr | Mes | % migr |
 |---|---|---|---|
-| Ene | 8 % | Jul | **2,7 %** |
-| Feb | 8 % | Ago | 14 % |
-| Mar | 14 % | Sep | 29 % |
-| Abr | **29 %** | Oct | 29 % |
-| May | 18 % | Nov | 16 % |
-| Jun | **3,3 %** | Dic | 9 % |
+| Ene | 2,8 % | Jul | **3,3 %** |
+| Feb | 5,5 % | Ago | 12,3 % |
+| Mar | 11,0 % | Sep | **28,8 %** |
+| Abr | **29,0 %** | Oct | **29,0 %** |
+| May | 15,3 % | Nov | 18,0 % |
+| Jun | **2,7 %** | Dic | 11,5 % |
 
 El valle en jun-jul (cría en colonias del norte de Europa) y los picos
 de abr y sep-oct (paso migratorio) coinciden con la fenología conocida
@@ -322,6 +322,17 @@ información esencial.
   diagonal y=x está poblada uniformemente, lo que confirma que A y B
   coinciden en la mayoría de las aves; los puntos alejados son aves
   donde el contexto cambia la inferencia.
+- **C6** (`o3_fig07_feature-influence-cohens-d`): Cohen's d de cada
+  feature del Modelo B comparando migración vs estacionario. Resultado
+  cuantitativo (replicando el análisis de v2): `step_length_km` d=+0,99
+  (efecto grande, mayor en migración), `cos_turning_angle` d=+0,71
+  (efecto medio, mayor en migración → vuelo más rectilíneo), `veg_high`
+  d=−0,46 y `daylight_hours` d=−0,41 (efectos pequeños, mayores en
+  estacionario → bosque + días largos = cría veraniega), `veg_low`
+  d=−0,12 (mínimo). Confirma cuantitativamente que el step domina la
+  discriminación y que el contexto aporta refinamiento marginal — la
+  evidencia métrica detrás del 93 % de acuerdo A-B y de la decisión
+  metodológica §9.2 (sin StandardScaler).
 
 ### Validación
 
