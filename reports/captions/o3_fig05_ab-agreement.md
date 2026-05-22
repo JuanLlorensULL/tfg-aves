@@ -7,4 +7,4 @@
 
 ## Caption (memoria)
 
-Acuerdo entre el Modelo A (cinemático) y el Modelo B (cinemático + contexto). Izquierda: matriz de confusión 2×2 sobre todas las (ave, día) válidas. Derecha: histograma de log_displacement_km para los desacuerdos, separando 'A=estac/B=migr' y 'A=migr/B=estac'. Los desacuerdos típicamente se concentran en valores intermedios de desplazamiento (zona ambigua donde el contexto en B mueve la inferencia).
+Acuerdo entre el Modelo A (cinemático) y el Modelo B (cinemático + contexto). Izquierda: matriz de confusión 2×2 sobre todas las (ave, día) válidas. Derecha: histograma de step_length_km (escala logarítmica, km) para los desacuerdos, separando 'A=estac/B=migr' y 'A=migr/B=estac'. Los desacuerdos típicamente se concentran en valores intermedios de desplazamiento (zona ambigua donde el contexto en B mueve la inferencia).

@@ -86,7 +86,7 @@ def test_build_o3_esquema_features_releen(tmp_path: Path) -> None:
     feats = pd.read_parquet(result.features_path)
     expected = {
         "bird_id", "date_utc", "lat", "lon",
-        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "cos_turning_angle", "daylight_hours",
         "veg_low", "veg_high",
         "state_a", "state_b",
         "posterior_a_estacionario", "posterior_a_migracion",

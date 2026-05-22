@@ -70,6 +70,11 @@ def compute_observation_features(
     logarítmica). La bimodalidad estacionario/migración debe ser visible en
     escala original para que el HMM capture los dos regímenes sin necesidad de
     estandarización.
+
+    Columna de giro: ``cos_turning_angle`` = cos(ángulo de giro) ∈ [-1, 1].
+    Vuelo recto → cos ≈ +1; giro de 180° → cos ≈ -1. Más suave y acotada
+    que el ángulo absoluto, lo que mejora el comportamiento de la emisión
+    gaussiana del HMM (convención HMM5 de v2).
     """
     df = df_daily.sort_values(["bird_id", "date_utc"]).reset_index(drop=True).copy()
     df["_date_dt"] = pd.to_datetime(df["date_utc"])
@@ -108,10 +113,10 @@ def compute_observation_features(
     bearing_in = bearing_rad(lat_prev, lon_prev, lat_t, lon_t)
     bearing_out = bearing_rad(lat_t, lon_t, lat_next, lon_next)
     turning = np.asarray(bearing_out) - np.asarray(bearing_in)
-    # Normalizar a [-π, π] y luego tomar valor absoluto → [0, π].
+    # Normalizar a [-π, π] y aplicar coseno → [-1, 1] (vuelo recto = +1).
     turning = (turning + np.pi) % (2.0 * np.pi) - np.pi
-    abs_turning = np.full(len(df), np.nan)
-    abs_turning[triplet_mask] = np.abs(turning[triplet_mask])
+    cos_turning_full = np.full(len(df), np.nan)
+    cos_turning_full[triplet_mask] = np.cos(turning[triplet_mask])
 
     # Daylight hours sólo para días con lat válida.
     dl = np.full(len(df), np.nan)
@@ -120,7 +125,7 @@ def compute_observation_features(
 
     out = df.copy()
     out["step_length_km"] = disp_km
-    out["abs_turning_angle_rad"] = abs_turning
+    out["cos_turning_angle"] = cos_turning_full
     out["daylight_hours"] = dl
     out["is_observation_valid"] = triplet_mask.to_numpy()
 
@@ -138,12 +143,12 @@ def compute_observation_features(
 
     # Limpieza: invalida features para filas no-triplete.
     not_valid = ~out["is_observation_valid"]
-    for col in ["step_length_km", "abs_turning_angle_rad"]:
+    for col in ["step_length_km", "cos_turning_angle"]:
         out.loc[not_valid, col] = np.nan
 
     cols_out = [
         "bird_id", "date_utc", "lat", "lon",
-        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "cos_turning_angle", "daylight_hours",
         "veg_low", "veg_high", "is_observation_valid",
     ]
     if "source_event_id" in out.columns:

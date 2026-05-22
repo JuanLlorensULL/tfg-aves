@@ -21,10 +21,10 @@ def _synthetic_features_for_eval(n_birds: int = 5, days: int = 40) -> pd.DataFra
             step_km = abs(
                 rng.normal(3.0 if state == 0 else 150.0, 1.5 if state == 0 else 50.0)
             )
-            turning = (
-                rng.uniform(np.pi / 2, np.pi)
+            cos_turn = (
+                rng.uniform(-1.0, 0.0)   # giro errático → cos ∈ [-1, 0]
                 if state == 0
-                else rng.uniform(0, np.pi / 4)
+                else rng.uniform(0.7, 1.0)  # vuelo recto → cos ∈ [0.7, 1]
             )
             rows.append({
                 "bird_id": f"BIRD{b:02d}",
@@ -32,7 +32,7 @@ def _synthetic_features_for_eval(n_birds: int = 5, days: int = 40) -> pd.DataFra
                 "lat": 50.0,
                 "lon": 0.0,
                 "step_length_km": step_km,
-                "abs_turning_angle_rad": turning,
+                "cos_turning_angle": cos_turn,
                 "is_observation_valid": True,
             })
     return pd.DataFrame(rows)
@@ -43,7 +43,7 @@ def test_log_likelihood_per_obs_finito() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=df["bird_id"].unique().tolist(),
-        feature_cols=["step_length_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "cos_turning_angle"],
     )
     model, _, _ = fit_hmm_with_restarts(X, lengths, n_restarts=2, random_state=0)
     ll = log_likelihood_per_obs(model, X, lengths)

@@ -31,9 +31,9 @@ class BuildO3Result:
     pct_agreement_ab: float
 
 
-FEATURE_COLS_A = ["step_length_km", "abs_turning_angle_rad"]
+FEATURE_COLS_A = ["step_length_km", "cos_turning_angle"]
 FEATURE_COLS_B = [
-    "step_length_km", "abs_turning_angle_rad",
+    "step_length_km", "cos_turning_angle",
     "veg_low", "veg_high", "daylight_hours",
 ]
 
@@ -96,7 +96,7 @@ def build_o3(
     # Reordenar columnas según esquema del spec (sección 6.1).
     cols_final = [
         "bird_id", "date_utc", "lat", "lon",
-        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "cos_turning_angle", "daylight_hours",
         "veg_low", "veg_high",
         "state_a", "state_b",
         "posterior_a_estacionario", "posterior_a_migracion",

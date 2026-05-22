@@ -30,7 +30,7 @@ def test_bearing_rad_norte() -> None:
 
 
 def test_turning_angle_linea_recta() -> None:
-    """Tres puntos en línea recta hacia el norte → turning_angle ≈ 0."""
+    """Tres puntos en línea recta hacia el norte → cos(turning_angle) ≈ 1."""
     df = _make_daily(
         [
             {
@@ -60,11 +60,11 @@ def test_turning_angle_linea_recta() -> None:
     # El día central (índice 1) es el que tiene turning angle definido.
     valid = out[out["is_observation_valid"]]
     assert len(valid) == 1
-    assert abs(valid.iloc[0]["abs_turning_angle_rad"]) < 1e-3
+    assert valid.iloc[0]["cos_turning_angle"] == pytest.approx(1.0, abs=1e-3)
 
 
 def test_turning_angle_giro_180() -> None:
-    """Norte-norte-sur: turning_angle ≈ π."""
+    """Norte-norte-sur: cos(turning_angle) ≈ -1."""
     df = _make_daily(
         [
             {
@@ -93,7 +93,7 @@ def test_turning_angle_giro_180() -> None:
     out = compute_observation_features(df, df_raw=None)
     valid = out[out["is_observation_valid"]]
     assert len(valid) == 1
-    assert valid.iloc[0]["abs_turning_angle_rad"] == pytest.approx(np.pi, abs=1e-3)
+    assert valid.iloc[0]["cos_turning_angle"] == pytest.approx(-1.0, abs=1e-3)
 
 
 def test_daylight_equinoccio_y_solsticio() -> None:

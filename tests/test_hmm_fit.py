@@ -32,15 +32,15 @@ def _synthetic_features_df(
             state = 0 if d < n_days // 2 else 1
             if state == 0:
                 step_km = abs(rng.normal(3.0, 1.5))
-                turning = rng.uniform(np.pi / 2, np.pi)
+                cos_turn = rng.uniform(-1.0, 0.0)   # giro errático → cos ∈ [-1, 0]
             else:
                 step_km = abs(rng.normal(150.0, 50.0))
-                turning = rng.uniform(0.0, np.pi / 4)
+                cos_turn = rng.uniform(0.7, 1.0)    # vuelo recto → cos ∈ [0.7, 1]
             rows.append({
                 "bird_id": bird_id,
                 "date_utc": dt.date(2010, 6, 1) + dt.timedelta(days=d),
                 "step_length_km": step_km,
-                "abs_turning_angle_rad": turning,
+                "cos_turning_angle": cos_turn,
                 "is_observation_valid": True,
             })
     return pd.DataFrame(rows)
@@ -67,7 +67,7 @@ def test_build_sequences_concatena_aves() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=["BIRD00", "BIRD01", "BIRD02"],
-        feature_cols=["step_length_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "cos_turning_angle"],
     )
     assert X.shape == (75, 2)
     assert lengths == [20, 30, 25]
@@ -79,7 +79,7 @@ def test_fit_converge_sobre_datos_sinteticos() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=[f"BIRD{i:02d}" for i in range(5)],
-        feature_cols=["step_length_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "cos_turning_angle"],
     )
     model, best_ll, all_lls = fit_hmm_with_restarts(
         X, lengths, n_components=2, n_restarts=3, random_state=0,
@@ -96,7 +96,7 @@ def test_multiple_restarts_no_decrecen_ll() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=[f"BIRD{i:02d}" for i in range(3)],
-        feature_cols=["step_length_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "cos_turning_angle"],
     )
     _, ll_1, _ = fit_hmm_with_restarts(X, lengths, n_restarts=1, random_state=42)
     _, ll_3, _ = fit_hmm_with_restarts(X, lengths, n_restarts=3, random_state=42)
@@ -109,10 +109,10 @@ def test_relabel_states_pone_estacionario_en_0() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=[f"BIRD{i:02d}" for i in range(5)],
-        feature_cols=["step_length_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "cos_turning_angle"],
     )
     model, _, _ = fit_hmm_with_restarts(X, lengths, n_restarts=2, random_state=0)
-    label_map = relabel_states(model, ["step_length_km", "abs_turning_angle_rad"])
+    label_map = relabel_states(model, ["step_length_km", "cos_turning_angle"])
     # Debe haber exactamente 2 entradas, valores son las etiquetas.
     assert set(label_map.values()) == {"estacionario", "migración"}
     # El estado con menor media en km crudos → estacionario.

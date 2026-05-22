@@ -61,7 +61,7 @@ print(
 
 # %%
 train_ids, _ = stratified_holdout_split(df_features, holdout_frac=0.20, random_state=0)
-FEATURE_COLS_A = ["log_displacement_km", "abs_turning_angle_rad"]
+FEATURE_COLS_A = ["step_length_km", "abs_turning_angle_rad"]
 X_train, lengths_train = build_sequences(df_features, train_ids, FEATURE_COLS_A)
 print(f"Train: {len(X_train)} observaciones, {len(lengths_train)} secuencias")
 
@@ -90,7 +90,7 @@ def aic_bic(
 # %%
 rows = []
 for n in [2, 3, 4]:
-    model, scaler, ll, _ = fit_hmm_with_restarts(
+    model, ll, _ = fit_hmm_with_restarts(
         X_train,
         lengths_train,
         n_components=n,
@@ -122,7 +122,9 @@ save_artifact(
     decision="n_components fijado en 2 (estacionario + migración) respaldado por AIC/BIC sweep",
     caption_es=(
         "AIC y BIC para HMMs Modelo A con n_components ∈ {2, 3, 4} entrenados sobre el "
-        "conjunto de entrenamiento (80 % de aves) con 5 restarts. Se mantiene n=2 por "
+        "conjunto de entrenamiento (80 % de aves) con 5 restarts. La feature step_length_km "
+        "se usa en escala cruda (km), por lo que los valores absolutos de LL/AIC/BIC son "
+        "distintos a los de versiones previas con log-escala. Se mantiene n=2 por "
         "alineación con el proposal del TFG (estacionario vs migración) y por "
         "interpretabilidad biológica de los estados. Si AIC/BIC muestran preferencia "
         "marcada por n>2, los estados adicionales no admiten etiquetado biológico claro "
@@ -159,13 +161,19 @@ print(f"Filas válidas: {len(valid)}")
 
 # %%
 fig_c1, axes = plt.subplots(1, 2, figsize=(12, 4))
-for ax, col, title in [
-    (axes[0], "log_displacement_km", "log(1+desplazamiento km)"),
-    (axes[1], "abs_turning_angle_rad", "|cambio de rumbo| (rad)"),
+for ax, col, title, log_x in [
+    (axes[0], "step_length_km", "step_length (km)", True),
+    (axes[1], "abs_turning_angle_rad", "|cambio de rumbo| (rad)", False),
 ]:
     for state, label, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
         sub = valid[valid["state_a"] == state]
-        ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
+        if log_x:
+            data = sub[col].clip(lower=0.1)
+            ax.hist(data, bins=40, range=(0.1, 2000), alpha=0.5, label=label, color=color)
+        else:
+            ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
+    if log_x:
+        ax.set_xscale("log")
     ax.set_xlabel(title)
     ax.set_ylabel("Frecuencia")
     ax.set_title(title)
@@ -183,13 +191,16 @@ save_artifact(
     ),
     caption_es=(
         "Distribución de las dos features cinemáticas del Modelo A condicionada al estado "
-        "Viterbi (estacionario en azul, migración en rojo). El estado estacionario concentra "
-        "masa en log_displacement_km bajo (ave estática) y abs_turning_angle_rad alto/aleatorio "
+        "Viterbi (estacionario en azul, migración en rojo). La feature step_length_km se muestra "
+        "en escala logarítmica para hacer visible la bimodalidad entre pocos km (estado "
+        "estacionario) y decenas-cientos de km (estado migración). El estado estacionario "
+        "concentra masa en step_length_km bajo y abs_turning_angle_rad alto/aleatorio "
         "(direcciones erráticas, sin rumbo sostenido). El estado migración presenta el patrón "
-        "contrario: log_displacement_km alto y abs_turning_angle_rad bajo (movimiento dirigido). "
+        "contrario: step_length_km alto y abs_turning_angle_rad bajo (movimiento dirigido). "
         "La separación visual confirma que el HMM A descubre estados con semántica biológica clara."
     ),
     fig=fig_c1,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -198,13 +209,19 @@ save_artifact(
 # %%
 fig_c2, axes = plt.subplots(2, 3, figsize=(15, 8))
 cols_b = [
-    "log_displacement_km", "abs_turning_angle_rad", "daylight_hours",
+    "step_length_km", "abs_turning_angle_rad", "daylight_hours",
     "veg_low", "veg_high",
 ]
 for ax, col in zip(axes.flat, cols_b, strict=False):
     for state, label, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
         sub = valid[valid["state_b"] == state]
-        ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
+        if col == "step_length_km":
+            data = sub[col].clip(lower=0.1)
+            ax.hist(data, bins=40, range=(0.1, 2000), alpha=0.5, label=label, color=color)
+        else:
+            ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
+    if col == "step_length_km":
+        ax.set_xscale("log")
     ax.set_xlabel(col)
     ax.set_title(col)
     ax.legend()
@@ -222,13 +239,16 @@ save_artifact(
     ),
     caption_es=(
         "Distribución de las cinco features del Modelo B condicionada al estado Viterbi. "
-        "Las dos primeras (log_displacement_km, abs_turning_angle_rad) replican el patrón "
-        "del Modelo A. Las tres adicionales (daylight_hours, veg_low, veg_high) muestran si "
+        "La primera feature (step_length_km) se muestra en escala logarítmica. "
+        "Las dos primeras (step_length_km, abs_turning_angle_rad) replican el patrón "
+        "del Modelo A: bimodalidad entre pocos km (estacionario) y decenas-cientos km (migración). "
+        "Las tres adicionales (daylight_hours, veg_low, veg_high) muestran si "
         "los estados resultantes están condicionados también por contexto temporal y "
         "ambiental: comparar con C1 permite ver si el contexto refina la separación o si la "
         "domina (alarma de circularidad si los estados se reducen a 'verano vs invierno')."
     ),
     fig=fig_c2,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -295,6 +315,7 @@ save_artifact(
     ),
     fig=fig_c3,
     table=df_coherence,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -321,16 +342,17 @@ axes[0].set_title(f"Matriz de confusión A vs B (acuerdo {ag['pct_agreement']:.1
 disagreements = ag["disagreements"]
 if len(disagreements) > 0:
     axes[1].hist(
-        disagreements[disagreements["state_a"] == 0]["log_displacement_km"],
+        disagreements[disagreements["state_a"] == 0]["step_length_km"].clip(lower=0.1),
         bins=30, alpha=0.5, label="A=estac, B=migr", color="#ff7f0e",
     )
     axes[1].hist(
-        disagreements[disagreements["state_a"] == 1]["log_displacement_km"],
+        disagreements[disagreements["state_a"] == 1]["step_length_km"].clip(lower=0.1),
         bins=30, alpha=0.5, label="A=migr, B=estac", color="#2ca02c",
     )
-    axes[1].set_xlabel("log_displacement_km")
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("step_length_km")
     axes[1].set_ylabel("Frecuencia")
-    axes[1].set_title("Desacuerdos por log_displacement")
+    axes[1].set_title("Desacuerdos por step_length (km)")
     axes[1].legend()
 else:
     axes[1].axis("off")
@@ -348,9 +370,10 @@ save_artifact(
     caption_es=(
         "Acuerdo entre el Modelo A (cinemático) y el Modelo B (cinemático + contexto). "
         "Izquierda: matriz de confusión 2×2 sobre todas las (ave, día) válidas. Derecha: "
-        "histograma de log_displacement_km para los desacuerdos, separando 'A=estac/B=migr' "
-        "y 'A=migr/B=estac'. Los desacuerdos típicamente se concentran en valores intermedios "
-        "de desplazamiento (zona ambigua donde el contexto en B mueve la inferencia)."
+        "histograma de step_length_km (escala logarítmica, km) para los desacuerdos, "
+        "separando 'A=estac/B=migr' y 'A=migr/B=estac'. Los desacuerdos típicamente se "
+        "concentran en valores intermedios de desplazamiento (zona ambigua donde el "
+        "contexto en B mueve la inferencia)."
     ),
     fig=fig_c4,
     table=pd.DataFrame([
@@ -358,6 +381,7 @@ save_artifact(
         {"metric": "pct_b_adds_migration", "value": float(ag["pct_b_adds_migration"])},
         {"metric": "pct_b_adds_stationary", "value": float(ag["pct_b_adds_stationary"])},
     ]),
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -399,4 +423,5 @@ save_artifact(
     ),
     fig=fig_c5,
     table=per_bird.reset_index()[["bird_id", "pct_migration_a", "pct_migration_b"]],
+    overwrite=True,
 )
