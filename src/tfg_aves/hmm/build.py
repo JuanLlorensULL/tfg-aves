@@ -31,9 +31,9 @@ class BuildO3Result:
     pct_agreement_ab: float
 
 
-FEATURE_COLS_A = ["log_displacement_km", "abs_turning_angle_rad"]
+FEATURE_COLS_A = ["step_length_km", "abs_turning_angle_rad"]
 FEATURE_COLS_B = [
-    "log_displacement_km", "abs_turning_angle_rad",
+    "step_length_km", "abs_turning_angle_rad",
     "veg_low", "veg_high", "daylight_hours",
 ]
 
@@ -62,32 +62,32 @@ def build_o3(
 
     # Modelo A — features cinemáticas.
     X_train_a, lengths_train_a = build_sequences(df_features, train_ids, FEATURE_COLS_A)
-    model_a, scaler_a, _, _ = fit_hmm_with_restarts(
+    model_a, _, _ = fit_hmm_with_restarts(
         X_train_a, lengths_train_a, n_restarts=n_restarts, random_state=random_state,
     )
-    label_map_a = relabel_states(model_a, scaler_a, FEATURE_COLS_A)
+    label_map_a = relabel_states(model_a, FEATURE_COLS_A)
 
     # Modelo B — A + contexto.
     X_train_b, lengths_train_b = build_sequences(df_features, train_ids, FEATURE_COLS_B)
-    model_b, scaler_b, _, _ = fit_hmm_with_restarts(
+    model_b, _, _ = fit_hmm_with_restarts(
         X_train_b, lengths_train_b, n_restarts=n_restarts, random_state=random_state,
     )
-    label_map_b = relabel_states(model_b, scaler_b, FEATURE_COLS_B)
+    label_map_b = relabel_states(model_b, FEATURE_COLS_B)
 
     # Viterbi sobre TODAS las aves (train + holdout) — el modelo no las ha visto
     # como inputs de fit en el caso de holdout, pero les puede asignar estado.
     df_features = viterbi_per_bird(
-        model_a, scaler_a, df_features, FEATURE_COLS_A, label_map_a, model_suffix="a",
+        model_a, df_features, FEATURE_COLS_A, label_map_a, model_suffix="a",
     )
     df_features = viterbi_per_bird(
-        model_b, scaler_b, df_features, FEATURE_COLS_B, label_map_b, model_suffix="b",
+        model_b, df_features, FEATURE_COLS_B, label_map_b, model_suffix="b",
     )
 
     # LL en holdout.
     X_hold_a, lengths_hold_a = build_sequences(df_features, holdout_ids, FEATURE_COLS_A)
     X_hold_b, lengths_hold_b = build_sequences(df_features, holdout_ids, FEATURE_COLS_B)
-    ll_a = log_likelihood_per_obs(model_a, scaler_a, X_hold_a, lengths_hold_a)
-    ll_b = log_likelihood_per_obs(model_b, scaler_b, X_hold_b, lengths_hold_b)
+    ll_a = log_likelihood_per_obs(model_a, X_hold_a, lengths_hold_a)
+    ll_b = log_likelihood_per_obs(model_b, X_hold_b, lengths_hold_b)
 
     # Acuerdo A-B sobre todo el dataset válido.
     agreement = ab_agreement(df_features)
@@ -96,7 +96,7 @@ def build_o3(
     # Reordenar columnas según esquema del spec (sección 6.1).
     cols_final = [
         "bird_id", "date_utc", "lat", "lon",
-        "log_displacement_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
         "veg_low", "veg_high",
         "state_a", "state_b",
         "posterior_a_estacionario", "posterior_a_migracion",
@@ -114,7 +114,6 @@ def build_o3(
     joblib.dump(
         {
             "model_a": model_a, "model_b": model_b,
-            "scaler_a": scaler_a, "scaler_b": scaler_b,
             "feature_cols_a": FEATURE_COLS_A, "feature_cols_b": FEATURE_COLS_B,
             "label_map_a": label_map_a, "label_map_b": label_map_b,
             "train_bird_ids": train_ids, "holdout_bird_ids": holdout_ids,

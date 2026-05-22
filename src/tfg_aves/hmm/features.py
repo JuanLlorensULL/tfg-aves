@@ -65,6 +65,11 @@ def compute_observation_features(
     Devuelve DataFrame con las columnas del esquema 6.1 del spec (más
     is_observation_valid; las columnas state/posterior se añadirán en
     Viterbi posterior).
+
+    Columna de desplazamiento: ``step_length_km`` (km crudos, sin transformación
+    logarítmica). La bimodalidad estacionario/migración debe ser visible en
+    escala original para que el HMM capture los dos regímenes sin necesidad de
+    estandarización.
     """
     df = df_daily.sort_values(["bird_id", "date_utc"]).reset_index(drop=True).copy()
     df["_date_dt"] = pd.to_datetime(df["date_utc"])
@@ -98,7 +103,6 @@ def compute_observation_features(
     disp_km = np.full(len(df), np.nan)
     disp_km_arr = haversine_km(lat_t, lon_t, lat_next, lon_next)
     disp_km[triplet_mask] = np.asarray(disp_km_arr)[triplet_mask]
-    log_disp = np.log1p(disp_km)
 
     # Turning angle = bearing(t, t+1) − bearing(t-1, t).
     bearing_in = bearing_rad(lat_prev, lon_prev, lat_t, lon_t)
@@ -115,7 +119,7 @@ def compute_observation_features(
         dl[i] = daylight_hours(float(lat_t[i]), int(df["_day_of_year"].iloc[i]))
 
     out = df.copy()
-    out["log_displacement_km"] = log_disp
+    out["step_length_km"] = disp_km
     out["abs_turning_angle_rad"] = abs_turning
     out["daylight_hours"] = dl
     out["is_observation_valid"] = triplet_mask.to_numpy()
@@ -134,12 +138,12 @@ def compute_observation_features(
 
     # Limpieza: invalida features para filas no-triplete.
     not_valid = ~out["is_observation_valid"]
-    for col in ["log_displacement_km", "abs_turning_angle_rad"]:
+    for col in ["step_length_km", "abs_turning_angle_rad"]:
         out.loc[not_valid, col] = np.nan
 
     cols_out = [
         "bird_id", "date_utc", "lat", "lon",
-        "log_displacement_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
         "veg_low", "veg_high", "is_observation_valid",
     ]
     if "source_event_id" in out.columns:

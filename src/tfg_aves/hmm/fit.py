@@ -6,7 +6,6 @@ import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 
 def stratified_holdout_split(
@@ -71,19 +70,19 @@ def build_sequences(
 
 
 def _initialize_hmm_with_kmeans(
-    X_scaled: np.ndarray, n_components: int, random_state: int
+    X: np.ndarray, n_components: int, random_state: int
 ) -> GaussianHMM:
     """Inicializa GaussianHMM con medias y varianzas de k-means."""
     kmeans = KMeans(n_clusters=n_components, n_init=10, random_state=random_state)
-    labels = kmeans.fit_predict(X_scaled)
+    labels = kmeans.fit_predict(X)
     means_init = kmeans.cluster_centers_
-    covars_init = np.zeros((n_components, X_scaled.shape[1]))
+    covars_init = np.zeros((n_components, X.shape[1]))
     for k in range(n_components):
         mask = labels == k
         if mask.sum() < 2:
-            covars_init[k] = np.ones(X_scaled.shape[1])
+            covars_init[k] = np.ones(X.shape[1])
         else:
-            covars_init[k] = np.var(X_scaled[mask], axis=0) + 1e-6
+            covars_init[k] = np.var(X[mask], axis=0) + 1e-6
 
     hmm = GaussianHMM(
         n_components=n_components,
@@ -108,41 +107,43 @@ def fit_hmm_with_restarts(
     n_components: int = 2,
     n_restarts: int = 10,
     random_state: int = 0,
-) -> tuple[GaussianHMM, StandardScaler, float, list[float]]:
-    """Ajusta StandardScaler en train, ejecuta k-means+EM n_restarts veces,
-    devuelve (mejor modelo, scaler, mejor LL, lista de todas las LL)."""
-    scaler = StandardScaler().fit(X_train)
-    X_scaled = scaler.transform(X_train)
+) -> tuple[GaussianHMM, float, list[float]]:
+    """Ejecuta k-means+EM n_restarts veces sobre X_train sin estandarización.
 
+    Devuelve (mejor modelo, mejor LL, lista de todas las LL).
+    La bimodalidad en km crudos (estacionario ~pocos km, migración ~cientos km)
+    hace innecesaria la estandarización y evita diluir la separación entre estados.
+    """
     best_model: GaussianHMM | None = None
     best_ll = -np.inf
     all_lls: list[float] = []
 
     for restart in range(n_restarts):
         seed = random_state + restart
-        model = _initialize_hmm_with_kmeans(X_scaled, n_components, seed)
-        model.fit(X_scaled, lengths_train)
-        ll = float(model.score(X_scaled, lengths_train))
+        model = _initialize_hmm_with_kmeans(X_train, n_components, seed)
+        model.fit(X_train, lengths_train)
+        ll = float(model.score(X_train, lengths_train))
         all_lls.append(ll)
         if ll > best_ll:
             best_ll = ll
             best_model = model
 
     assert best_model is not None
-    return best_model, scaler, best_ll, all_lls
+    return best_model, best_ll, all_lls
 
 
 def relabel_states(
     hmm: GaussianHMM,
-    scaler: StandardScaler,
     feature_cols: list[str],
 ) -> dict[int, str]:
-    """Re-etiqueta: el estado con menor μ[log_displacement_km] = 'estacionario'."""
-    # Desescala las medias del HMM para razonar en unidades originales.
-    means_raw = scaler.inverse_transform(hmm.means_)
-    log_dist_idx = feature_cols.index("log_displacement_km")
-    log_dist_means = means_raw[:, log_dist_idx]
-    estacionario_idx = int(np.argmin(log_dist_means))
+    """Re-etiqueta: el estado con menor μ[step_length_km] = 'estacionario'.
+
+    Las medias de ``hmm.means_`` ya están en km crudos (sin estandarización),
+    por lo que se usan directamente sin ninguna transformación inversa.
+    """
+    step_idx = feature_cols.index("step_length_km")
+    step_means = hmm.means_[:, step_idx]
+    estacionario_idx = int(np.argmin(step_means))
     return {
         i: ("estacionario" if i == estacionario_idx else "migración")
         for i in range(hmm.n_components)

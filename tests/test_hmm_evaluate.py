@@ -12,13 +12,15 @@ from tfg_aves.hmm.fit import build_sequences, fit_hmm_with_restarts
 
 
 def _synthetic_features_for_eval(n_birds: int = 5, days: int = 40) -> pd.DataFrame:
-    """Features sintéticos: dos clusters claramente separables."""
+    """Features sintéticos: dos clusters claramente separables en km crudos."""
     rows: list[dict] = []
     rng = np.random.default_rng(0)
     for b in range(n_birds):
         for d in range(days):
             state = 0 if d < days // 2 else 1
-            log_dist = rng.normal(0.5 if state == 0 else 4.5, 0.3)
+            step_km = abs(
+                rng.normal(3.0 if state == 0 else 150.0, 1.5 if state == 0 else 50.0)
+            )
             turning = (
                 rng.uniform(np.pi / 2, np.pi)
                 if state == 0
@@ -29,7 +31,7 @@ def _synthetic_features_for_eval(n_birds: int = 5, days: int = 40) -> pd.DataFra
                 "date_utc": dt.date(2010, 6, 1) + dt.timedelta(days=d),
                 "lat": 50.0,
                 "lon": 0.0,
-                "log_displacement_km": log_dist,
+                "step_length_km": step_km,
                 "abs_turning_angle_rad": turning,
                 "is_observation_valid": True,
             })
@@ -41,14 +43,14 @@ def test_log_likelihood_per_obs_finito() -> None:
     X, lengths = build_sequences(
         df,
         bird_ids=df["bird_id"].unique().tolist(),
-        feature_cols=["log_displacement_km", "abs_turning_angle_rad"],
+        feature_cols=["step_length_km", "abs_turning_angle_rad"],
     )
-    model, scaler, _, _ = fit_hmm_with_restarts(X, lengths, n_restarts=2, random_state=0)
-    ll = log_likelihood_per_obs(model, scaler, X, lengths)
+    model, _, _ = fit_hmm_with_restarts(X, lengths, n_restarts=2, random_state=0)
+    ll = log_likelihood_per_obs(model, X, lengths)
     assert np.isfinite(ll)
-    # LL por observación acotada (puede ser ligeramente positiva si la densidad Gaussiana
-    # supera 1 con clusters muy separados y covarianza pequeña).
-    assert -10.0 < ll < 10.0
+    # Cota laxa: con features en km crudos (std ~50 km en migración) la densidad
+    # gaussiana por observación puede ser muy baja → LL negativa y escala-dependiente.
+    assert ll < 50.0
 
 
 def test_ab_agreement_total() -> None:

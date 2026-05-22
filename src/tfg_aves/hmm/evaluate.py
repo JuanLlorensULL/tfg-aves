@@ -4,25 +4,21 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
-from sklearn.preprocessing import StandardScaler
 
 
 def log_likelihood_per_obs(
     hmm: GaussianHMM,
-    scaler: StandardScaler,
     X_raw: np.ndarray,
     lengths: list[int],
 ) -> float:
-    """Aplica scaler a X_raw y devuelve hmm.score(X) / len(X)."""
+    """Devuelve hmm.score(X_raw) / len(X_raw) sin estandarización previa."""
     if len(X_raw) == 0:
         return float("nan")
-    X_scaled = scaler.transform(X_raw)
-    return float(hmm.score(X_scaled, lengths) / len(X_raw))
+    return float(hmm.score(X_raw, lengths) / len(X_raw))
 
 
 def viterbi_per_bird(
     hmm: GaussianHMM,
-    scaler: StandardScaler,
     df_features: pd.DataFrame,
     feature_cols: list[str],
     label_map: dict[int, str],
@@ -50,9 +46,8 @@ def viterbi_per_bird(
         gap = (dates.diff() != pd.Timedelta(days=1)).cumsum()
         for _, segment in valid.groupby(gap.values):
             X_seg = segment[feature_cols].to_numpy(dtype=np.float64)
-            X_scaled = scaler.transform(X_seg)
-            raw_states = hmm.predict(X_scaled)
-            posteriors = hmm.predict_proba(X_scaled)
+            raw_states = hmm.predict(X_seg)
+            posteriors = hmm.predict_proba(X_seg)
             mapped_states = np.array(
                 [0 if s == estac_idx else 1 for s in raw_states], dtype=np.int8
             )

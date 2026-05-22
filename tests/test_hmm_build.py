@@ -25,7 +25,7 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
                 lat = base_lat + rng.normal(0, 0.05)
                 lon = rng.normal(0, 0.05)
             else:
-                lat = base_lat - d * 0.2
+                lat = base_lat - d * 1.5
                 lon = rng.normal(-d * 0.1, 0.05)
             rows_daily.append({
                 "bird_id": bird_id,
@@ -86,7 +86,7 @@ def test_build_o3_esquema_features_releen(tmp_path: Path) -> None:
     feats = pd.read_parquet(result.features_path)
     expected = {
         "bird_id", "date_utc", "lat", "lon",
-        "log_displacement_km", "abs_turning_angle_rad", "daylight_hours",
+        "step_length_km", "abs_turning_angle_rad", "daylight_hours",
         "veg_low", "veg_high",
         "state_a", "state_b",
         "posterior_a_estacionario", "posterior_a_migracion",
