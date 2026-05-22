@@ -128,14 +128,37 @@ def evaluate_global(
     cells: pd.DataFrame,
     label_encoder_y,
 ) -> dict[str, float]:
-    """Métricas globales: top1, top3, log_loss, dist_median_km."""
+    """Métricas globales: top1, top3, log_loss, dist_median_km.
+
+    Las etiquetas verdaderas se obtienen directamente de ``meta["cell_id_t_next"]``
+    para evitar inconsistencias de codificación cuando el conjunto de evaluación
+    contiene celdas no vistas en entrenamiento. La probabilidad se expande al
+    espacio completo de clases observadas (train + eval), asignando 0 a las
+    clases ausentes en el modelo.
+    """
     preds = predict_with_meta(
         model, X, meta, cells=cells, label_encoder_y=label_encoder_y,
     )
-    proba = preds.attrs["_proba"]
-    classes = preds.attrs["_classes"]
-    y_str = label_encoder_y.inverse_transform(y)
-    ll = log_loss(y_str, proba, labels=list(classes))
+    proba_model = preds.attrs["_proba"]
+    classes_model = preds.attrs["_classes"]  # strings, sólo las vistas en train
+
+    # Verdaderas etiquetas de clase (strings) tomadas directamente del meta
+    y_str = np.asarray(meta["cell_id_t_next"].astype(str))
+
+    # Espacio completo de clases: unión de las del modelo y las del eval set
+    all_classes_set = sorted(set(classes_model) | set(y_str))
+    all_classes = np.array(all_classes_set)
+
+    if len(all_classes) > len(classes_model):
+        # Expandir la matriz de probabilidades: columnas de clases ausentes = 0
+        n = len(proba_model)
+        proba_full = np.zeros((n, len(all_classes)), dtype=np.float64)
+        model_col_idx = np.where(np.isin(all_classes, classes_model))[0]
+        proba_full[:, model_col_idx] = proba_model
+    else:
+        proba_full = proba_model
+
+    ll = log_loss(y_str, proba_full, labels=list(all_classes))
     return {
         "top1": top_k_accuracy(preds, k=1),
         "top3": top_k_accuracy(preds, k=3),
