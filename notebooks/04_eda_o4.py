@@ -71,7 +71,8 @@ metrics = pd.read_parquet(result.metrics_path)
 preds = pd.read_parquet(result.predictions_path)
 print(f"metrics: {metrics.shape}")
 print(f"predictions: {preds.shape}")
-metrics.sort_values(["split", "modelo", "modo"])
+metrics = metrics.sort_values(["split", "modelo", "modo"]).reset_index(drop=True)
+metrics
 
 # %% [markdown]
 # ## D1 — Configuración fija de hiperparámetros (§8.6)
