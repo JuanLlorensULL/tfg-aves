@@ -13,21 +13,17 @@
   Implementación a arrancar cuando L1 (features de viento) cierre, para
   evitar conflictos en `src/tfg_aves/ml/`.
 
-> **⚠ ACTUALIZACIÓN 2026-05-23 — rework causal de O4.** Las "8 features
-> de O4 base" que este spec cita (`step_length_km`, `cos_turning_angle`,
-> `state_b`, `posterior_b_migracion` + lat/lon/sin_doy/cos_doy) tenían
-> *data leakage*: las cinemáticas eran salientes (`t → t+1`) y el estado
-> HMM se decodificaba con suavizado, codificando el target. Se corrigió
-> con el rework causal (ver `2026-05-23-o4-rework-causal-design.md`,
-> §12). **Antes de implementar L2:** sustituir el feature set base por
-> las **10 features causales** (R6 del rework): `lat, lon, sin_doy,
-> cos_doy, step_in_km, sin_bearing_in, cos_bearing_in, cos_turning_in,
-> state_b_causal, posterior_b_migracion_causal` (+ `bird_id` en
-> personalizado). El desglose por estado HMM usa `state_b_causal`. El
-> baseline L2-v0 debe re-derivarse del **O4 causal**, no del contaminado
-> `v0.4-o4-completo`. Las menciones a las features antiguas en este spec
-> deben leerse con esta sustitución. Registro interno: NO se traslada a
-> la memoria.
+> **✅ REFRESCADO 2026-05-24 — alineado con el rework causal de O4
+> (`v0.4.2-o4-rework-causal`).** Este spec se ha actualizado en su cuerpo
+> al pipeline causal: feature set = las **10 features causales** (`lat,
+> lon, sin_doy, cos_doy, step_in_km, sin_bearing_in, cos_bearing_in,
+> cos_turning_in, state_b_causal, posterior_b_migracion_causal` +
+> `bird_id` en personalizado), cinemática **entrante** (sin fuga, con
+> inercia real) y estado de **HMM causal filtrado**. **L2-v0** (baseline)
+> = el O4 monolítico **causal**, no el contaminado. El ensamblaje de
+> features cambió (ver §6.2): el estado HMM ya no sale de
+> `build_feature_matrix`, se adjunta tras el split vía `fit_causal_hmm` +
+> `decode_causal_states`. El desglose por régimen usa `state_b_causal`.
 
 ## 1. Resumen
 
@@ -35,7 +31,7 @@ L2 descompone el problema "predecir `cell_{t+1}`" en dos preguntas
 secuenciales:
 
 1. **¿El ave se mueve hoy?** — clasificador binario `clf_move` sobre
-   las 8 features de O4 base. Predice `p_move ∈ [0, 1]`.
+   las 10 features causales de O4. Predice `p_move ∈ [0, 1]`.
 2. **Si se mueve, ¿adónde?** — clasificador multiclase `clf_dest` sobre
    las 849 celdas activas, entrenado **sólo** sobre filas de train donde
    verdaderamente hubo movimiento. Predice `p_2B(cell | x)`.
@@ -64,17 +60,18 @@ mediante dos reglas evaluadas en paralelo:
   qué log-loss no es métrica honesta para hard).
 
 L2 **no toca features, ni target, ni split, ni hiperparámetros, ni
-familias** respecto a O4 base. La única variable manipulada es la
-**estructura del decisor**. Esta restricción mantiene la ablación
-limpia y permite atribuir cualquier mejora exclusivamente a la
-arquitectura de dos etapas.
+familias** respecto a O4 **causal** (las 10 features causales). La única
+variable manipulada es la **estructura del decisor**. Esta restricción
+mantiene la ablación limpia y permite atribuir cualquier mejora
+exclusivamente a la arquitectura de dos etapas.
 
 Tras la implementación, el sistema produce dos conjuntos de artefactos
 comparables sobre **el mismo test split temporal por ave** que O4 base:
 
-- **L2-v0** (sin cambios): los resultados ya producidos por el cierre
-  de O4 (tag `v0.4-o4-completo`, commit `4ed7401`). Sirven como
-  baseline contra el que se compara la mejora.
+- **L2-v0** (baseline): los resultados del O4 monolítico **causal**
+  (tag `v0.4.2-o4-rework-causal`), regenerados con `build_o4()`. Sirven
+  como baseline contra el que se compara la mejora. (NO los del O4 con
+  fuga `v0.4-o4-completo`.)
 - **L2-v1**: el pipeline en dos etapas. Genera nuevos modelos `.pkl`,
   `predictions_test_{soft,hard}.parquet` y `metrics.parquet` bajo
   `data/processed/o4/l2_v1/`.
@@ -92,10 +89,10 @@ TFG sólo si los cierres individuales lo justifican.
 
 ## 2. Vocabulario
 
-- **L2-v0** — estado base sin dos etapas. Equivale al cierre actual de
-  O4 (tag `v0.4-o4-completo`). No requiere implementación, sólo
-  preservación de los artefactos existentes y referenciación explícita
-  como punto de comparación.
+- **L2-v0** — estado base sin dos etapas. Equivale al O4 monolítico
+  **causal** (tag `v0.4.2-o4-rework-causal`). No requiere implementación,
+  sólo regeneración de sus artefactos con `build_o4()` y referenciación
+  explícita como punto de comparación.
 - **L2-v1** — pipeline O4 base reorganizado en dos etapas
   (`clf_move` + `clf_dest`). Es lo que se implementa en este spec.
 - **`clf_move`** — clasificador binario poblacional de etapa 1.
@@ -121,31 +118,35 @@ TFG sólo si los cierres individuales lo justifican.
   modelos `.pkl` (RF/XGB/LGBM × personalizado/poblacional),
   `predictions_test.parquet` (32 296 filas) y `metrics.parquet` (14
   filas). LightGBM descartado por divergencia; L2 no lo reabre.
-- **`predictions_test.parquet` de O4 base** contiene ya las columnas
-  `cell_id_t` (celda del día t) y `cell_id_target` (celda del día t+1).
-  El target binario `y_move` se deriva trivialmente de ambas sin
+- **Matriz de features causal** (vía `build_feature_matrix` +
+  `compute_causal_kinematics`) contiene `cell_id_t` (celda del día t) y
+  `cell_id_t_next` (celda del día t+1, el target). El target binario
+  `y_move = 𝟙{cell_id_t_next ≠ cell_id_t}` se deriva de ambas sin
   recálculo geométrico.
-- **Features de O3** en `data/processed/o3/features.parquet` (24 444 ×
-  17): contiene las 8 features base de O4 (`lat`, `lon`, `sin_doy`,
-  `cos_doy`, `step_length_km`, `cos_turning_angle`, `state_b`,
-  `posterior_b_migracion`). NO se añaden features nuevas en L2.
+- **Feature set causal (10)**: `lat`, `lon`, `sin_doy`, `cos_doy`,
+  `step_in_km`, `sin_bearing_in`, `cos_bearing_in`, `cos_turning_in`
+  (cinemática **entrante**, vía `compute_causal_kinematics`) +
+  `state_b_causal`, `posterior_b_migracion_causal` (HMM causal filtrado,
+  adjuntados tras el split — ver §6.2). NO se añaden features nuevas en
+  L2 respecto al O4 causal.
 
-**Frecuencias relevantes del dataset (calculadas sobre O4 base):**
+**Frecuencias relevantes del dataset (calculadas sobre O4 causal):**
 
-- Persistencia trivial top-1 = **0,773** sobre test → ~77 % de filas
-  test tienen `y_move = 0`. Frecuencia base `p(y_move = 1) ≈ 0,23-0,27`
-  (variable según split; calcularla exactamente sobre train en
-  implementación es trivial).
+- Persistencia trivial top-1 = **0,775** sobre test → ~88 % de las filas
+  test son estacionarias (`y_move = 0`); ~12 % migración por estado HMM.
+  Los **días de movimiento real** (`cell_id_t_next ≠ cell_id_t`) son
+  **22,5 %** del test (908/4037). Frecuencia base `p(y_move = 1) ≈ 0,22`.
 - Tamaño esperado del set de entrenamiento de `clf_dest`:
-  `n_train_o4 × p(y_move=1) ≈ 22 600 × 0,27 ≈ 6 100 filas`. Compárese
-  con las 22 600 que ve `clf_move`. Esta reducción motiva el
-  monitorizar gap train-test específicamente sobre `clf_dest` (R2 en
-  §7).
+  `n_train × p(y_move=1) ≈ 14 532 × 0,22 ≈ 3 200 filas`. Compárese con
+  las 14 532 que ve `clf_move`. Esta reducción (aún mayor que la
+  estimada antes) refuerza el monitorizar el gap train-test
+  específicamente sobre `clf_dest` (R2 en §7).
 
 **Restricciones heredadas de O4 base (no se replantean en L2):**
 
-- **Features**: las 8 de O4 base, exactamente. No se reabre F7 (no se
-  re-incluyen `veg_low/high`, `daylight_hours`).
+- **Features**: las 10 causales de O4, exactamente. No se reabre F7
+  (`veg_low/high`, `daylight_hours` entran sólo en la emisión del HMM
+  causal, no como features supervisadas).
 - **Target multiclase de etapa 2B**: las 849 celdas activas del grid
   0,5° de O2, codificadas con el mismo `LabelEncoder` que O4 base.
 - **Split temporal 80/10/20 por ave**, gap-aware (cuatro barreras
@@ -181,28 +182,29 @@ arquitecturas más profundas (e.g. tres etapas: estacionario / migración
 corta / migración larga) por dos razones:
 
 - La heterogeneidad cinemática del dataset ya está capturada por
-  `state_b` y `posterior_b_migracion` como features, no requiere
-  decisiones jerárquicas adicionales.
+  `state_b_causal` y `posterior_b_migracion_causal` como features, no
+  requiere decisiones jerárquicas adicionales.
 - Cualquier estratificación adicional reduciría aún más el dataset de
   la etapa más profunda, agravando R2 (sobreajuste por dataset
   pequeño).
 
-### F2 — Feature set idéntico a O4 base, sin excepción
+### F2 — Feature set causal idéntico a O4, sin excepción
 
-Las 8 features fijadas en F6 del spec de O4 base son las únicas que
-ven `clf_move` y `clf_dest`:
+Las 10 features causales (R6 del rework) son las únicas que ven
+`clf_move` y `clf_dest`:
 
 ```
 lat, lon, sin_doy, cos_doy,
-step_length_km, cos_turning_angle,
-state_b, posterior_b_migracion
+step_in_km, sin_bearing_in, cos_bearing_in, cos_turning_in,
+state_b_causal, posterior_b_migracion_causal
 (+ bird_id en modo personalizado de clf_dest)
 ```
 
-L2 ataca exclusivamente la causa **D1** y mantiene constante todo lo
-demás. Las features de viento de L1, si L1 cierra antes de L2, NO se
-incorporan a L2-v1; cualquier combinación L1+L2 se trataría como
-experimento separado fuera del scope de este spec (ver §12).
+La cinemática es **entrante** (`t-1 → t`, sin fuga, con la inercia real
+del movimiento) y el estado conductual viene del **HMM causal** por
+filtrado forward-only. L2 ataca exclusivamente la causa **D1** y
+mantiene constante todo lo demás. Las features de viento de L1 (aún
+pendiente de su propio rework causal) NO se incorporan a L2-v1.
 
 ### F3 — Etapa 1 siempre poblacional
 
@@ -293,10 +295,10 @@ test set.
 
 ### F10 — Target `y_move` derivado de columnas existentes
 
-`y_move_t = 𝟙{cell_id_target_t ≠ cell_id_t}`. Ambas columnas ya
-existen en `predictions_test.parquet` de O4 base y en sus análogos
-internos de train/val (calculados durante `build_o4`). La derivación
-es trivial y no introduce dependencias de cálculo nuevas.
+`y_move_t = 𝟙{cell_id_t_next ≠ cell_id_t}`. Ambas columnas ya existen
+en la matriz de features causal (`build_feature_matrix`) para
+train/val/test. La derivación es trivial y no introduce dependencias de
+cálculo nuevas. No tiene fuga: definen la etiqueta, no son features.
 
 ## 5. Cobertura de causas raíz
 
@@ -331,8 +333,11 @@ src/tfg_aves/ml/
 **`two_stage.py`** (funciones puras):
 
 ```python
-def derive_y_move(predictions_df: pd.DataFrame) -> pd.Series:
-    """Devuelve una Series booleana y_move = (cell_id_target != cell_id_t)."""
+def derive_y_move(matrix: pd.DataFrame) -> pd.Series:
+    """Devuelve una Series booleana y_move = (cell_id_t_next != cell_id_t).
+
+    No tiene fuga: ambas columnas definen la etiqueta (el target), no son
+    features de entrada."""
 
 def combine_soft(
     p_move: np.ndarray,           # (n_rows,)
@@ -388,15 +393,26 @@ def sweep_tau(
 def build_o4_l2(
     features_path: Path = FEATURES_O3_PARQUET,
     cells_path: Path = CELLS_PARQUET,
-    o4_predictions_path: Path = PREDICTIONS_O4_PARQUET,
     out_dir: Path = O4_OUT_DIR / "l2_v1",
+    seed: int = 0,
 ) -> BuildO4L2Result:
-    """Orquesta el pipeline L2-v1.
+    """Orquesta el pipeline L2-v1 sobre el feature set CAUSAL.
+
+    Ensamblaje de features (idéntico a build_o4, NO basta build_feature_matrix):
+      0a. kin = compute_causal_kinematics(features_o3)
+      0b. matriz por modo = build_feature_matrix(kin, cells, include_bird_id)
+      0c. split_temporal_per_bird → train/val/test
+      0d. cutoff_by_bird desde el train; hmm_model, labels =
+          fit_causal_hmm(kin, cutoff_by_bird, seed); states =
+          decode_causal_states(...); adjuntar state_b_causal y
+          posterior_b_migracion_causal a train/val/test (merge por
+          bird_id, date_utc). Reutiliza la maquinaria de tfg_aves.ml.build.
+      0e. y_move = derive_y_move(matriz) sobre cada split.
 
     Por cada familia f ∈ {RF, XGB}:
-      1. Entrena base_move = train_f(X_train, y_train_move).
-      2. Envuelve clf_move = CalibratedClassifierCV(base_move,
-         method='isotonic', cv='prefit').fit(X_val, y_val_move).
+      1. Entrena base_move = train_f(X_train[10 feats], y_train_move).
+      2. Envuelve clf_move = CalibratedClassifierCV(FrozenEstimator(base_move),
+         method='isotonic').fit(X_val, y_val_move).
       3. Filtra X_train_moves, y_train_dest = subset(X_train, y_train,
          y_train_move == 1) y entrena clf_dest_pers y clf_dest_pob.
       4. Aplica combine_soft y combine_hard (con sweep_tau sobre val
@@ -404,21 +420,29 @@ def build_o4_l2(
       5. Persiste model_clf_move_f.pkl y dos model_clf_dest_f_*.pkl.
 
     Tras procesar ambas familias, genera predictions_test_soft.parquet,
-    predictions_test_hard.parquet, tau_sweep.parquet y metrics.parquet."""
+    predictions_test_hard.parquet, tau_sweep.parquet y metrics.parquet.
+
+    NOTA: el baseline L2-v0 se obtiene de build_o4() (O4 causal), no se
+    recalcula aquí; se referencia para la comparativa."""
 ```
 
 ### 6.2 Cambios en módulos existentes
 
 **Mínimos.** L2 reutiliza sin modificación:
 
-- `src/tfg_aves/ml/features.py`: `build_feature_matrix`,
-  `split_temporal_per_bird`.
+- `src/tfg_aves/ml/features.py`: `compute_causal_kinematics`,
+  `build_feature_matrix`, `split_temporal_per_bird`,
+  `FEATURES_KINEMATIC`, `FEATURES_HMM`.
+- `src/tfg_aves/ml/hmm_causal.py`: `fit_causal_hmm`,
+  `decode_causal_states` (para adjuntar el estado HMM causal tras el
+  split, igual que `build_o4`). **Imprescindible:** `build_feature_matrix`
+  por sí solo NO devuelve `state_b_causal`/`posterior_b_migracion_causal`.
 - `src/tfg_aves/ml/train.py`: `train_random_forest`, `train_xgboost`
   (se reusan tal cual; la diferencia binario vs multiclase la maneja
   scikit-learn / XGBoost a partir del shape del target).
 - `src/tfg_aves/ml/evaluate.py`: `top_k_accuracy`, `dist_median_km`,
-  `evaluate_global`, `compute_persistence_baseline`,
-  `compute_markov_baseline`.
+  `evaluate_global`, `evaluate_by_state` (usa `state_b_causal`),
+  `compute_persistence_baseline`, `compute_markov_baseline`.
 
 **Único cambio menor en `evaluate.py`:** añadir un helper
 `evaluate_moves_only(predictions_df, y_move_true) -> dict[str, float]`
@@ -462,7 +486,7 @@ están instaladas por O4 base.
 |---|---|---|
 | R1 | Cascada de errores: `clf_move` se equivoca diciendo `p_move ≈ 0` cuando verdaderamente hubo movimiento, etapa 2B contribuye poco y se predice mal el destino real. | Regla soft (vs hard). La mezcla probabilística amortigua errores moderados de etapa 1. Diagnóstico empírico en C5. |
 | R2 | Sobreajuste de `clf_dest` por dataset reducido (~6 100 filas train vs ~22 600 en O4 base). | Artefacto C4 mide gap train-test específicamente sobre etapa 2B. Si gap > 0,3 → flag en la memoria como limitación honesta. |
-| R3 | Doble dependencia de O3: `state_b` y `posterior_b_migracion` son features de ambas etapas, y la métrica clave se desglosa por `state_b`. Si O3 fuera defectuoso, contamina dos veces. | Aceptable: O3 ya está validado triplemente (rework v0.3.1, tres tests independientes documentados en `reports/memoria/05_o3_hmm.md`). |
+| R3 | Doble dependencia de O3: `state_b_causal` y `posterior_b_migracion_causal` son features de ambas etapas, y la métrica clave se desglosa por `state_b_causal`. Si O3 fuera defectuoso, contamina dos veces. | Aceptable: O3 validado triplemente (rework v0.3.1) y el HMM causal reproduce sus parámetros (medias 6,5/160,8 km, patrón estacional coherente). |
 | R4 | Calibración isotonic puede degradar discriminación si la familia ya estaba bien calibrada. | Bajo riesgo: RF/XGB nunca lo están en datasets de este tamaño. Si AUC val baja > 0,02 respecto a raw, registrar en D1 y discutir en memoria. |
 | R5 | Doble computación de `predict_proba` sobre 849 clases en inferencia (etapa 2B se aplica a TODAS las filas test, no sólo a las que sí se mueven). Coste de tiempo. | Aceptable: O4 base tarda ~5 min en evaluar; L2-v1 ~10-12 min estimados. No es bloqueante. |
 | R6 | F7 sigue cerrado: `veg_*/daylight` NO se reincorporan en L2. | Decisión consciente; documentar en spec (este §) y memoria. Reabrirlo mezclaría contribuciones. |
@@ -521,18 +545,20 @@ deben pasar; ruff limpio.
 | **L2-v1-C2** | **figura + tabla** | **Comparativa por estado HMM** (estacionario vs migración). Núcleo del éxito de L2: aquí debe aparecer el lift en top-1 migración. |
 | L2-v1-C3 | tabla | Métricas sobre subset "moves only" (subset test con verdad `y_move = 1`). Aísla la calidad de `clf_dest`. |
 | L2-v1-C4 | figura | Gap train-test por modelo de L2-v1, comparado con O4 base. Detecta sobreajuste por dataset reducido en etapa 2B (R2). |
-| L2-v1-C5 | figura | Matriz de confusión `state_b verdad × cambia_celda predicho` para L2-v1 (soft) vs O4 base. Diagnóstico cualitativo de cuándo y por qué L2 mejora. |
+| L2-v1-C5 | figura | Matriz de confusión `state_b_causal verdad × cambia_celda predicho` para L2-v1 (soft) vs O4 causal. Diagnóstico cualitativo de cuándo y por qué L2 mejora. |
 
 ### 8.3 Esquema exacto de L2-v1-C1 (la tabla central)
 
+Baseline L2-v0 = O4 monolítico **causal** (`v0.4.2-o4-rework-causal`):
+
 | modelo | modo | versión | regla | top-1 | top-3 | log-loss | dist_med_km |
 |---|---|---|---|---|---|---|---|
-| persistencia | — | baseline | — | 0,773 | 0,773 | 5,586 | 20,9 |
-| markov(1) | — | baseline | — | 0,550 | — | — | 24,8 |
-| RF | personalizado | L2-v0 | argmax monolítico | 0,644 | 0,754 | 5,22 | 23,1 |
+| persistencia | — | baseline | — | 0,775 | 0,775 | — | 21,0 |
+| markov(1) | — | baseline | — | 0,548 | 0,632 | — | 24,9 |
+| RF | personalizado | L2-v0 | argmax monolítico | 0,580 | 0,735 | 5,67 | 24,0 |
 | RF | personalizado | L2-v1 | soft | ? | ? | ? | ? |
 | RF | personalizado | L2-v1 | hard (τ*) | ? | ? | —¹ | ? |
-| XGB | poblacional | L2-v0 | argmax monolítico | 0,610 | 0,707 | 5,52 | 24,0 |
+| XGB | poblacional | L2-v0 | argmax monolítico | 0,581 | 0,701 | 5,83 | 24,3 |
 | XGB | poblacional | L2-v1 | soft | ? | ? | ? | ? |
 | XGB | poblacional | L2-v1 | hard (τ*) | ? | ? | —¹ | ? |
 
@@ -556,10 +582,14 @@ Tres criterios independientes:
    reduce log-loss ≥ 0,20 en al menos uno de los ganadores (RF
    personalizado o XGB poblacional). Hard se excluye de este criterio
    por la nota ¹ de §8.3.
-2. **Secundaria — top-1 migración (soft y hard).** L2-v1 mejora si
-   sube ≥ +5 pp absolutos en al menos uno de los ganadores. Es el
-   régimen donde la descomposición en dos etapas debería aportar más.
-   Se evalúa para soft y hard por separado.
+2. **Secundaria — top-1 en días de movimiento real (soft y hard).**
+   L2-v1 mejora si sube ≥ +5 pp absolutos sobre el O4 causal (que parte
+   de ~0,17-0,19) en al menos uno de los ganadores. Es la métrica donde
+   el modelo aporta valor sobre la persistencia (que vale 0 por
+   construcción) y donde la descomposición en dos etapas debería ayudar
+   más. Se reporta también el desglose por estado HMM (`state_b_causal`)
+   como contexto, aunque en ese corte la persistencia gana (muchos días
+   HMM-migración no cambian de celda). Se evalúa para soft y hard.
 3. **Diagnóstica — coherencia interna.** El gap train-test de
    `clf_dest` (C4) se mantiene en rango sano (gap ≤ gap O4 base + 0,1
    absoluto). Si se dispara, la mejora del log-loss es sospechosa y
@@ -658,7 +688,8 @@ debe contener:
   Mejora con dos etapas") integradas en el flujo del capítulo.
 - Entrada en `reports/ai-log/` (`00NN-o4l2-dos-etapas.md`) según
   política de scope.
-- Commit(s) en castellano + tag `v0.4.2-o4l2-dos-etapas`.
+- Commit(s) en castellano + tag `v0.4.3-o4l2-dos-etapas` (el `v0.4.2`
+  lo ocupó el rework causal de O4).
 
 ## 12. Trabajo futuro (fuera del scope de L2)
 
@@ -671,7 +702,7 @@ debe contener:
   reducir aún más el dataset de la etapa más profunda. Sólo si L2-v1
   muestra que las dos etapas funcionan pero el techo en migración
   larga sigue alto.
-- **`clf_move` con features de secuencia** (lags de `step_length_km`,
+- **`clf_move` con features de secuencia** (lags de `step_in_km`,
   rolling de cambio de celda): pertenece al trabajo futuro de
   "modelos de secuencia" identificado en O4 base, no se aborda en L2.
 - **Calibración alternativa** (sigmoid, beta calibration): sólo si el
@@ -680,13 +711,14 @@ debe contener:
 
 ## 13. Conexiones con el resto del TFG
 
-- **O3 (HMM)**: L2 consume `state_b` y `posterior_b_migracion` como
-  features y la métrica clave se desglosa por `state_b`. El éxito de
+- **O3 (HMM)**: L2 consume `state_b_causal` y
+  `posterior_b_migracion_causal` (HMM causal filtrado) como features y
+  la métrica por régimen se desglosa por `state_b_causal`. El éxito de
   L2 refuerza la utilidad del HMM como insumo estructural del
   pipeline ML, narrativa que se ancla en `[[project-o3-outcome]]`.
-- **O4 base**: L2 reutiliza features, split, hiperparámetros y
-  evaluación de O4 base. Los artefactos `data/processed/o4/` (L2-v0)
-  son input no-modificable.
+- **O4 causal**: L2 reutiliza features (las 10 causales), el ensamblaje
+  (cinemática + HMM causal), split, hiperparámetros y evaluación de O4
+  causal. El baseline L2-v0 se regenera con `build_o4()`.
 - **L1 (features de viento)**: L1 y L2 son **ortogonales por diseño**.
   La combinación L1+L2 queda como trabajo futuro condicional (§12).
 - **L3 (regresión cuantiles)**: L3 se arrancará tras L2. Si L2 mejora
