@@ -32,7 +32,16 @@ def load_wind_dataset(
     Raises:
         FileNotFoundError: si algún archivo no existe.
     """
-    raise NotImplementedError
+    base_dir = Path(base_dir)
+    paths = [base_dir / f"wind_{year}.nc" for year in years]
+    for p in paths:
+        if not p.exists():
+            raise FileNotFoundError(p)
+    datasets = [xr.open_dataset(str(p), decode_times=True) for p in paths]
+    ds = xr.concat(datasets, dim="valid_time")
+    if "pressure_level" in ds.dims:
+        ds = ds.squeeze("pressure_level", drop=True)
+    return ds.load()
 
 
 def interpolate_wind_to_fixes(
