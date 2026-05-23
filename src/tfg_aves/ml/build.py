@@ -9,9 +9,11 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
+from ..meteo._paths import WIND_PER_FIX_PARQUET
 from ._paths import (
     CELLS_PARQUET,
     FEATURES_O3_PARQUET,
+    O4_L1V1_DIR,
     O4_OUT_DIR,
 )
 from .evaluate import (
@@ -87,30 +89,62 @@ def _train_one(
 def build_o4(
     features_path: Path = FEATURES_O3_PARQUET,
     cells_path: Path = CELLS_PARQUET,
-    output_dir: Path = O4_OUT_DIR,
+    output_dir: Path | None = None,
     seed: int = 0,
+    *,
+    with_wind: bool = False,
+    wind_path: Path | None = None,
 ) -> BuildO4Result:
     """Pipeline completa de O4 (§5.4 del spec).
 
-    Pasos:
-        1. Carga ``features.parquet`` y ``cells.parquet``.
-        2. Construye matriz para ambos modos (personalizado / poblacional).
-        3. Split temporal por ave (72 % / 8 % / 20 %).
-        4. Entrena las 6 combinaciones (3 familias × 2 modos).
-        5. Computa métricas globales en train y test.
-        6. Computa baselines (persistencia + Markov(1)) sobre el mismo split.
-        7. Guarda artefactos en ``output_dir``.
+    Pasos (idénticos a O4 base más el merge opcional de viento):
+        1. Carga features.parquet y cells.parquet.
+        2. (Opcional, si with_wind=True) Carga wind_per_fix.parquet
+           y lo pasa a build_feature_matrix vía el parámetro wind_df.
+        3. Construye matriz para ambos modos.
+        4. Split temporal por ave.
+        5. Entrena las combinaciones (RF/XGB × 2 modos; LightGBM sólo
+           cuando with_wind=False — L1 mantiene F7 de O4 base).
+        6. Computa métricas globales en train y test.
+        7. Computa baselines (persistencia + Markov(1)) sobre el mismo split.
+        8. Guarda artefactos en output_dir (defecto: O4_OUT_DIR si
+           with_wind=False, O4_L1V1_DIR si with_wind=True).
+
+    Args:
+        features_path: ruta a features.parquet de O3.
+        cells_path: ruta a cells.parquet de O2.
+        output_dir: directorio destino. Por defecto se resuelve según
+            with_wind para evitar pisar artefactos de L1-v0.
+        seed: semilla global.
+        with_wind: si True, fusiona wind features y escribe a L1V1_DIR.
+        wind_path: ruta al wind_per_fix.parquet. Por defecto
+            WIND_PER_FIX_PARQUET. Sólo se lee cuando with_wind=True.
     """
+    if output_dir is None:
+        output_dir = O4_L1V1_DIR if with_wind else O4_OUT_DIR
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     features_o3 = pd.read_parquet(features_path)
     cells = pd.read_parquet(cells_path)
 
+    wind_df: pd.DataFrame | None = None
+    if with_wind:
+        wind_p = Path(wind_path) if wind_path is not None else WIND_PER_FIX_PARQUET
+        if not wind_p.exists():
+            raise FileNotFoundError(
+                f"with_wind=True pero {wind_p} no existe. Ejecuta build_wind primero.",
+            )
+        wind_df = pd.read_parquet(wind_p)
+
     # --- Matrices de features para ambos modos ---
     matrices = {
-        "personalizado": build_feature_matrix(features_o3, cells, include_bird_id=True),
-        "poblacional": build_feature_matrix(features_o3, cells, include_bird_id=False),
+        "personalizado": build_feature_matrix(
+            features_o3, cells, include_bird_id=True, wind_df=wind_df,
+        ),
+        "poblacional": build_feature_matrix(
+            features_o3, cells, include_bird_id=False, wind_df=wind_df,
+        ),
     }
     splits = {mode: split_temporal_per_bird(m) for mode, m in matrices.items()}
 
@@ -138,7 +172,8 @@ def build_o4(
         y_train = le_train.transform(train["cell_id_t_next"].astype(str))
         y_val = _safe_encode_cells(val["cell_id_t_next"], le_train, known_cells)
 
-        for family in _FAMILIES:
+        families = _FAMILIES if not with_wind else ("rf", "xgb")
+        for family in families:
             model = _train_one(
                 family, X_train, y_train, X_val, y_val,
                 categorical_cols=categorical_cols, seed=seed,

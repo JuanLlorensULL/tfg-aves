@@ -100,6 +100,12 @@ def build_feature_matrix(
 
     df = df[df["cell_id_t_next"].notna()].copy()
 
+    # RandomForest no tolera NaN; XGBoost sí. Para coherencia entre familias
+    # descartamos las pocas filas con NaN en features de viento (fixes fuera
+    # del bbox del .nc — ~15 filas tras el filtro de cell_id_t_next).
+    if wind_df is not None:
+        df = df.dropna(subset=_FEATURES_WIND).copy()
+
     base = list(_FEATURES_BASE)
     if wind_df is not None:
         base = [*base, *_FEATURES_WIND]

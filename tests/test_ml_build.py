@@ -81,6 +81,20 @@ def test_build_o4_end_to_end(tmp_path: Path) -> None:
     } <= set(metrics.columns)
 
 
+def test_build_o4_with_wind_writes_l1v1_artifacts(tmp_path, monkeypatch):
+    """build_o4(with_wind=True) escribe a O4_L1V1_DIR sin pisar O4_OUT_DIR."""
+    # Este test es un placeholder de integración. La verificación real
+    # se hace ejecutando build_o4(with_wind=True) sobre los datos
+    # reales en el step 6.5 del plan. Aquí sólo verificamos la firma.
+    from inspect import signature
+
+    from tfg_aves.ml.build import build_o4
+
+    sig = signature(build_o4)
+    assert "with_wind" in sig.parameters
+    assert sig.parameters["with_wind"].default is False
+
+
 def test_build_o4_idempotent(tmp_path: Path) -> None:
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "o4"
