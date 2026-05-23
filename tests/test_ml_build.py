@@ -23,15 +23,8 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
             lon = lon0 + 0.05 * i + rng.normal(0, 0.05)
             rows.append({
                 "bird_id": b, "date_utc": d, "lat": lat, "lon": lon,
-                "step_length_km": rng.uniform(0, 100),
-                "cos_turning_angle": rng.uniform(-1, 1),
                 "daylight_hours": 12.0, "veg_low": 0.5, "veg_high": 0.5,
-                "state_a": int(rng.integers(0, 2)),
-                "state_b": int(rng.integers(0, 2)),
-                "posterior_a_estacionario": 0.5, "posterior_a_migracion": 0.5,
-                "posterior_b_estacionario": 0.5, "posterior_b_migracion": 0.5,
                 "is_observation_valid": True,
-                "in_holdout": False,
             })
     feat = pd.DataFrame(rows)
     feat_path = tmp_path / "features.parquet"
@@ -106,3 +99,34 @@ def test_build_o4_idempotent(tmp_path: Path) -> None:
         m1.sort_values(["modelo", "modo", "split"]).reset_index(drop=True),
         m2.sort_values(["modelo", "modo", "split"]).reset_index(drop=True),
     )
+
+
+def test_build_o4_columnas_causales(tmp_path: Path) -> None:
+    feat_path, cells_path = _write_synthetic_inputs(tmp_path)
+    out_dir = tmp_path / "o4"
+    res = build_o4(
+        features_path=feat_path, cells_path=cells_path,
+        output_dir=out_dir, seed=0,
+    )
+    assert res.predictions_path.exists()
+    assert res.metrics_path.exists()
+    assert (out_dir / "model_personalizado_rf.pkl").exists()
+
+    import joblib
+    blob = joblib.load(out_dir / "model_personalizado_rf.pkl")
+    cols = blob["feature_cols"]
+    # Exactamente las 10 causales + bird_id; nada de columnas con fuga.
+    assert "bird_id" in cols
+    for c in ["step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
+              "state_b_causal", "posterior_b_migracion_causal"]:
+        assert c in cols
+    for prohibida in ["step_length_km", "cos_turning_angle", "state_b",
+                      "posterior_b_migracion"]:
+        assert prohibida not in cols
+
+    # Las predicciones llevan el estado causal (para el análisis por régimen).
+    preds = pd.read_parquet(res.predictions_path)
+    assert "state_b_causal" in preds.columns
+    assert "state_b" not in preds.columns
+    modelos = preds[preds["modo"] == "personalizado"]
+    assert modelos["state_b_causal"].notna().any()

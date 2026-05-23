@@ -31,7 +31,7 @@ def _synthetic_predictions() -> pd.DataFrame:
             [10.0] * 6 + [200.0] * 4
             + [5.0] * 8 + [180.0] * 2
         ),
-        "state_b": [1] * 10 + [0] * 10,  # 1=migración, 0=estacionario
+        "state_b_causal": [1] * 10 + [0] * 10,  # 1=migración, 0=estacionario
     })
 
 
@@ -53,7 +53,7 @@ def test_dist_median_km() -> None:
 
 def test_evaluate_by_state_partitions_correctly() -> None:
     preds = _synthetic_predictions()
-    table = evaluate_by_state(preds, state_col="state_b")
+    table = evaluate_by_state(preds, state_col="state_b_causal")
     assert set(table["state"].tolist()) == {"global", "estacionario", "migración"}
     row_m = table[table["state"] == "migración"].iloc[0]
     row_e = table[table["state"] == "estacionario"].iloc[0]
@@ -65,7 +65,7 @@ def test_evaluate_by_state_partitions_correctly() -> None:
 
 def test_top_k_consistency_global_equals_weighted_per_state() -> None:
     preds = _synthetic_predictions()
-    table = evaluate_by_state(preds, state_col="state_b")
+    table = evaluate_by_state(preds, state_col="state_b_causal")
     row_g = table[table["state"] == "global"].iloc[0]
     weighted = (
         table[table["state"] != "global"]
@@ -84,7 +84,7 @@ def _matrix_test_for_baseline() -> tuple[pd.DataFrame, pd.DataFrame]:
         "cell_id_t_next": ["40_-6", "42_-5", "78_-8"],
         "lat_t_next": [20.25, 21.25, 39.25],
         "lon_t_next": [-2.75, -2.25, -3.75],
-        "state_b": [0, 1, 0],
+        "state_b_causal": [0, 1, 0],
     })
     cells = pd.DataFrame({
         "cell_id": ["40_-6", "41_-5", "42_-5", "78_-8"],
@@ -111,6 +111,6 @@ def test_persistence_predicts_cell_id_t() -> None:
     expected_cols = {
         "bird_id", "date_utc", "true_cell",
         "pred_cell_top1", "pred_cell_topk",
-        "pred_prob_top1", "pred_dist_km", "state_b",
+        "pred_prob_top1", "pred_dist_km", "state_b_causal",
     }
     assert expected_cols.issubset(out.columns)

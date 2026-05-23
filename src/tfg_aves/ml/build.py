@@ -26,10 +26,13 @@ from .evaluate import (
     top_k_accuracy,
 )
 from .features import (
+    FEATURES_HMM,
+    FEATURES_KINEMATIC,
     build_feature_matrix,
     compute_causal_kinematics,
     split_temporal_per_bird,
 )
+from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .train import (
     train_lightgbm,
     train_random_forest,
@@ -153,13 +156,31 @@ def build_o4(
     }
     splits = {mode: split_temporal_per_bird(m) for mode, m in matrices.items()}
 
+    # --- HMM causal: fit sobre el train temporal, decode filtrado de todo ---
+    # Las filas de ambos modos son idénticas salvo bird_id, así que el cutoff
+    # por ave y el decodificado se calculan una sola vez (modo poblacional).
+    train_ref = splits["poblacional"][0]
+    cutoff_by_bird = (
+        train_ref.assign(_d=pd.to_datetime(train_ref["date_utc"]))
+        .groupby("bird_id")["_d"].max().to_dict()
+    )
+    hmm_model, hmm_labels = fit_causal_hmm(kin, cutoff_by_bird, n_restarts=10, seed=seed)
+    states = decode_causal_states(hmm_model, hmm_labels, kin)
+
+    def _attach_states(df: pd.DataFrame) -> pd.DataFrame:
+        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
+        if merged[FEATURES_HMM].isna().any().any():
+            raise AssertionError("Filas candidatas sin estado HMM causal tras el merge.")
+        return merged
+
     metrics_per_model: dict[str, dict] = {}
     predictions_all: list[pd.DataFrame] = []
     model_paths: dict[str, Path] = {}
 
     for mode in _MODES:
-        train, val, test = splits[mode]
-        feature_cols = train.attrs["_features"]
+        train, val, test = (_attach_states(d) for d in splits[mode])
+        base = [*FEATURES_KINEMATIC, *FEATURES_HMM]
+        feature_cols = ["bird_id", *base] if mode == "personalizado" else list(base)
         categorical_cols = ["bird_id"] if "bird_id" in feature_cols else []
 
         # LabelEncoder ajustado SÓLO sobre el conjunto de entrenamiento. Esto
@@ -202,7 +223,6 @@ def build_o4(
             metrics_per_model[f"{key}::test"] = metrics_test
             metrics_per_model[f"{key}::train"] = metrics_train
 
-            # Guardar modelo + metadatos
             model_path = output_dir / f"model_{mode}_{family}.pkl"
             joblib.dump({
                 "model": model,
@@ -214,7 +234,6 @@ def build_o4(
             }, model_path)
             model_paths[key] = model_path
 
-            # Predicciones del test para predictions_test.parquet
             preds = predict_with_meta(
                 model, X_test, test, cells=cells, label_encoder_y=le_train,
             )
@@ -226,7 +245,8 @@ def build_o4(
             predictions_all.append(preds)
 
     # --- Baselines sobre el split temporal de O4 ---
-    train_p, _val_p, test_p = splits["personalizado"]
+    train_p = _attach_states(splits["personalizado"][0])
+    test_p = _attach_states(splits["personalizado"][2])
     persistence = compute_persistence_baseline(test_p, cells=cells)
     markov = compute_markov_baseline(train_p, test_p, cells=cells)
     persistence["modelo"] = "persistencia"
