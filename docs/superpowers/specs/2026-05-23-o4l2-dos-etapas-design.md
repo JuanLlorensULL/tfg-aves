@@ -13,6 +13,22 @@
   Implementación a arrancar cuando L1 (features de viento) cierre, para
   evitar conflictos en `src/tfg_aves/ml/`.
 
+> **⚠ ACTUALIZACIÓN 2026-05-23 — rework causal de O4.** Las "8 features
+> de O4 base" que este spec cita (`step_length_km`, `cos_turning_angle`,
+> `state_b`, `posterior_b_migracion` + lat/lon/sin_doy/cos_doy) tenían
+> *data leakage*: las cinemáticas eran salientes (`t → t+1`) y el estado
+> HMM se decodificaba con suavizado, codificando el target. Se corrigió
+> con el rework causal (ver `2026-05-23-o4-rework-causal-design.md`,
+> §12). **Antes de implementar L2:** sustituir el feature set base por
+> las **10 features causales** (R6 del rework): `lat, lon, sin_doy,
+> cos_doy, step_in_km, sin_bearing_in, cos_bearing_in, cos_turning_in,
+> state_b_causal, posterior_b_migracion_causal` (+ `bird_id` en
+> personalizado). El desglose por estado HMM usa `state_b_causal`. El
+> baseline L2-v0 debe re-derivarse del **O4 causal**, no del contaminado
+> `v0.4-o4-completo`. Las menciones a las features antiguas en este spec
+> deben leerse con esta sustitución. Registro interno: NO se traslada a
+> la memoria.
+
 ## 1. Resumen
 
 L2 descompone el problema "predecir `cell_{t+1}`" en dos preguntas

@@ -330,3 +330,50 @@ Pytest sobre datasets sintéticos pequeños.
 | R-B | El HMM causal no converge igual que O3 o relabeliza distinto | Sanity-check de parámetros (§6.1) y de coherencia biológica del % migración por mes |
 | R-C | La máscara de 4 días reduce demasiado la muestra | Se cuantifica antes de entrenar; si fuera severa, se reconsidera `cos_turning_in` (decisión reversible documentada) |
 | R-D | Filtrado forward mal implementado (estabilidad numérica) | Log-espacio + `logsumexp`; test contra recursión de referencia y contra `score_samples` en el caso suavizado |
+
+## 12. Implicaciones para L2 y L3 (registro interno — NO para la memoria)
+
+> Esta sección es un registro de ingeniería para sesiones futuras. La
+> memoria del TFG **no** narra la fuga (decisión del autor: error
+> pre-publicación). Aquí se documenta para que las líneas de mejora L2
+> y L3 no la repitan.
+
+### 12.1 Qué pasó (resumen)
+
+O4 base, L1 y el diseño original de L2 consumen las features de O3
+`step_length_km`, `cos_turning_angle`, `state_b`, `posterior_b_migracion`.
+Las dos cinemáticas se calculan en sentido **saliente** (`t → t+1`,
+`hmm/features.py:109,114`) y el estado HMM se decodifica con suavizado
+forward-backward. Como el target de O4 es la celda de `pos(t+1)`, esas
+cuatro features **codifican el target**: es *data leakage*. No son
+conocibles en el momento real de predicción.
+
+### 12.2 La regla durable
+
+**Toda feature de un modelo predictivo debe ser función exclusiva de
+información disponible en el instante de predicción.** Para O4 y sus
+líneas, el instante es el final del día `t` conociendo posiciones hasta
+`t` inclusive. Cualquier feature que dependa de `pos(t+1)` (o de
+observaciones futuras vía suavizado) está prohibida. Ante la duda,
+preguntarse: *"¿podría calcular esta feature en producción sin observar
+el futuro?"*
+
+### 12.3 Qué deben hacer L2 y L3
+
+- **El conjunto de features base de O4 ya NO son las 8 contaminadas.**
+  Son las **10 causales** de R6 (`lat`, `lon`, `sin_doy`, `cos_doy`,
+  `step_in_km`, `sin_bearing_in`, `cos_bearing_in`, `cos_turning_in`,
+  `state_b_causal`, `posterior_b_migracion_causal`) + `bird_id` en
+  personalizado.
+- **L2 (dos etapas):** su `clf_move` y `clf_dest` y su desglose por
+  estado HMM deben usar las features causales y `state_b_causal`. Su
+  baseline "O4 base" (L2-v0) debe re-derivarse del O4 causal, no del
+  contaminado (`v0.4-o4-completo`). Ver banner en
+  `2026-05-23-o4l2-dos-etapas-design.md`.
+- **L3 (regresión cuantiles):** al diseñar su spec, partir de las
+  features causales. El target de L3 (Δlat/Δlon o distancia) es
+  especialmente sensible: nunca derivar la variable objetivo ni sus
+  features de `pos(t+1)`.
+- **Patrón de verificación heredable:** todo módulo de features de
+  estas líneas debe tener un test tipo "leak-free" como §9.2 — cambiar
+  observaciones en `t+1..T` no puede alterar ninguna feature de `t`.

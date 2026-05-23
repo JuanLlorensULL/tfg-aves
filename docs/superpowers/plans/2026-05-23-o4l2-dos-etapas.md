@@ -10,6 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-23-o4l2-dos-etapas-design.md`
 
+> **⚠ ACTUALIZACIÓN 2026-05-23 — rework causal de O4.** El feature set
+> base de O4 cambió: las 8 features antiguas tenían *data leakage*
+> (cinemática saliente `t → t+1` + estado HMM suavizado, ambos codifican
+> el target). Antes de ejecutar este plan, rebasar el pipeline sobre las
+> **10 features causales** del rework (`step_in_km`, `sin/cos_bearing_in`,
+> `cos_turning_in`, `state_b_causal`, `posterior_b_migracion_causal` +
+> lat/lon/sin_doy/cos_doy). El baseline L2-v0 se re-deriva del O4 causal.
+> Ver `2026-05-23-o4-rework-causal-design.md` §12. Registro interno.
+
 **Refinamientos sobre el spec (decisiones "cómo", no "qué"):**
 - §6.2 decía "reutiliza `train_xgboost` tal cual" — incorrecto para la etapa 1: `_XGBoostWrapper` tiene `objective='multi:softprob'` hardcodeado y no expone `scale_pos_weight`. La etapa 1 usa trainers binarios dedicados en `two_stage.py` (`objective='binary:logistic'`, `scale_pos_weight`, `n_estimators=300` fijos sin early stopping, para reservar `val` exclusivamente a la calibración). La etapa 2B (multiclase) SÍ reutiliza `train_random_forest`/`train_xgboost` sin cambios.
 - Calibración: `cv='prefit'` fue eliminado en sklearn 1.8 → se usa `CalibratedClassifierCV(FrozenEstimator(base), method='isotonic').fit(X_val, y_val_move)`. Misma intención de F8 (respetar estructura temporal), API correcta.
