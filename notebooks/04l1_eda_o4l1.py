@@ -30,7 +30,9 @@
 # - **Fase D:** C5 (análisis post-hoc de aprendizaje del viento).
 
 # %%
+import joblib
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from tfg_aves.meteo._paths import WIND_PER_FIX_PARQUET, WIND_RAW_DIR
@@ -196,5 +198,144 @@ save_artifact(
         "(magnitud bruta en m/s)."
     ),
     fig=fig_d2,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ## Fase B — Diagnóstico de las nuevas features
+# ### L1-v1-C1 — Correlación de las features de viento con las existentes
+
+# %%
+features_o4 = features_o3.merge(wind, on=["bird_id", "date_utc"], how="left")
+target_cols = [
+    "wind_u_850", "wind_v_850", "wind_speed_850",
+    "state_b", "posterior_b_migracion", "step_length_km", "lat", "lon",
+]
+features_subset = features_o4.dropna(subset=target_cols)[target_cols]
+
+corr_matrix = features_subset.corr(method="pearson").round(3)
+print(corr_matrix)
+
+fig_c1, ax = plt.subplots(figsize=(8, 6.5))
+im = ax.imshow(corr_matrix.values, vmin=-1, vmax=1, cmap="RdBu_r")
+ax.set_xticks(range(len(target_cols)))
+ax.set_xticklabels(target_cols, rotation=45, ha="right")
+ax.set_yticks(range(len(target_cols)))
+ax.set_yticklabels(target_cols)
+for i in range(len(target_cols)):
+    for j in range(len(target_cols)):
+        ax.text(
+            j, i, f"{corr_matrix.iloc[i, j]:.2f}",
+            ha="center", va="center",
+            color="white" if abs(corr_matrix.iloc[i, j]) > 0.5 else "black",
+            fontsize=9,
+        )
+ax.set_title("L1-v1-C1 — Correlaciones Pearson")
+fig_c1.colorbar(im, ax=ax, shrink=0.7)
+fig_c1.tight_layout()
+
+save_artifact(
+    slug="l1v1-wind-correlations",
+    objective="o4",
+    num=12,
+    decision="Detectar colinealidad entre las features de viento y las existentes",
+    caption_es=(
+        "Matriz de correlaciones Pearson entre las tres features de viento "
+        "(wind_u_850, wind_v_850, wind_speed_850) y las features ya "
+        "presentes en O4 base relevantes para la predicción (state_b, "
+        "posterior_b_migracion, step_length_km, lat, lon). Correlaciones "
+        "absolutas pequeñas con state_b y posterior_b_migracion "
+        "(|r| < 0,2 esperado) confirman que las features de viento aportan "
+        "información independiente y no son redundantes con el régimen "
+        "HMM que ya codifica el contexto biológico."
+    ),
+    fig=fig_c1,
+    table=corr_matrix.reset_index().rename(columns={"index": "feature"}),
+    overwrite=True,
+)
+
+# %% [markdown]
+# ### L1-v1-C2 — Feature importance comparada L1-v0 vs L1-v1
+#
+# Recuperamos la importancia de las features para los dos ganadores de
+# L1-v0 (RF personalizado, XGB poblacional) y para sus equivalentes en
+# L1-v1 (mismos algoritmos, mismo modo). Las 3 features de viento deben
+# aparecer en el top-10 de L1-v1 si aportan.
+
+# %%
+def _feature_importance(model_path, family):
+    b = joblib.load(model_path)
+    model = b["model"]
+    feature_cols = b["feature_cols"]
+    if family == "rf":
+        # Pipeline con pasos (encoder, model). El estimador final tiene .feature_importances_.
+        rf = model.named_steps["model"]
+        imp = rf.feature_importances_
+    elif family == "xgb":
+        # _XGBoostWrapper expone el XGBClassifier subyacente como ._xgb.
+        imp = model._xgb.feature_importances_
+    else:
+        imp = np.zeros(len(feature_cols))
+    df = pd.DataFrame({"feature": feature_cols, "importance": imp})
+    df = df.sort_values("importance", ascending=False).reset_index(drop=True)
+    return df
+
+
+pairs = [
+    ("personalizado", "rf"),
+    ("personalizado", "xgb"),
+    ("poblacional", "rf"),
+    ("poblacional", "xgb"),
+]
+rows_c2 = []
+for modo, family in pairs:
+    imp_v0 = _feature_importance(O4_OUT_DIR / f"model_{modo}_{family}.pkl", family)
+    imp_v1 = _feature_importance(O4_L1V1_DIR / f"model_{modo}_{family}.pkl", family)
+    imp_v0["version"] = "L1-v0"
+    imp_v0["modo"] = modo
+    imp_v0["familia"] = family
+    imp_v1["version"] = "L1-v1"
+    imp_v1["modo"] = modo
+    imp_v1["familia"] = family
+    rows_c2.append(imp_v0)
+    rows_c2.append(imp_v1)
+c2_table = pd.concat(rows_c2, ignore_index=True)
+
+# Una figura con dos subplots: ganadores L1-v0 (RF pers + XGB pob) en L1-v1.
+fig_c2, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+ganadores = [("personalizado", "rf"), ("poblacional", "xgb")]
+for ax, (modo, family) in zip(axes, ganadores, strict=True):
+    sub = c2_table[
+        (c2_table["modo"] == modo)
+        & (c2_table["familia"] == family)
+        & (c2_table["version"] == "L1-v1")
+    ]
+    sub = sub.sort_values("importance", ascending=True)
+    ax.barh(sub["feature"], sub["importance"])
+    is_wind = sub["feature"].str.startswith("wind_")
+    colors = ["tab:orange" if w else "tab:blue" for w in is_wind]
+    for bar, c in zip(ax.containers[0], colors, strict=True):
+        bar.set_color(c)
+    ax.set_title(f"L1-v1: {family.upper()} {modo}")
+fig_c2.suptitle("L1-v1-C2 — Feature importance L1-v1 (naranja = features de viento)")
+fig_c2.tight_layout()
+
+save_artifact(
+    slug="l1v1-feature-importance",
+    objective="o4",
+    num=13,
+    decision="Confirmar que las features de viento son usadas por los modelos",
+    caption_es=(
+        "Importancia relativa de las features para los dos modelos "
+        "ganadores de L1-v0 (RF personalizado y XGBoost poblacional) "
+        "tras reentrenarlos con las tres features de viento en L1-v1. "
+        "Las barras en naranja corresponden a las nuevas features de "
+        "viento (wind_u_850, wind_v_850, wind_speed_850). Si aparecen "
+        "en el top-10 de al menos uno de los ganadores, se cumple el "
+        "criterio diagnóstico de éxito (§9 del spec) — el modelo no "
+        "ignora las nuevas señales."
+    ),
+    fig=fig_c2,
+    table=c2_table,
     overwrite=True,
 )
