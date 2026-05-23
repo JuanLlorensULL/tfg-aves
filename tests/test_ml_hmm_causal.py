@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from hmmlearn.hmm import GaussianHMM
 
-from tfg_aves.ml.features import compute_causal_kinematics
+from tfg_aves.ml.features import HMM_EMISSION_COLS, compute_causal_kinematics
 from tfg_aves.ml.hmm_causal import (
     build_hmm_sequences,
     decode_causal_states,
@@ -139,7 +139,7 @@ def test_fit_causal_hmm_relabel_por_step():
     kin = compute_causal_kinematics(_two_regime_bird(n=60))
     model, label_map = fit_causal_hmm(kin, cutoff_by_bird=None, n_restarts=4, seed=0)
     # El estado con mayor μ[step_in_km] debe ser 'migración'.
-    step_idx = 0  # step_in_km es la 1.ª columna de HMM_EMISSION_COLS
+    step_idx = HMM_EMISSION_COLS.index("step_in_km")
     migr_state = int(np.argmax(model.means_[:, step_idx]))
     assert label_map[migr_state] == "migración"
 
@@ -156,3 +156,21 @@ def test_decode_causal_states_columnas_y_rango():
     assert (states["posterior_b_migracion_causal"] <= 1).all()
     # Una fila por día HMM-válido.
     assert len(states) == int(kin["is_hmm_obs_valid"].sum())
+
+
+def test_build_hmm_sequences_respeta_cutoff():
+    """El cutoff por ave excluye días posteriores; un ave ausente del dict se omite."""
+    kin = compute_causal_kinematics(
+        pd.concat(
+            [_two_regime_bird("A", n=30), _two_regime_bird("B", n=30)],
+            ignore_index=True,
+        )
+    )
+    cutoff = {"A": pd.Timestamp("2020-01-15")}  # B ausente del dict
+    X, lengths, idx = build_hmm_sequences(kin, cutoff_by_bird=cutoff)
+    aves = kin.loc[idx, "bird_id"]
+    fechas = pd.to_datetime(kin.loc[idx, "date_utc"])
+    assert (aves == "A").all()  # B se omite (no está en el dict)
+    assert (fechas <= pd.Timestamp("2020-01-15")).all()  # respeta el cutoff de A
+    assert len(X) == sum(lengths) == len(idx)
+    assert len(X) > 0  # debe quedar al menos un día válido de A antes del cutoff

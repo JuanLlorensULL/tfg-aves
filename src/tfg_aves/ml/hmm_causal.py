@@ -55,8 +55,10 @@ def forward_filtered_posteriors(
         raise ValueError(
             f"sum(lengths)={sum(lengths)} no coincide con len(X)={len(X)}.",
         )
-    log_start = np.log(model.startprob_)
-    log_trans = np.log(model.transmat_)
+    # log(0) = -inf en transiciones/arranques nulos es correcto: logsumexp lo maneja.
+    with np.errstate(divide="ignore"):
+        log_start = np.log(model.startprob_)
+        log_trans = np.log(model.transmat_)
     log_emit_all = _diag_log_emission(X, model.means_, model.covars_)
 
     out = np.empty((len(X), model.n_components))
@@ -87,6 +89,8 @@ def build_hmm_sequences(
     ``date_utc <= cutoff`` (ajuste sobre train); si es None, todos (decode).
     ``row_index`` son los índices de ``kin`` para mapear el resultado de vuelta.
     """
+    # Segmentación por runs consecutivos, paralela a tfg_aves.hmm.fit.build_sequences
+    # (no se toca O3); aquí además devolvemos row_index para el mapeo posterior.
     sub_all = kin[kin["is_hmm_obs_valid"]].sort_values(["bird_id", "date_utc"])
     X_parts: list[np.ndarray] = []
     lengths: list[int] = []
@@ -96,6 +100,7 @@ def build_hmm_sequences(
             cutoff = cutoff_by_bird.get(bird_id)
             if cutoff is None:
                 continue
+            cutoff = pd.Timestamp(cutoff)
             sub = sub[pd.to_datetime(sub["date_utc"]) <= cutoff]
         if len(sub) == 0:
             continue
