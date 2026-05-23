@@ -127,6 +127,40 @@ def test_collision_overwrite_ok(project):
     save_artifact("dup", overwrite=True, **kwargs)
 
 
+def test_index_row_is_idempotent_on_overwrite(project):
+    """Reejecutar ``save_artifact`` con la misma ref no debe duplicar filas."""
+    df = pd.DataFrame({"a": [1, 2]})
+    kwargs = dict(
+        objective="o1",
+        num=42,
+        decision="Decisión inicial",
+        caption_es="Caption inicial.",
+        table=df,
+        project_root=project,
+    )
+    save_artifact("idem-slug", **kwargs)
+
+    save_artifact(
+        "idem-slug",
+        objective="o1",
+        num=42,
+        decision="Decisión actualizada",
+        caption_es="Caption actualizado.",
+        table=df,
+        overwrite=True,
+        project_root=project,
+    )
+
+    index_text = (project / "reports" / "INDEX.md").read_text(encoding="utf-8")
+    ref_prefix = "| O1 | o1_tab42_idem-slug |"
+    matching_rows = [
+        line for line in index_text.splitlines() if line.startswith(ref_prefix)
+    ]
+    assert len(matching_rows) == 1, matching_rows
+    assert "Decisión actualizada" in matching_rows[0]
+    assert "Decisión inicial" not in index_text
+
+
 @pytest.mark.parametrize(
     "bad_slug",
     ["Foo", "foo_bar", "-foo", "foo-", "foo--bar", "foo bar", ""],

@@ -119,6 +119,12 @@ def _append_index_row(
     table_rel: str | None,
     caption_rel: str,
 ) -> None:
+    """Añade o actualiza una fila en ``INDEX.md`` (idempotente por ``ref``).
+
+    Si ya existe una fila con el mismo ``(objetivo, ref)``, se sustituye in
+    situ para reflejar la fecha más reciente y los captions actualizados.
+    Si no existe, se appendea al final.
+    """
     if not index_path.exists():
         index_path.write_text(_INDEX_HEADER, encoding="utf-8")
     today = _dt.date.today().isoformat()
@@ -128,8 +134,25 @@ def _append_index_row(
         f"| {objective.upper()} | {ref} | {slug} | {decision.replace('|', '\\|')} | "
         f"{fig_cell} | {tab_cell} | `{caption_rel}` | {today} |\n"
     )
-    with index_path.open("a", encoding="utf-8") as fh:
-        fh.write(row)
+
+    content = index_path.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=True)
+
+    row_prefix = f"| {objective.upper()} | {ref} |"
+    found_idx: int | None = None
+    for i, line in enumerate(lines):
+        if line.startswith(row_prefix):
+            found_idx = i
+            break
+
+    if found_idx is not None:
+        lines[found_idx] = row
+    else:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] = lines[-1] + "\n"
+        lines.append(row)
+
+    index_path.write_text("".join(lines), encoding="utf-8")
 
 
 def save_artifact(
