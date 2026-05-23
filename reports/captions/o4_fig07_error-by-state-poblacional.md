@@ -1,10 +1,10 @@
 # o4_fig07_error-by-state-poblacional
 
 - **Objetivo:** O4
-- **Decisión justificada:** Desglose de top-1 y top-3 por estado HMM para el ganador poblacional
+- **Decisión justificada:** Desglose de top-1 y top-3 por estado HMM causal para el ganador poblacional
 - **Figura:** `reports/figures/o4_fig07_error-by-state-poblacional.png`
 - **Tabla:** `reports/tables/o4_tab07_error-by-state-poblacional.csv`
 
 ## Caption (memoria)
 
-Idem C5 para el ganador poblacional (xgb, sin bird_id). El descenso esperable respecto al personalizado en cada estado cuantifica cuánto del rendimiento se debe a conocer la identidad del ave frente a aprender patrones genéricos de movimiento de la especie. Coherencia con la fenología de Larus fuscus: la migración (15,3 % del dataset, concentrada en abr-may y sep-oct) debe seguir aportando información útil incluso sin bird_id.
+Idem C5 para el ganador poblacional (xgb, sin bird_id). El patrón es prácticamente idéntico al personalizado: estacionario ~0,63 y migración ~0,13-0,14. La pequeña diferencia (~+1 pp en estacionario para el personalizado) refleja la señal generalizable que aporta bird_id sin aumentar el overfit (ver C7). La coherencia entre ambos modos refuerza que el colapso en migración es estructural y no atribuible a la presencia o ausencia de la identidad del ave. Fenología de referencia: estado 1 (migración) representa el 11,7 % del test, concentrado en abr-may y sep-oct, coherente con la fenología conocida de Larus fuscus.

@@ -50,7 +50,7 @@ print(f"cells: {cells.shape}")
 print(f"Aves: {features_o3['bird_id'].nunique()}")
 print(f"Filas válidas (is_observation_valid=True): {features_o3['is_observation_valid'].sum()}")
 print(
-    "Cobertura state_b en válidas: "
+    "Cobertura state_b en válidas (columna O3 de entrada): "
     f"{(features_o3.loc[features_o3['is_observation_valid'], 'state_b'].notna()).mean():.3f}"
 )
 
@@ -69,6 +69,7 @@ print(result)
 # %%
 metrics = pd.read_parquet(result.metrics_path)
 preds = pd.read_parquet(result.predictions_path)
+preds_all = preds  # alias usado en los bloques de análisis
 print(f"metrics: {metrics.shape}")
 print(f"predictions: {preds.shape}")
 metrics = metrics.sort_values(["split", "modelo", "modo"]).reset_index(drop=True)
@@ -180,6 +181,7 @@ save_artifact(
     ),
     fig=fig_c1,
     table=gap_view,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -263,21 +265,42 @@ display_cols = ["modelo", "modo", "top1", "top3", "log_loss", "dist_median_km"]
 c3_table = test_metrics[display_cols].sort_values(
     "log_loss", ascending=True,
 ).reset_index(drop=True)
+
+# ── Días de movimiento (true_cell ≠ celda predicha por persistencia) ──────────
+pers_key = preds_all[(preds_all["modelo"] == "persistencia") & (preds_all["modo"] == "—")][
+    ["bird_id", "date_utc", "pred_cell_top1"]
+].rename(columns={"pred_cell_top1": "_pers_pred"})
+
+move_top1 = {}
+for _, row in c3_table.iterrows():
+    mdl, modo = row["modelo"], row["modo"]
+    sub = preds_all[(preds_all["modelo"] == mdl) & (preds_all["modo"] == modo)]
+    merged = sub.merge(pers_key, on=["bird_id", "date_utc"], how="inner")
+    move = merged[merged["true_cell"] != merged["_pers_pred"]]
+    move_top1[(mdl, modo)] = (
+        (move["true_cell"] == move["pred_cell_top1"]).mean() if len(move) > 0 else float("nan")
+    )
+
+c3_table["top1_dias_movimiento"] = c3_table.apply(
+    lambda r: move_top1.get((r["modelo"], r["modo"]), float("nan")), axis=1
+)
 c3_table
 
 # %%
-fig_c3, axes = plt.subplots(1, 4, figsize=(18, 4.5))
-for ax, metric, title, ascending in [
-    (axes[0], "top1", "Top-1", False),
-    (axes[1], "top3", "Top-3", False),
-    (axes[2], "log_loss", "Log-loss (menor mejor)", True),
-    (axes[3], "dist_median_km", "Dist mediana (km, menor mejor)", True),
-]:
-    sub = c3_table.sort_values(metric, ascending=ascending)
+fig_c3, axes = plt.subplots(1, 5, figsize=(22, 4.5))
+metrics_panels = [
+    ("top1", "Top-1 global", False),
+    ("top3", "Top-3 global", False),
+    ("log_loss", "Log-loss (menor mejor)", True),
+    ("dist_median_km", "Dist mediana km (menor mejor)", True),
+    ("top1_dias_movimiento", "Top-1 días de movimiento", False),
+]
+for ax, (metric, title, ascending) in zip(axes, metrics_panels):
+    sub = c3_table.dropna(subset=[metric]).sort_values(metric, ascending=ascending)
     labels = sub.apply(lambda r: f"{r['modelo']}/{r['modo']}", axis=1)
     ax.barh(range(len(sub)), sub[metric].values)
     ax.set_yticks(range(len(sub))); ax.set_yticklabels(labels, fontsize=8)
-    ax.invert_yaxis(); ax.set_title(title)
+    ax.invert_yaxis(); ax.set_title(title, fontsize=9)
 fig_c3.suptitle("C3 — Comparativa global de los 8 modelos sobre el test temporal")
 fig_c3.tight_layout()
 
@@ -288,17 +311,23 @@ save_artifact(
     decision="Tabla comparativa de las 8 combinaciones (3 familias × 2 modos + 2 baselines)",
     caption_es=(
         "Métricas globales sobre el conjunto de test temporal (último 20 % de "
-        "días de cada ave). Las cuatro métricas se reportan en paneles "
-        "separados para destacar al ganador en cada criterio. Persistencia "
-        "trivial y Markov(1) se incluyen como baselines de referencia "
-        "heredadas de O2. LightGBM queda visualmente diferenciado por sus "
-        "valores anómalos en log-loss y distancia mediana, coherente con la "
-        "divergencia observada en C2. Conviene leer este artefacto junto a "
-        "C4, que argumenta la recomendación final del algoritmo ganador "
-        "priorizando log-loss como criterio principal."
+        "días de cada ave). Se reportan cinco paneles: top-1 global, top-3 "
+        "global, log-loss, distancia mediana y top-1 restringido a los días de "
+        "movimiento (true_cell ≠ celda predicha por persistencia, n=908, 22,5 % "
+        "del test). Persistencia trivial y Markov(1) se incluyen como baselines "
+        "heredadas de O2. En las métricas globales, persistencia domina sobre "
+        "ML (73 % de días son self-loops, resultado estructural del dataset). "
+        "En los días de movimiento —donde persistencia es trivialmente cero— "
+        "los modelos ML (RF/XGB) alcanzan top-1 ~0,17-0,20 frente al 0,09 de "
+        "Markov(1): este es el margen de valor real del aprendizaje supervisado. "
+        "LightGBM queda visualmente diferenciado por sus valores anómalos en "
+        "log-loss y distancia mediana, coherente con la divergencia observada "
+        "en C2. Conviene leer este artefacto junto a C4, que argumenta la "
+        "recomendación final del algoritmo ganador."
     ),
     fig=fig_c3,
     table=c3_table,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -331,25 +360,34 @@ winners_table
 
 # %%
 recomendacion_es = (
-    "**Criterio principal: log-loss** (consistente con la decisión metodológica "
-    "heredada de O2). El log-loss penaliza la sobreconfianza en predicciones "
-    "incorrectas y recompensa una buena calibración probabilística, lo que es "
-    "esencial para alimentar O5 con distribuciones de probabilidad por celda. "
+    "**Criterio principal: log-loss** (calibración probabilística; heredado de "
+    "O2 como criterio más informativo que el top-1 argmax). El log-loss "
+    "penaliza la sobreconfianza en predicciones incorrectas y es la métrica "
+    "más útil para alimentar O5 con distribuciones de probabilidad por celda. "
     "\n\n"
     f"**Ganador del modo personalizado:** `{ganador_pers['modelo']}` con "
     f"log-loss = {ganador_pers['log_loss']:.3f}. "
     f"**Ganador del modo poblacional:** `{ganador_pob['modelo']}` con "
     f"log-loss = {ganador_pob['log_loss']:.3f}. "
     "\n\n"
+    "Resultado global: ML bate a Markov(1) en todas las métricas (C3), pero "
+    "pierde ante la persistencia trivial en top-1 global y distancia mediana "
+    "— resultado estructural del dataset (73 % de días son self-loops, lo que "
+    "favorece por construcción a la baseline trivial). El margen de valor real "
+    "del ML se concentra en los días de movimiento (ver columna "
+    "top1_dias_movimiento en C3): ML ~0,18 vs persistencia = 0 y Markov ~0,09. "
+    "El error espacial absoluto es modesto: mediana ~24 km, ~80 % de "
+    "predicciones dentro de 110 km. El límite es estructural (features "
+    "locales de un único día, sin historial multi-paso ni información de viento). "
+    "\n\n"
     "LightGBM queda descartado en ambos modos por la divergencia documentada "
     "en C2 — su configuración conservadora de §8.6 no extrae señal "
     "generalizable de este dataset con ~849 clases activas. "
     "\n\n"
     "Ambos ganadores se utilizarán como base para los artefactos siguientes "
-    "(C5/C6 análisis de error por estado, C7 comparativa memorización, C8 "
-    "feature importance). En O5, se cargarán por defecto como combinación "
-    "recomendada de los dos selectores; el usuario podrá cambiar a las otras "
-    "combinaciones para comparar visualmente."
+    "(C5/C6 análisis de error por estado, C7 memorización, C8 feature "
+    "importance). En O5, se cargarán por defecto; el usuario podrá cambiar "
+    "a las otras combinaciones para comparar visualmente."
 )
 
 # Tabla expandida: ganador por modo (log-loss) + comparativa con baselines
@@ -382,6 +420,7 @@ save_artifact(
     ),
     caption_es=recomendacion_es,
     table=c4_table,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -394,8 +433,8 @@ from tfg_aves.ml.evaluate import evaluate_by_state
 
 
 def _table_for_winner(family: str, mode: str) -> pd.DataFrame:
-    sub = preds[(preds["modelo"] == family) & (preds["modo"] == mode)]
-    table = evaluate_by_state(sub, state_col="state_b")
+    sub = preds_all[(preds_all["modelo"] == family) & (preds_all["modo"] == mode)]
+    table = evaluate_by_state(sub, state_col="state_b_causal")
     table["modelo"] = family
     table["modo"] = mode
     return table
@@ -430,35 +469,42 @@ save_artifact(
     slug="error-by-state-personalizado",
     objective="o4",
     num=6,
-    decision="Desglose de top-1 y top-3 por estado HMM para el ganador personalizado",
+    decision="Desglose de top-1 y top-3 por estado HMM causal para el ganador personalizado",
     caption_es=(
         f"Accuracy del modelo ganador personalizado ({ganador_pers['modelo']}) "
-        "desglosada por estado biológico inferido por O3 (Modelo B). La "
-        "comparación global vs estacionario vs migración revela cuándo falla "
-        "el modelo: una caída fuerte en migración indicaría que el modelo "
-        "acierta sólo los días triviales (estacionarios, donde la persistencia "
-        "ya lo hace bien). Esta es la pregunta que define el aporte real del "
-        "ML supervisado frente a las baselines."
+        "desglosada por estado biológico inferido por O3 con cinemática causal "
+        "(state_b_causal). La caída del top-1 entre estacionario (~0,64) y "
+        "migración (~0,13) confirma el límite estructural del modelo: acierta "
+        "los días estacionarios —donde la persistencia también acertaría— pero "
+        "falla en los días de migración activa, que son biológicamente los más "
+        "relevantes. Este resultado no es un artefacto del overfit sino el "
+        "techo real de un modelo que dispone únicamente de features locales de "
+        "un solo día sin información de viento ni historial multi-paso."
     ),
     fig=fig_state,
     table=c5_table,
+    overwrite=True,
 )
 save_artifact(
     slug="error-by-state-poblacional",
     objective="o4",
     num=7,
-    decision="Desglose de top-1 y top-3 por estado HMM para el ganador poblacional",
+    decision="Desglose de top-1 y top-3 por estado HMM causal para el ganador poblacional",
     caption_es=(
         f"Idem C5 para el ganador poblacional ({ganador_pob['modelo']}, sin "
-        "bird_id). El descenso esperable respecto al personalizado en cada "
-        "estado cuantifica cuánto del rendimiento se debe a conocer la "
-        "identidad del ave frente a aprender patrones genéricos de movimiento "
-        "de la especie. Coherencia con la fenología de Larus fuscus: la "
-        "migración (15,3 % del dataset, concentrada en abr-may y sep-oct) "
-        "debe seguir aportando información útil incluso sin bird_id."
+        "bird_id). El patrón es prácticamente idéntico al personalizado: "
+        "estacionario ~0,63 y migración ~0,13-0,14. La pequeña diferencia "
+        "(~+1 pp en estacionario para el personalizado) refleja la señal "
+        "generalizable que aporta bird_id sin aumentar el overfit (ver C7). "
+        "La coherencia entre ambos modos refuerza que el colapso en migración "
+        "es estructural y no atribuible a la presencia o ausencia de la "
+        "identidad del ave. Fenología de referencia: estado 1 (migración) "
+        "representa el 11,7 % del test, concentrado en abr-may y sep-oct, "
+        "coherente con la fenología conocida de Larus fuscus."
     ),
     fig=fig_state,
     table=c6_table,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -480,36 +526,62 @@ for family in ["rf", "xgb", "lgbm"]:
         "diff_test_pers_vs_pob": pers["top1"] - pob["top1"],
     })
 c7_table = pd.DataFrame(c7_rows)
+print(c7_table.to_string())
 
-fig_c7, ax = plt.subplots(figsize=(8, 4.5))
+fig_c7, axes_c7 = plt.subplots(1, 2, figsize=(13, 4.5))
+
+# Panel izquierdo: gap train-test por familia y modo
+ax_gap = axes_c7[0]
 x = np.arange(len(c7_table))
 width = 0.4
-ax.bar(x - width / 2, c7_table["gap_pers"], width, label="gap personalizado")
-ax.bar(x + width / 2, c7_table["gap_pob"], width, label="gap poblacional")
-ax.set_xticks(x)
-ax.set_xticklabels(c7_table["familia"])
-ax.set_ylabel("gap top-1 (train - test)")
-ax.set_title("C7 — Gap train-test por familia: personalizado vs poblacional")
-ax.legend()
+ax_gap.bar(x - width / 2, c7_table["gap_pers"], width, label="gap personalizado")
+ax_gap.bar(x + width / 2, c7_table["gap_pob"], width, label="gap poblacional")
+ax_gap.set_xticks(x)
+ax_gap.set_xticklabels(c7_table["familia"])
+ax_gap.set_ylabel("gap top-1 (train - test)")
+ax_gap.set_title("Gap train-test por familia y modo")
+ax_gap.legend()
+
+# Panel derecho: diferencia test pers vs pob
+ax_diff = axes_c7[1]
+rf_xgb = c7_table[c7_table["familia"].isin(["rf", "xgb"])].reset_index(drop=True)
+x2 = np.arange(len(rf_xgb))
+ax_diff.bar(x2, rf_xgb["diff_test_pers_vs_pob"], width=0.5, color=["steelblue", "darkorange"])
+ax_diff.axhline(0, color="black", linewidth=0.8, linestyle="--")
+ax_diff.set_xticks(x2)
+ax_diff.set_xticklabels(rf_xgb["familia"])
+ax_diff.set_ylabel("top1_pers_test − top1_pob_test")
+ax_diff.set_title("Aportación neta de bird_id en test (pers − pob)")
+
+fig_c7.suptitle("C7 — Análisis de la contribución de bird_id: gaps similares, aporte neto modesto")
 fig_c7.tight_layout()
 
 save_artifact(
     slug="personalizado-vs-poblacional",
     objective="o4",
     num=8,
-    decision="Cuantificar cuánto del rendimiento se debe a memorizar bird_id frente a generalización",
+    decision=(
+        "bird_id aporta una mejora marginal en test (~+1 pp top-1) sin aumentar "
+        "el gap de overfit respecto al modo poblacional"
+    ),
     caption_es=(
-        "Diferencia train-test (gap) en top-1 para cada familia, contrastando "
-        "el modo personalizado (con bird_id) frente al poblacional (sin "
-        "bird_id). Un gap_pers >> gap_pob sería evidencia directa de que "
-        "bird_id se está usando para memorizar el train más que para extraer "
-        "patrones generalizables — es decir, el modo personalizado estaría "
-        "sobreajustando a las trayectorias específicas de las 82 aves vistas. "
-        "Si los gaps son similares y diff_test_pers_vs_pob > 0, entonces "
-        "bird_id aporta señal generalizable real."
+        "Análisis del papel de bird_id (identidad individual) en el pipeline. "
+        "Panel izquierdo: gap train-test en top-1 para cada familia en modo "
+        "personalizado (con bird_id) frente a poblacional (sin bird_id). Los "
+        "gaps son prácticamente iguales entre modos (~0,20 para RF, ~0,21 para "
+        "XGBoost): añadir bird_id NO aumenta el overfit, pero tampoco lo "
+        "reduce. Panel derecho: diferencia de top-1 en test (pers − pob) para "
+        "RF y XGBoost. La diferencia es positiva pero pequeña (~+1 pp), lo que "
+        "indica que bird_id aporta señal generalizable real —probablemente "
+        "rangos de hábitat individuales que el modelo captura— aunque el impacto "
+        "cuantitativo es modesto. Interpretación para la memoria: el modo "
+        "personalizado es marginalmente preferible en top-1 si el ave es "
+        "conocida; el poblacional es igualmente válido y más generalizable a "
+        "individuos nuevos."
     ),
     fig=fig_c7,
     table=c7_table,
+    overwrite=True,
 )
 
 # %% [markdown]
@@ -558,19 +630,23 @@ save_artifact(
     objective="o4",
     num=9,
     decision=(
-        "Verificar que state_b y posterior_b_migracion son usados; cuantificar "
-        "el peso de bird_id en el modelo personalizado"
+        "Verificar que state_b_causal y posterior_b_migracion_causal son usados; "
+        "cuantificar el peso de bird_id en el modelo personalizado"
     ),
     caption_es=(
-        "Importancia relativa de las features para los dos modelos ganadores. "
-        "En el modelo personalizado, la importancia de bird_id indica el "
-        "peso de la identidad individual frente al resto de señales (posición "
-        "actual, ciclo anual, cinemática, régimen biológico). En el modelo "
-        "poblacional, la ausencia de bird_id obliga al modelo a apoyarse "
-        "completamente en lat/lon, doy cíclico, cinemática y state_b — "
-        "confirmar que state_b y posterior_b_migracion ocupan posiciones "
-        "altas valida que el aporte de O3 al pipeline supervisado es real."
+        "Importancia relativa de las features para los dos modelos ganadores "
+        "(pipeline causal: cinemática t-1→t y estado HMM forward-filtered). "
+        "En el modelo personalizado (RF), lat y lon acaparan ~0,66 de la "
+        "importancia total, seguidos de bird_id (~0,14) y "
+        "posterior_b_migracion_causal (~0,05). En el modelo poblacional (XGB), "
+        "lat+lon suman ~0,74, con posterior_b_migracion_causal (~0,05) y "
+        "state_b_causal (~0,02) entre las features informativas, lo que "
+        "valida que el aporte de O3 al pipeline supervisado es real aunque "
+        "secundario. La cinemática causal (step_in_km, cos_turning_in, "
+        "sin/cos_bearing_in) ocupa posiciones intermedias en ambos modelos, "
+        "con importancias modestas pero consistentes."
     ),
     fig=fig_c8,
     table=c8_table,
+    overwrite=True,
 )
