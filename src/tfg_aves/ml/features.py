@@ -80,6 +80,9 @@ def compute_causal_kinematics(df: pd.DataFrame) -> pd.DataFrame:
     step_in = np.full(len(out), np.nan)
     step_in[mask_in] = np.asarray(haversine_km(lat_1, lon_1, lat_t, lon_t))[mask_in]
 
+    # Los rumbos/distancias se calculan sobre el array completo (coords NaN
+    # producen NaN); sólo las posiciones enmascaradas se escriben en la salida.
+    # Patrón deliberado, paralelo a tfg_aves.hmm.features.compute_observation_features.
     bearing_in = np.asarray(bearing_rad(lat_1, lon_1, lat_t, lon_t))
     sin_b = np.full(len(out), np.nan)
     cos_b = np.full(len(out), np.nan)

@@ -5,10 +5,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tfg_aves.markov.discretize import haversine_km
 from tfg_aves.ml.features import (
     add_cyclic_doy,
     assign_cells_to_features,
     build_feature_matrix,
+    compute_causal_kinematics,
     split_temporal_per_bird,
 )
 
@@ -224,10 +226,6 @@ def test_merge_wind_features_propagates_nan_when_no_match():
     assert np.isnan(b_row["wind_speed_850"])
 
 
-from tfg_aves.ml.features import compute_causal_kinematics
-from tfg_aves.markov.discretize import haversine_km
-
-
 def _linear_bird(bird="A", n=10, lat0=40.0, lon0=-3.0, dlat=0.1, dlon=0.0):
     """Un ave con n días contiguos, posiciones en línea recta hacia el norte."""
     dates = pd.date_range("2020-01-01", periods=n)
@@ -285,3 +283,39 @@ def test_is_hmm_obs_valid_requiere_racha_de_3():
     assert not out.loc[1, "is_hmm_obs_valid"]
     assert out.loc[2, "is_hmm_obs_valid"]
     assert out.loc[4, "is_hmm_obs_valid"]
+
+
+def test_no_contaminacion_entre_aves():
+    """Verifica que las filas de inicio de ave B no usan posiciones de ave A.
+
+    Ave A: lat ~40, ave B: lat ~50. Si hubiera contaminación, step_in_km en la
+    primera fila de B sería ~1 100 km (haversine 40°→50°) en vez de NaN.
+    """
+    bird_a = _linear_bird(bird="A", n=5, lat0=40.0, lon0=-3.0, dlat=0.1, dlon=0.0)
+    bird_b = _linear_bird(bird="B", n=5, lat0=50.0, lon0=10.0, dlat=0.1, dlon=0.0)
+
+    df = pd.concat([bird_a, bird_b], ignore_index=True)
+    out = compute_causal_kinematics(df)
+
+    b_rows = out[out["bird_id"] == "B"].reset_index(drop=True)
+
+    # Primera fila de B: no existe t-1 dentro de B → step_in_km debe ser NaN.
+    assert np.isnan(b_rows.loc[0, "step_in_km"]), (
+        f"Contaminación detectada: step_in_km fila 0 de B = {b_rows.loc[0, 'step_in_km']:.1f} km "
+        "(esperado NaN; si fuera ~1100 km hay contaminación con posiciones de A)"
+    )
+    # Primera fila de B: sin t-1 propio → is_hmm_obs_valid debe ser False.
+    assert not b_rows.loc[0, "is_hmm_obs_valid"]
+
+    # Segunda fila de B: tiene t-1 dentro de B pero no t-2 → cos_turning_in NaN.
+    assert np.isnan(b_rows.loc[1, "cos_turning_in"]), (
+        f"Contaminación detectada: cos_turning_in fila 1 de B = {b_rows.loc[1, 'cos_turning_in']} "
+        "(esperado NaN; t-2 de B no existe, no debe tomarse de A)"
+    )
+    # Segunda fila de B: sin t-2 propio → is_hmm_obs_valid debe ser False.
+    assert not b_rows.loc[1, "is_hmm_obs_valid"]
+
+    # A partir de la tercera fila de B (t-2 y t-1 dentro de B) sí hay valores válidos.
+    assert not np.isnan(b_rows.loc[2, "step_in_km"])
+    assert not np.isnan(b_rows.loc[2, "cos_turning_in"])
+    assert b_rows.loc[2, "is_hmm_obs_valid"]
