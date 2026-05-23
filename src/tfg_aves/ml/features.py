@@ -4,8 +4,25 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from tfg_aves.markov.discretize import _format_cell_id, assign_cell
+from tfg_aves.hmm.features import bearing_rad
+from tfg_aves.markov.discretize import _format_cell_id, assign_cell, haversine_km
 
+# Features cinemáticas causales (conocidas el día t). Ver R6 del spec.
+FEATURES_KINEMATIC = [
+    "lat", "lon", "sin_doy", "cos_doy",
+    "step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
+]
+# Features derivadas del HMM causal, añadidas por build_o4 tras el filtrado.
+FEATURES_HMM = ["state_b_causal", "posterior_b_migracion_causal"]
+# Conjunto supervisado completo de O4 (10 features) + bird_id en personalizado.
+FEATURES_O4_CAUSAL = [*FEATURES_KINEMATIC, *FEATURES_HMM]
+# Emisión del HMM causal (5, paralela al Modelo B de O3, sin rumbo absoluto).
+HMM_EMISSION_COLS = [
+    "step_in_km", "cos_turning_in", "veg_low", "veg_high", "daylight_hours",
+]
+
+# Features del pipeline O4 original (no causal); conservadas para
+# compatibilidad con build_feature_matrix y las funciones de entrenamiento.
 _FEATURES_BASE = [
     "lat", "lon", "sin_doy", "cos_doy",
     "step_length_km", "cos_turning_angle",
@@ -28,6 +45,65 @@ def add_cyclic_doy(df: pd.DataFrame, date_col: str = "date_utc") -> pd.DataFrame
     out["sin_doy"] = np.sin(angle)
     out["cos_doy"] = np.cos(angle)
     return out
+
+
+def compute_causal_kinematics(df: pd.DataFrame) -> pd.DataFrame:
+    """Añade cinemática ENTRANTE (tramo t-1 → t) y la máscara is_hmm_obs_valid.
+
+    - ``step_in_km``      = haversine(pos(t-1), pos(t)).
+    - ``sin/cos_bearing_in`` = sin/cos del rumbo del tramo t-1 → t (dirección).
+    - ``cos_turning_in``  = cos(rumbo(t-1→t) − rumbo(t-2→t-1)) (variabilidad del rumbo).
+    - ``is_hmm_obs_valid``: día t con (t-2, t-1, t) válidos y consecutivos en
+      calendario y con veg_low/veg_high/daylight_hours presentes (lo que exige
+      la emisión del HMM causal).
+
+    Toda la cinemática es función exclusiva de posiciones hasta t inclusive:
+    no hay look-ahead. Las filas sin la racha necesaria reciben NaN.
+    """
+    out = df.sort_values(["bird_id", "date_utc"]).reset_index(drop=True).copy()
+    out["_date_dt"] = pd.to_datetime(out["date_utc"])
+
+    valid = out["lat"].notna() & out["lon"].notna()
+    same1 = out["bird_id"].shift(1) == out["bird_id"]
+    same2 = out["bird_id"].shift(2) == out["bird_id"]
+    consec1 = (out["_date_dt"] - out["_date_dt"].shift(1)) == pd.Timedelta(days=1)
+    consec2 = (out["_date_dt"].shift(1) - out["_date_dt"].shift(2)) == pd.Timedelta(days=1)
+    valid1 = valid.shift(1).fillna(False).astype(bool)
+    valid2 = valid.shift(2).fillna(False).astype(bool)
+
+    lat_t, lon_t = out["lat"].to_numpy(), out["lon"].to_numpy()
+    lat_1, lon_1 = out["lat"].shift(1).to_numpy(), out["lon"].shift(1).to_numpy()
+    lat_2, lon_2 = out["lat"].shift(2).to_numpy(), out["lon"].shift(2).to_numpy()
+
+    # Tramo entrante t-1 → t: necesita t-1 válido y consecutivo.
+    mask_in = (valid & valid1 & same1 & consec1).to_numpy()
+    step_in = np.full(len(out), np.nan)
+    step_in[mask_in] = np.asarray(haversine_km(lat_1, lon_1, lat_t, lon_t))[mask_in]
+
+    bearing_in = np.asarray(bearing_rad(lat_1, lon_1, lat_t, lon_t))
+    sin_b = np.full(len(out), np.nan)
+    cos_b = np.full(len(out), np.nan)
+    sin_b[mask_in] = np.sin(bearing_in)[mask_in]
+    cos_b[mask_in] = np.cos(bearing_in)[mask_in]
+
+    # Giro causal: necesita además t-2 válido y consecutivo.
+    mask_turn = mask_in & (valid2 & same2 & consec2).to_numpy()
+    bearing_prev = np.asarray(bearing_rad(lat_2, lon_2, lat_1, lon_1))
+    turning = (bearing_in - bearing_prev + np.pi) % (2.0 * np.pi) - np.pi
+    cos_turn = np.full(len(out), np.nan)
+    cos_turn[mask_turn] = np.cos(turning)[mask_turn]
+
+    out["step_in_km"] = step_in
+    out["sin_bearing_in"] = sin_b
+    out["cos_bearing_in"] = cos_b
+    out["cos_turning_in"] = cos_turn
+
+    veg_ok = (
+        out["veg_low"].notna() & out["veg_high"].notna() & out["daylight_hours"].notna()
+    ).to_numpy()
+    out["is_hmm_obs_valid"] = mask_turn & veg_ok
+
+    return out.drop(columns=["_date_dt"])
 
 
 def assign_cells_to_features(

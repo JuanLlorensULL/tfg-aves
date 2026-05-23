@@ -222,3 +222,66 @@ def test_merge_wind_features_propagates_nan_when_no_match():
     assert np.isnan(b_row["wind_u_850"])
     assert np.isnan(b_row["wind_v_850"])
     assert np.isnan(b_row["wind_speed_850"])
+
+
+from tfg_aves.ml.features import compute_causal_kinematics
+from tfg_aves.markov.discretize import haversine_km
+
+
+def _linear_bird(bird="A", n=10, lat0=40.0, lon0=-3.0, dlat=0.1, dlon=0.0):
+    """Un ave con n días contiguos, posiciones en línea recta hacia el norte."""
+    dates = pd.date_range("2020-01-01", periods=n)
+    rows = []
+    for i, d in enumerate(dates):
+        rows.append({
+            "bird_id": bird, "date_utc": d,
+            "lat": lat0 + dlat * i, "lon": lon0 + dlon * i,
+            "veg_low": 0.5, "veg_high": 0.5, "daylight_hours": 12.0,
+            "is_observation_valid": True,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_step_in_km_es_haversine_entrante():
+    df = _linear_bird(n=5, dlat=0.1)
+    out = compute_causal_kinematics(df)
+    # step_in_km en t = dist(pos(t-1), pos(t)); fila 0 es NaN (no hay t-1).
+    esperado = haversine_km(40.0, -3.0, 40.1, -3.0)
+    assert np.isnan(out.loc[0, "step_in_km"])
+    assert out.loc[1, "step_in_km"] == pytest.approx(esperado, rel=1e-6)
+
+
+def test_bearing_in_es_unitario():
+    df = _linear_bird(n=5, dlat=0.1, dlon=0.1)
+    out = compute_causal_kinematics(df)
+    s = out.loc[2, "sin_bearing_in"]
+    c = out.loc[2, "cos_bearing_in"]
+    assert s**2 + c**2 == pytest.approx(1.0, rel=1e-6)
+
+
+def test_cos_turning_in_es_causal():
+    """Cambiar pos(t+1) no debe alterar cos_turning_in(t): sólo usa t-2,t-1,t."""
+    df = _linear_bird(n=6, dlat=0.1)
+    out1 = compute_causal_kinematics(df)
+    df2 = df.copy()
+    df2.loc[4, "lat"] = 99.0  # altera pos en t=4
+    out2 = compute_causal_kinematics(df2)
+    # cos_turning_in en t=3 sólo depende de t=1,2,3 → no cambia.
+    assert out1.loc[3, "cos_turning_in"] == pytest.approx(out2.loc[3, "cos_turning_in"])
+
+
+def test_vuelo_recto_da_cos_turning_uno():
+    df = _linear_bird(n=5, dlat=0.1)  # recto hacia el norte
+    out = compute_causal_kinematics(df)
+    # primeras dos filas NaN (necesita t-2); de la 2 en adelante recto → +1.
+    assert out.loc[2, "cos_turning_in"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_is_hmm_obs_valid_requiere_racha_de_3():
+    df = _linear_bird(n=5, dlat=0.1)
+    out = compute_causal_kinematics(df)
+    # Filas 0 y 1 no tienen t-2 → inválidas; 2,3,4 válidas.
+    assert not out.loc[0, "is_hmm_obs_valid"]
+    assert not out.loc[1, "is_hmm_obs_valid"]
+    assert out.loc[2, "is_hmm_obs_valid"]
+    assert out.loc[4, "is_hmm_obs_valid"]
