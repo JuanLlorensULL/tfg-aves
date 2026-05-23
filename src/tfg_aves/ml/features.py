@@ -21,14 +21,6 @@ HMM_EMISSION_COLS = [
     "step_in_km", "cos_turning_in", "veg_low", "veg_high", "daylight_hours",
 ]
 
-# Features del pipeline O4 original (no causal); conservadas para
-# compatibilidad con build_feature_matrix y las funciones de entrenamiento.
-_FEATURES_BASE = [
-    "lat", "lon", "sin_doy", "cos_doy",
-    "step_length_km", "cos_turning_angle",
-    "state_b", "posterior_b_migracion",
-]
-
 _FEATURES_WIND = [
     "wind_u_850", "wind_v_850", "wind_speed_850",
 ]

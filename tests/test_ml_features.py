@@ -15,49 +15,35 @@ from tfg_aves.ml.features import (
     split_temporal_per_bird,
 )
 
+# ---------------------------------------------------------------------------
+# Helpers — preceden a sus usuarios según la convención del fichero.
+# ---------------------------------------------------------------------------
 
-def _build_synthetic_o3_features() -> pd.DataFrame:
-    """3 aves × 20 días con valid=True y posiciones que cubren varias celdas."""
-    rng = np.random.default_rng(0)
+def _cells_grid():
+    cells = []
+    for i in range(78, 84):
+        for j in range(-9, -3):
+            cells.append({"cell_id": f"{i}_{j}", "cell_lat_idx": i, "cell_lon_idx": j})
+    return pd.DataFrame(cells)
+
+
+def _linear_bird(bird="A", n=10, lat0=40.0, lon0=-3.0, dlat=0.1, dlon=0.0):
+    """Un ave con n días contiguos, posiciones en línea recta hacia el norte."""
+    dates = pd.date_range("2020-01-01", periods=n)
     rows = []
-    for bird in ["A", "B", "C"]:
-        dates = pd.date_range("2020-01-01", periods=20)
-        lats = 40.0 + rng.normal(0, 0.5, size=20).cumsum() * 0.1
-        lons = -3.0 + rng.normal(0, 0.5, size=20).cumsum() * 0.1
-        for i, d in enumerate(dates):
-            rows.append({
-                "bird_id": bird,
-                "date_utc": d,
-                "lat": lats[i], "lon": lons[i],
-                "step_length_km": rng.uniform(1, 100),
-                "cos_turning_angle": rng.uniform(-1, 1),
-                "daylight_hours": 12.0,
-                "veg_low": 0.5, "veg_high": 0.5,
-                "state_a": int(rng.integers(0, 2)),
-                "state_b": int(rng.integers(0, 2)),
-                "posterior_a_estacionario": 0.5, "posterior_a_migracion": 0.5,
-                "posterior_b_estacionario": 0.5, "posterior_b_migracion": 0.5,
-                "is_observation_valid": True,
-                "in_holdout": False,
-            })
+    for i, d in enumerate(dates):
+        rows.append({
+            "bird_id": bird, "date_utc": d,
+            "lat": lat0 + dlat * i, "lon": lon0 + dlon * i,
+            "veg_low": 0.5, "veg_high": 0.5, "daylight_hours": 12.0,
+            "is_observation_valid": True,
+        })
     return pd.DataFrame(rows)
 
 
-def _build_synthetic_cells() -> pd.DataFrame:
-    """Grid 0,5° de 40 celdas alrededor de (40, -3)."""
-    rows = []
-    for i in range(78, 82):  # cell_lat_idx
-        for j in range(-8, -4):  # cell_lon_idx
-            rows.append({
-                "cell_id": f"{i}_{j}",
-                "cell_lat_idx": i,
-                "cell_lon_idx": j,
-                "lat_c": (i + 0.5) * 0.5,
-                "lon_c": (j + 0.5) * 0.5,
-                "n_obs_total": 10,
-            })
-    return pd.DataFrame(rows)
-
+# ---------------------------------------------------------------------------
+# Tests de add_cyclic_doy
+# ---------------------------------------------------------------------------
 
 def test_add_cyclic_doy_identity() -> None:
     df = pd.DataFrame({"date_utc": pd.date_range("2020-03-21", periods=4)})
@@ -66,25 +52,45 @@ def test_add_cyclic_doy_identity() -> None:
     assert -1.0 <= out["sin_doy"].iloc[0] <= 1.0
 
 
+# ---------------------------------------------------------------------------
+# Tests de assign_cells_to_features
+# ---------------------------------------------------------------------------
+
 def test_assign_cells_adds_columns() -> None:
-    df = _build_synthetic_o3_features()
-    cells = _build_synthetic_cells()
+    """assign_cells_to_features añade cell_id_t y cell_id_t_next."""
+    df = _linear_bird(n=10, dlat=0.1)
+    cells = _cells_grid()
     out = assign_cells_to_features(df, cells, cell_deg=0.5)
     assert "cell_id_t" in out.columns
     assert "cell_id_t_next" in out.columns
 
 
+# ---------------------------------------------------------------------------
+# Tests de build_feature_matrix
+# ---------------------------------------------------------------------------
+
 def test_build_feature_matrix_filters_gap_aware() -> None:
-    """El último día de cada ave queda fuera: no tiene t+1 → cell_id_t_next nulo."""
+    """Los dos primeros y el último día de cada ave quedan fuera.
+
+    - Primeros dos días: no tienen t-2 → is_hmm_obs_valid = False.
+    - Último día: no tiene t+1 → cell_id_t_next nulo.
+    """
     # 3 aves × 10 días contiguos procesados con cinemática causal.
     birds = [_linear_bird(bird=b, n=10, dlat=0.1) for b in ["A", "B", "C"]]
     df = pd.concat(birds, ignore_index=True)
     kin = compute_causal_kinematics(df)
     cells = _cells_grid()
     out = build_feature_matrix(kin, cells, include_bird_id=True)
+    # Último día de cada ave ausente (sin t+1).
     last_days = df.groupby("bird_id")["date_utc"].max()
     for bird, last_day in last_days.items():
         assert not ((out["bird_id"] == bird) & (out["date_utc"] == last_day)).any()
+    # Primeros dos días de cada ave ausentes (sin t-2 → is_hmm_obs_valid False).
+    first_days = df.groupby("bird_id")["date_utc"].min()
+    for bird, first_day in first_days.items():
+        second_day = first_day + pd.Timedelta(days=1)
+        assert not ((out["bird_id"] == bird) & (out["date_utc"] == first_day)).any()
+        assert not ((out["bird_id"] == bird) & (out["date_utc"] == second_day)).any()
 
 
 def test_build_feature_matrix_include_bird_id_flag() -> None:
@@ -110,6 +116,48 @@ def test_build_feature_matrix_target_is_next_day_cell() -> None:
     assert set(out["bird_id"].unique()) == {"A", "B", "C"}
 
 
+def test_build_feature_matrix_no_cruza_gap():
+    """Ninguna fila candidata toca el día 4 (gap) ni los días adyacentes."""
+    df = _linear_bird(n=8, dlat=0.1)
+    # Inserta un gap: día 4 inválido (lat NaN).
+    df.loc[4, ["lat", "lon"]] = [np.nan, np.nan]
+    kin = compute_causal_kinematics(df)
+    m = build_feature_matrix(kin, _cells_grid(), include_bird_id=False)
+    # Ninguna fila candidata puede tener t, t-1, t-2 o t+1 tocando el día 4.
+    fechas = set(m["date_utc"])
+    base = pd.date_range("2020-01-01", periods=8)
+    assert base[4] not in fechas  # el propio gap
+    assert base[3] not in fechas  # su t+1 cae en gap
+    assert base[5] not in fechas and base[6] not in fechas  # necesitan t-1/t-2 en gap
+    # Aserción positiva: día índice 2 (2020-01-03) tiene t-2,t-1,t,t+1 = días 0,1,2,3 válidos.
+    assert pd.Timestamp("2020-01-03") in fechas
+    # El último día (índice 7) no tiene t+1 → ausente.
+    assert base[7] not in fechas
+
+
+def test_build_feature_matrix_solo_filas_candidatas():
+    kin = compute_causal_kinematics(_linear_bird(n=8, dlat=0.1))
+    cells = _cells_grid()
+    m = build_feature_matrix(kin, cells, include_bird_id=False)
+    # Candidata = is_hmm_obs_valid(t) (t>=2) y cell_id_t_next no nulo (t+1 existe).
+    # Con 8 días contiguos: t en {2..6} cumplen ambas (t=7 no tiene t+1).
+    assert set(m["date_utc"]) == set(pd.date_range("2020-01-01", periods=8)[2:7])
+    # Las 8 features cinemáticas presentes y sin NaN.
+    assert FEATURES_KINEMATIC == m.attrs["_features"]
+    assert not m[FEATURES_KINEMATIC].isna().any().any()
+
+
+def test_build_feature_matrix_incluye_bird_id():
+    kin = compute_causal_kinematics(_linear_bird(n=8, dlat=0.1))
+    m = build_feature_matrix(kin, _cells_grid(), include_bird_id=True)
+    assert m.attrs["_features"][0] == "bird_id"
+    assert "bird_id" in m.columns
+
+
+# ---------------------------------------------------------------------------
+# Tests de split_temporal_per_bird
+# ---------------------------------------------------------------------------
+
 def test_split_temporal_per_bird_no_leakage() -> None:
     birds = [_linear_bird(bird=b, n=20, dlat=0.05) for b in ["A", "B", "C"]]
     df = pd.concat(birds, ignore_index=True)
@@ -134,6 +182,10 @@ def test_split_temporal_per_bird_fractions() -> None:
     assert abs(n_val / n_total - 0.08) <= 0.05
     assert abs(n_train / n_total - 0.72) <= 0.05
 
+
+# ---------------------------------------------------------------------------
+# Tests de merge_wind_features
+# ---------------------------------------------------------------------------
 
 def test_merge_wind_features_preserves_rows():
     """LEFT JOIN por (bird_id, date_utc) no cambia el número de filas."""
@@ -204,27 +256,9 @@ def test_merge_wind_features_propagates_nan_when_no_match():
     assert np.isnan(b_row["wind_speed_850"])
 
 
-def _cells_grid():
-    cells = []
-    for i in range(78, 84):
-        for j in range(-9, -3):
-            cells.append({"cell_id": f"{i}_{j}", "cell_lat_idx": i, "cell_lon_idx": j})
-    return pd.DataFrame(cells)
-
-
-def _linear_bird(bird="A", n=10, lat0=40.0, lon0=-3.0, dlat=0.1, dlon=0.0):
-    """Un ave con n días contiguos, posiciones en línea recta hacia el norte."""
-    dates = pd.date_range("2020-01-01", periods=n)
-    rows = []
-    for i, d in enumerate(dates):
-        rows.append({
-            "bird_id": bird, "date_utc": d,
-            "lat": lat0 + dlat * i, "lon": lon0 + dlon * i,
-            "veg_low": 0.5, "veg_high": 0.5, "daylight_hours": 12.0,
-            "is_observation_valid": True,
-        })
-    return pd.DataFrame(rows)
-
+# ---------------------------------------------------------------------------
+# Tests de compute_causal_kinematics
+# ---------------------------------------------------------------------------
 
 def test_step_in_km_es_haversine_entrante():
     df = _linear_bird(n=5, dlat=0.1)
@@ -305,36 +339,3 @@ def test_no_contaminacion_entre_aves():
     assert not np.isnan(b_rows.loc[2, "step_in_km"])
     assert not np.isnan(b_rows.loc[2, "cos_turning_in"])
     assert b_rows.loc[2, "is_hmm_obs_valid"]
-
-
-def test_build_feature_matrix_solo_filas_candidatas():
-    kin = compute_causal_kinematics(_linear_bird(n=8, dlat=0.1))
-    cells = _cells_grid()
-    m = build_feature_matrix(kin, cells, include_bird_id=False)
-    # Candidata = is_hmm_obs_valid(t) (t>=2) y cell_id_t_next no nulo (t+1 existe).
-    # Con 8 días contiguos: t en {2..6} cumplen ambas (t=7 no tiene t+1).
-    assert set(m["date_utc"]) == set(pd.date_range("2020-01-01", periods=8)[2:7])
-    # Las 8 features cinemáticas presentes y sin NaN.
-    assert FEATURES_KINEMATIC == m.attrs["_features"]
-    assert not m[FEATURES_KINEMATIC].isna().any().any()
-
-
-def test_build_feature_matrix_no_cruza_gap():
-    df = _linear_bird(n=8, dlat=0.1)
-    # Inserta un gap: día 4 inválido (lat NaN).
-    df.loc[4, ["lat", "lon"]] = [np.nan, np.nan]
-    kin = compute_causal_kinematics(df)
-    m = build_feature_matrix(kin, _cells_grid(), include_bird_id=False)
-    # Ninguna fila candidata puede tener t, t-1, t-2 o t+1 tocando el día 4.
-    fechas = set(m["date_utc"])
-    base = pd.date_range("2020-01-01", periods=8)
-    assert base[4] not in fechas  # el propio gap
-    assert base[3] not in fechas  # su t+1 cae en gap
-    assert base[5] not in fechas and base[6] not in fechas  # necesitan t-1/t-2 en gap
-
-
-def test_build_feature_matrix_incluye_bird_id():
-    kin = compute_causal_kinematics(_linear_bird(n=8, dlat=0.1))
-    m = build_feature_matrix(kin, _cells_grid(), include_bird_id=True)
-    assert m.attrs["_features"][0] == "bird_id"
-    assert "bird_id" in m.columns

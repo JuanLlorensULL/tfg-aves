@@ -22,11 +22,14 @@ from tfg_aves.ml.evaluate import (
     top_k_accuracy,
 )
 from tfg_aves.ml.features import (
+    FEATURES_O4_CAUSAL,
     add_cyclic_doy,
     assign_cells_to_features,
     build_feature_matrix,
+    compute_causal_kinematics,
     split_temporal_per_bird,
 )
+from tfg_aves.ml.hmm_causal import decode_causal_states, fit_causal_hmm
 from tfg_aves.ml.train import (
     train_lightgbm,
     train_random_forest,
@@ -35,16 +38,20 @@ from tfg_aves.ml.train import (
 
 __all__ = [
     "BuildO4Result",
+    "FEATURES_O4_CAUSAL",
     "add_cyclic_doy",
     "assign_cells_to_features",
     "build_feature_matrix",
     "build_o4",
     "compare_models",
+    "compute_causal_kinematics",
     "compute_markov_baseline",
     "compute_persistence_baseline",
+    "decode_causal_states",
     "dist_median_km",
     "evaluate_by_state",
     "evaluate_global",
+    "fit_causal_hmm",
     "predict_with_meta",
     "split_temporal_per_bird",
     "top_k_accuracy",
