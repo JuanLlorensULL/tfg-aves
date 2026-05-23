@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from hmmlearn.hmm import GaussianHMM
 
 from tfg_aves.ml.hmm_causal import forward_filtered_posteriors
@@ -94,3 +95,10 @@ def test_filtrado_respeta_segmentos():
     one_step = forward_filtered_posteriors(m, X[0:1], [1])
     np.testing.assert_allclose(post[0], one_step[0])
     np.testing.assert_allclose(post[2], one_step[0])
+
+
+def test_filtrado_rechaza_lengths_inconsistentes():
+    m = _known_hmm()
+    X = np.array([[0.0], [4.0], [0.0]])  # 3 filas
+    with pytest.raises(ValueError):
+        forward_filtered_posteriors(m, X, [2])  # suma 2 != 3

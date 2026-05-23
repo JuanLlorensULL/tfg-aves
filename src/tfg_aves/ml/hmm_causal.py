@@ -47,6 +47,10 @@ def forward_filtered_posteriors(
     """
     if len(X) == 0:
         return np.zeros((0, model.n_components))
+    if sum(lengths) != len(X):
+        raise ValueError(
+            f"sum(lengths)={sum(lengths)} no coincide con len(X)={len(X)}.",
+        )
     log_start = np.log(model.startprob_)
     log_trans = np.log(model.transmat_)
     log_emit_all = _diag_log_emission(X, model.means_, model.covars_)
