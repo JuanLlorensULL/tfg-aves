@@ -10,9 +10,10 @@ from tfg_aves.ml.hmm_causal import forward_filtered_posteriors
 def _known_hmm() -> GaussianHMM:
     """HMM 2 estados, 1 feature, parámetros conocidos (no entrenado)."""
     m = GaussianHMM(n_components=2, covariance_type="diag")
-    m.startprob_ = np.array([0.6, 0.4])
-    m.transmat_ = np.array([[0.8, 0.2], [0.3, 0.7]])
-    m.means_ = np.array([[0.0], [10.0]])
+    m.n_features = 1
+    m.startprob_ = np.array([0.5, 0.5])
+    m.transmat_ = np.array([[0.9, 0.1], [0.1, 0.9]])
+    m.means_ = np.array([[0.0], [4.0]])
     m.covars_ = np.array([[1.0], [1.0]])
     return m
 
@@ -47,7 +48,7 @@ def _reference_filtered(m, X):
 
 def test_filtrado_coincide_con_referencia():
     m = _known_hmm()
-    X = np.array([[0.1], [0.0], [9.8], [10.2], [0.2]])
+    X = np.array([[0.1], [0.0], [3.8], [4.2], [0.2]])
     got = forward_filtered_posteriors(m, X, [len(X)])
     ref = _reference_filtered(m, X)
     np.testing.assert_allclose(got, ref, rtol=1e-8, atol=1e-10)
@@ -56,7 +57,7 @@ def test_filtrado_coincide_con_referencia():
 def test_filtrado_es_leak_free():
     """El posterior filtrado en t no cambia al alterar observaciones futuras."""
     m = _known_hmm()
-    X = np.array([[0.0], [0.1], [10.0], [9.9], [0.0], [0.1]])
+    X = np.array([[0.0], [0.1], [4.0], [3.9], [0.0], [0.1]])
     post = forward_filtered_posteriors(m, X, [len(X)])
     t = 2
     X2 = X.copy()
@@ -66,20 +67,28 @@ def test_filtrado_es_leak_free():
 
 
 def test_suavizado_si_cambia_con_el_futuro():
-    """Contraste: predict_proba (forward-backward) SÍ cambia con el futuro."""
+    """Contraste: predict_proba (forward-backward) SÍ usa el futuro.
+
+    La observación presente (t=0) está en el punto medio entre las dos
+    medias (2.0), así que es ambigua: el suavizado fija su estado mirando
+    el futuro; el filtrado no puede.
+    """
     m = _known_hmm()
-    X = np.array([[0.0], [0.1], [10.0], [9.9], [0.0], [0.1]])
+    X = np.array([[2.0], [2.0]])
+    X2 = np.array([[2.0], [4.0]])  # cambia sólo el futuro (t=1)
     sm = m.predict_proba(X)
-    X2 = X.copy()
-    X2[3:] = 999.0
     sm2 = m.predict_proba(X2)
-    assert not np.allclose(sm[:3], sm2[:3])
+    assert not np.allclose(sm[0], sm2[0])  # suavizado del presente cambia
+    # Filtrado: P(s0 | o0) NO cambia porque o0 es idéntico.
+    f = forward_filtered_posteriors(m, X, [2])
+    f2 = forward_filtered_posteriors(m, X2, [2])
+    np.testing.assert_allclose(f[0], f2[0])
 
 
 def test_filtrado_respeta_segmentos():
     """Con dos segmentos, cada uno reinicia en startprob_."""
     m = _known_hmm()
-    X = np.array([[0.0], [10.0], [0.0], [10.0]])
+    X = np.array([[0.0], [4.0], [0.0], [4.0]])
     post = forward_filtered_posteriors(m, X, [2, 2])
     # La primera fila de cada segmento usa sólo startprob_ + su emisión.
     one_step = forward_filtered_posteriors(m, X[0:1], [1])

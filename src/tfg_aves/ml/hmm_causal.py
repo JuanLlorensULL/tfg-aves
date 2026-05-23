@@ -49,15 +49,7 @@ def forward_filtered_posteriors(
         return np.zeros((0, model.n_components))
     log_start = np.log(model.startprob_)
     log_trans = np.log(model.transmat_)
-    # Acceso robusto a las varianzas: el property covars_ de hmmlearn requiere
-    # que n_features esté inicializado (sólo ocurre tras fit()). En modelos
-    # entrenados funciona siempre; para tests con parámetros fijos se usa el
-    # atributo interno como alternativa.
-    try:
-        covars = model.covars_
-    except AttributeError:
-        covars = model._covars_
-    log_emit_all = _diag_log_emission(X, model.means_, covars)
+    log_emit_all = _diag_log_emission(X, model.means_, model.covars_)
 
     out = np.empty((len(X), model.n_components))
     pos = 0
