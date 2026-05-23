@@ -400,10 +400,14 @@ save_artifact(
         "test split (top-1, top-3, log-loss, distancia mediana km) para "
         "los cuatro modelos comunes a L1-v0 y L1-v1 (RF/XGB × "
         "personalizado/poblacional). LightGBM, persistencia y Markov(1) "
-        "se excluyen para que la comparación sea simétrica. Es el "
-        "entregable narrativo central de L1: cuantifica el aporte "
-        "aislado del viento como predictor sin contaminar con otras "
-        "decisiones."
+        "se excluyen para que la comparación sea simétrica. Resultado: "
+        "sólo el RF poblacional mejora en las cuatro métricas con viento "
+        "(top-1 +4 pp, log-loss -0,12 a 5,52), cumpliendo el criterio "
+        "primario (§9). El RF personalizado se degrada (top-1 -3,6 pp), "
+        "consistente con que bird_id ya satura la señal individual y las "
+        "tres features de viento introducen ruido relativo. XGBoost se "
+        "mantiene plano en ambos modos (±0,02 en log-loss). El aporte "
+        "del viento existe pero es modesto y arquitectura-dependiente."
     ),
     fig=fig_c3,
     table=c3_table,
@@ -482,14 +486,110 @@ save_artifact(
     caption_es=(
         "Comparativa de top-1 por estado HMM (estacionario vs migración) "
         "entre L1-v0 y L1-v1 para los cuatro modelos comunes. La "
-        "hipótesis es que el aporte del viento se concentra en los días "
-        "de migración (state_b=1), donde el modelo se beneficia más de "
-        "saber si el viento es favorable o no. Si la mejora en "
-        "estacionario es nula y en migración es ≥ +3 pp absolutos en al "
-        "menos uno de los ganadores, se cumple el criterio secundario "
-        "de éxito de L1 (§9 del spec)."
+        "hipótesis del spec era que el aporte del viento se "
+        "concentraría en los días de migración (state_b=1). Resultado: "
+        "la hipótesis se refuta empíricamente. Ningún modelo mejora "
+        "≥ +3 pp absolutos en migración (criterio secundario §9 NO "
+        "cumplido). La única ganancia neta proviene del RF poblacional, "
+        "que mejora ~+4,7 pp en estacionario y queda casi plano en "
+        "migración — patrón contraintuitivo que indica que el modelo "
+        "explota el viento como pista climática general (estacionalidad "
+        "+ posición geográfica) más que como señal direccional de vuelo "
+        "activo. La caída en migración (~0,12 top-1) persiste como "
+        "límite estructural del enfoque de un día con features locales."
     ),
     fig=fig_c4,
     table=c4_table,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ## Fase D — Análisis post-hoc del aprendizaje del viento
+# ### L1-v1-C5 — ¿El modelo aprendió a usar el viento?
+#
+# Comparamos top-1 de L1-v1 en días de migración (state_b=1) con viento
+# "favorable" vs "desfavorable" según la dirección fenológica esperada
+# de Larus fuscus: primavera (mar-jun) viento hacia el norte favorable
+# (v positivo); otoño (ago-nov) viento hacia el sur favorable (v
+# negativo); invernada/cría: dirección no clara (excluidos).
+
+# %%
+def _fenological_direction(month):
+    if 3 <= month <= 6:
+        return 1.0  # primavera: viento hacia el norte favorable → v > 0
+    if 8 <= month <= 11:
+        return -1.0  # otoño: viento hacia el sur favorable → v < 0
+    return 0.0  # invernada o cría: dirección no clara
+
+
+merged_pred = preds_v1.merge(
+    wind, on=["bird_id", "date_utc"], how="left",
+)
+merged_pred["fen_dir"] = pd.to_datetime(merged_pred["date_utc"]).dt.month.apply(
+    _fenological_direction,
+)
+merged_pred["tailwind_proxy"] = merged_pred["wind_v_850"] * merged_pred["fen_dir"]
+
+migration_pred = merged_pred[
+    (merged_pred["state_b"] == 1) & (merged_pred["fen_dir"] != 0.0)
+].dropna(subset=["tailwind_proxy"]).copy()
+migration_pred["wind_favorable"] = migration_pred["tailwind_proxy"] > 0
+
+c5_rows = []
+for (modelo, modo), sub in migration_pred.groupby(["modelo", "modo"]):
+    fav = sub[sub["wind_favorable"]]
+    unfav = sub[~sub["wind_favorable"]]
+    c5_rows.append({
+        "modelo": modelo,
+        "modo": modo,
+        "n_favorable": int(len(fav)),
+        "n_desfavorable": int(len(unfav)),
+        "top1_favorable": (
+            float((fav["true_cell"] == fav["pred_cell_top1"]).mean())
+            if len(fav) else float("nan")
+        ),
+        "top1_desfavorable": (
+            float((unfav["true_cell"] == unfav["pred_cell_top1"]).mean())
+            if len(unfav) else float("nan")
+        ),
+    })
+c5_table = pd.DataFrame(c5_rows)
+c5_table["delta"] = c5_table["top1_favorable"] - c5_table["top1_desfavorable"]
+print(c5_table.to_string(index=False))
+
+fig_c5, ax = plt.subplots(figsize=(9, 5))
+labels = [f"{r['modelo'].upper()} {r['modo']}" for _, r in c5_table.iterrows()]
+x = np.arange(len(c5_table))
+width = 0.35
+ax.bar(x - width / 2, c5_table["top1_favorable"], width, label="Viento favorable")
+ax.bar(x + width / 2, c5_table["top1_desfavorable"], width, label="Viento desfavorable")
+ax.set_xticks(x)
+ax.set_xticklabels(labels, rotation=15)
+ax.set_ylabel("top-1 accuracy (migración)")
+ax.set_title("L1-v1-C5 — top-1 en migración: viento favorable vs desfavorable")
+ax.legend()
+ax.grid(True, axis="y", alpha=0.3)
+fig_c5.tight_layout()
+
+save_artifact(
+    slug="l1v1-tailwind-effect",
+    objective="o4",
+    num=16,
+    decision="Verificar si el modelo aprende a interpretar la dirección del viento",
+    caption_es=(
+        "Análisis post-hoc del aprendizaje del viento en L1-v1: top-1 "
+        "accuracy sobre los días de migración (state_b=1) desglosado "
+        "por dirección del viento respecto a la dirección fenológica "
+        "esperada de Larus fuscus (primavera: hacia el norte; otoño: "
+        "hacia el sur; invernada y cría se excluyen al no tener "
+        "dirección clara). Si delta = top1_favorable - top1_desfavorable "
+        "es positivo y no trivial, el modelo está capturando la "
+        "interacción viento×fenología — evidencia indirecta de que las "
+        "features de viento aportan más que ruido. Es la prueba final "
+        "para distinguir entre 'el modelo usa el viento como señal "
+        "direccional' y 'el modelo lo usa como pista climática genérica'."
+    ),
+    fig=fig_c5,
+    table=c5_table,
     overwrite=True,
 )
