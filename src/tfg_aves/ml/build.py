@@ -170,7 +170,7 @@ def build_o4(
     def _attach_states(df: pd.DataFrame) -> pd.DataFrame:
         merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
         if merged[FEATURES_HMM].isna().any().any():
-            raise AssertionError("Filas candidatas sin estado HMM causal tras el merge.")
+            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
         return merged
 
     metrics_per_model: dict[str, dict] = {}
@@ -179,6 +179,8 @@ def build_o4(
 
     for mode in _MODES:
         train, val, test = (_attach_states(d) for d in splits[mode])
+        # feature_cols se construye explícito (no desde attrs["_features"]):
+        # las columnas del HMM causal se añaden tras el split, no estaban en attrs.
         base = [*FEATURES_KINEMATIC, *FEATURES_HMM]
         feature_cols = ["bird_id", *base] if mode == "personalizado" else list(base)
         categorical_cols = ["bird_id"] if "bird_id" in feature_cols else []
@@ -245,6 +247,8 @@ def build_o4(
             predictions_all.append(preds)
 
     # --- Baselines sobre el split temporal de O4 ---
+    # Re-adjuntar el estado sobre el split crudo es correcto: merge devuelve una
+    # copia (no muta splits), así que no hay doble-merge.
     train_p = _attach_states(splits["personalizado"][0])
     test_p = _attach_states(splits["personalizado"][2])
     persistence = compute_persistence_baseline(test_p, cells=cells)
