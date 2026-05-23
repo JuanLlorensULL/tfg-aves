@@ -31,4 +31,29 @@ def build_wind(
         DataFrame con (bird_id, date_utc, wind_u_850, wind_v_850,
         wind_speed_850).
     """
-    raise NotImplementedError
+    from .wind import interpolate_wind_to_fixes, load_wind_dataset
+
+    daily = pd.read_parquet(daily_path)
+    if not {"bird_id", "date_utc", "lat", "lon"}.issubset(daily.columns):
+        raise ValueError(
+            "daily.parquet debe contener bird_id, date_utc, lat, lon.",
+        )
+
+    # Determinar años únicos. date_utc puede venir como datetime, date o str.
+    dates = pd.to_datetime(daily["date_utc"])
+    years = sorted({int(y) for y in dates.dt.year.unique()})
+
+    wind_ds = load_wind_dataset(years, base_dir=Path(wind_raw_dir))
+
+    fixes = pd.DataFrame({
+        "bird_id": daily["bird_id"].to_numpy(),
+        "date_utc": dates.dt.date.to_numpy(),
+        "lat": pd.to_numeric(daily["lat"], errors="coerce").to_numpy(),
+        "lon": pd.to_numeric(daily["lon"], errors="coerce").to_numpy(),
+    })
+    result = interpolate_wind_to_fixes(wind_ds, fixes)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    result.to_parquet(out_path, index=False)
+    return result
