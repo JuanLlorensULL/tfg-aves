@@ -949,6 +949,11 @@ Algunos tests antiguos usaban `build_feature_matrix(features_o3, ...)` con el fi
 - Si comprueba `assign_cells_to_features`/`add_cyclic_doy`/`split_temporal_per_bird` (sin tocar features contaminadas) → dejar igual.
 - Si comprueba el viejo feature set (`step_length_km`, `state_b`, etc.) → reescribir para el set causal o eliminar (esa semántica ya no existe).
 
+Limpiezas concretas pendientes de revisiones previas:
+- Migrar `test_assign_cells_adds_columns` a `_linear_bird` y retirar los helpers obsoletos `_build_synthetic_o3_features` y `_build_synthetic_cells` (esquema O3 viejo, columnas no leídas).
+- Mover `_cells_grid()` junto a `_linear_bird` (los helpers preceden a sus usuarios en este fichero).
+- Reforzar asserts positivos: en `test_build_feature_matrix_no_cruza_gap` añadir qué fechas SÍ están; en `test_build_feature_matrix_filters_gap_aware` documentar/asegurar que los dos primeros días de cada ave también quedan fuera.
+
 Run: `uv run pytest tests/test_ml_features.py -v`
 Expected: PASS (ajustar hasta lograrlo).
 
