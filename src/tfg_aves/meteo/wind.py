@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -64,4 +65,59 @@ def interpolate_wind_to_fixes(
         wind_v_850, wind_speed_850. Mismo número de filas que fixes_df.
         NaN propagado donde lat/lon NaN o fuera del bbox del wind_ds.
     """
-    raise NotImplementedError
+    if not {"bird_id", "date_utc", "lat", "lon"}.issubset(fixes_df.columns):
+        raise ValueError(
+            "fixes_df necesita columnas bird_id, date_utc, lat, lon.",
+        )
+
+    out = pd.DataFrame({
+        "bird_id": fixes_df["bird_id"].to_numpy(),
+        "date_utc": fixes_df["date_utc"].to_numpy(),
+        "wind_u_850": np.full(len(fixes_df), np.nan, dtype=np.float64),
+        "wind_v_850": np.full(len(fixes_df), np.nan, dtype=np.float64),
+        "wind_speed_850": np.full(len(fixes_df), np.nan, dtype=np.float64),
+    })
+
+    # Rango espacial del .nc para detectar out-of-bbox.
+    lat_min = float(wind_ds["latitude"].min())
+    lat_max = float(wind_ds["latitude"].max())
+    lon_min = float(wind_ds["longitude"].min())
+    lon_max = float(wind_ds["longitude"].max())
+
+    # Marca filas válidas (lat, lon no-NaN y dentro del bbox).
+    lat_arr = pd.to_numeric(fixes_df["lat"], errors="coerce").to_numpy()
+    lon_arr = pd.to_numeric(fixes_df["lon"], errors="coerce").to_numpy()
+    valid_mask = (
+        ~np.isnan(lat_arr)
+        & ~np.isnan(lon_arr)
+        & (lat_arr >= lat_min) & (lat_arr <= lat_max)
+        & (lon_arr >= lon_min) & (lon_arr <= lon_max)
+    )
+
+    if not valid_mask.any():
+        return out
+
+    valid_dates = pd.to_datetime(
+        fixes_df.loc[valid_mask, "date_utc"].to_numpy(),
+    ) + pd.Timedelta(hours=12)
+    valid_lats = lat_arr[valid_mask]
+    valid_lons = lon_arr[valid_mask]
+
+    # Interpolación vectorizada vía xarray (linear en lat, lon, nearest en tiempo).
+    interp = wind_ds.interp(
+        valid_time=xr.DataArray(valid_dates, dims="points"),
+        latitude=xr.DataArray(valid_lats, dims="points"),
+        longitude=xr.DataArray(valid_lons, dims="points"),
+        method="linear",
+        kwargs={"fill_value": np.nan},
+    )
+
+    u_vals = interp["u"].values.astype(np.float64)
+    v_vals = interp["v"].values.astype(np.float64)
+    speed_vals = np.sqrt(u_vals**2 + v_vals**2)
+
+    out.loc[valid_mask, "wind_u_850"] = u_vals
+    out.loc[valid_mask, "wind_v_850"] = v_vals
+    out.loc[valid_mask, "wind_speed_850"] = speed_vals
+
+    return out
