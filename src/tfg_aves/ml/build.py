@@ -27,6 +27,7 @@ from .evaluate import (
 )
 from .features import (
     build_feature_matrix,
+    compute_causal_kinematics,
     split_temporal_per_bird,
 )
 from .train import (
@@ -137,13 +138,17 @@ def build_o4(
             )
         wind_df = pd.read_parquet(wind_p)
 
+    # Cinemática causal: añade step_in_km, bearing_in, cos_turning_in y
+    # la máscara is_hmm_obs_valid. Requiere veg_low/veg_high/daylight_hours.
+    kin = compute_causal_kinematics(features_o3)
+
     # --- Matrices de features para ambos modos ---
     matrices = {
         "personalizado": build_feature_matrix(
-            features_o3, cells, include_bird_id=True, wind_df=wind_df,
+            kin, cells, include_bird_id=True, wind_df=wind_df,
         ),
         "poblacional": build_feature_matrix(
-            features_o3, cells, include_bird_id=False, wind_df=wind_df,
+            kin, cells, include_bird_id=False, wind_df=wind_df,
         ),
     }
     splits = {mode: split_temporal_per_bird(m) for mode, m in matrices.items()}

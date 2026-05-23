@@ -149,35 +149,34 @@ def assign_cells_to_features(
 
 
 def build_feature_matrix(
-    features_o3: pd.DataFrame,
+    kin: pd.DataFrame,
     cells: pd.DataFrame,
     include_bird_id: bool,
     *,
     wind_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Construye matriz de features para O4 a partir de ``features.parquet`` de O3.
+    """Construye la matriz de filas candidatas de O4 a partir de la cinemática causal.
 
-    Pasos:
-        1. Filtra filas con ``is_observation_valid=True`` (heredado de O3).
-        2. Asigna ``cell_id_t`` y ``cell_id_t_next`` vía ``cells``.
-        3. Añade ``sin_doy``, ``cos_doy``.
-        4. Filtra filas con ``cell_id_t_next`` no nulo (gap-aware, §8.11).
-        5. Devuelve DataFrame con columnas:
-            - clave: ``bird_id``, ``date_utc``
-            - features: ``lat``, ``lon``, ``sin_doy``, ``cos_doy``,
-              ``step_length_km``, ``cos_turning_angle``, ``state_b``,
-              ``posterior_b_migracion`` (+ ``bird_id`` si ``include_bird_id``)
-            - target: ``cell_id_t_next``
-            - meta para evaluación: ``lat_t_next``, ``lon_t_next``.
+    ``kin`` es la salida de ``compute_causal_kinematics`` (todas las filas con la
+    cinemática entrante e ``is_hmm_obs_valid``). Pasos:
+        1. Asigna ``cell_id_t`` y ``cell_id_t_next`` (target) vía ``cells``.
+        2. Añade ``sin_doy``/``cos_doy``.
+        3. (Opcional) fusiona viento — rama L1, no ejercitada en el rework.
+        4. Filtra a filas candidatas: ``is_hmm_obs_valid`` y target válido
+           (``cell_id_t_next`` no nulo ⟺ t+1 consecutivo y celda activa). Es la
+           máscara de racha de 4 días (t-2, t-1, t, t+1).
+
+    Las columnas del HMM causal (``state_b_causal``, ``posterior_b_migracion_causal``)
+    NO se añaden aquí: las inserta ``build_o4`` tras ajustar y filtrar el HMM.
+    El atributo ``_features`` contiene de momento sólo las cinemáticas (+bird_id).
     """
-    df = features_o3[features_o3["is_observation_valid"]].copy()
-    df = assign_cells_to_features(df, cells)
+    df = assign_cells_to_features(kin, cells)
     df = add_cyclic_doy(df)
 
     if wind_df is not None:
         df = merge_wind_features(df, wind_df)
 
-    df = df[df["cell_id_t_next"].notna()].copy()
+    df = df[df["is_hmm_obs_valid"] & df["cell_id_t_next"].notna()].copy()
 
     # RandomForest no tolera NaN; XGBoost sí. Para coherencia entre familias
     # descartamos las pocas filas con NaN en features de viento (20 fixes,
@@ -185,12 +184,10 @@ def build_feature_matrix(
     if wind_df is not None:
         df = df.dropna(subset=_FEATURES_WIND).copy()
 
-    base = list(_FEATURES_BASE)
+    base = list(FEATURES_KINEMATIC)
     if wind_df is not None:
         base = [*base, *_FEATURES_WIND]
-    feature_cols = list(base)
-    if include_bird_id:
-        feature_cols = ["bird_id", *feature_cols]
+    feature_cols = ["bird_id", *base] if include_bird_id else list(base)
 
     keep_cols = list(dict.fromkeys([
         "bird_id", "date_utc",

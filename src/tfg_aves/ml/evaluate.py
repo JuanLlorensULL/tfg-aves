@@ -107,6 +107,12 @@ def predict_with_meta(
         zip(pred_top1, meta["lat_t_next"], meta["lon_t_next"], strict=True)
     ]
 
+    # state_b es opcional: se incluye si el meta ya tiene la columna HMM.
+    # Durante el rework causal se añadirá en build_o4 (Task 4); hasta entonces es NaN.
+    state_b_vals = (
+        meta["state_b"].values if "state_b" in meta.columns
+        else np.full(len(meta), np.nan)
+    )
     out = pd.DataFrame({
         "bird_id": meta["bird_id"].values,
         "date_utc": meta["date_utc"].values,
@@ -115,7 +121,7 @@ def predict_with_meta(
         "pred_cell_topk": pred_topk,
         "pred_prob_top1": prob_top1,
         "pred_dist_km": dists,
-        "state_b": meta["state_b"].values,
+        "state_b": state_b_vals,
     })
     out.attrs["_proba"] = proba
     out.attrs["_classes"] = classes_str
@@ -190,7 +196,11 @@ def compute_persistence_baseline(
                 strict=True,
             )
         ],
-        "state_b": matrix_test["state_b"].values,
+        # state_b es opcional durante el rework causal (Task 4 la añade).
+        "state_b": (
+            matrix_test["state_b"].values if "state_b" in matrix_test.columns
+            else np.full(len(matrix_test), np.nan)
+        ),
     })
 
 
@@ -236,6 +246,7 @@ def compute_markov_baseline(
     cell_to_idx = {c: i for i, c in enumerate(cell_list)}
     n_cells = len(cell_list)
 
+    has_state_b = "state_b" in matrix_test.columns
     rows = []
     for r in matrix_test.itertuples():
         month_idx = pd.Timestamp(r.date_utc).month - 1
@@ -259,7 +270,8 @@ def compute_markov_baseline(
             "pred_dist_km": _haversine_to_centroid(
                 pred_top1, r.lat_t_next, r.lon_t_next, centroids
             ),
-            "state_b": r.state_b,
+            # state_b es opcional durante el rework causal (Task 4 la añade).
+            "state_b": getattr(r, "state_b", np.nan) if has_state_b else np.nan,
         })
     return pd.DataFrame(rows)
 
