@@ -140,6 +140,20 @@ Para mantener coherencia entre familias (RF no tolera NaN), se exige
 que **todas** las features cinemáticas estén presentes; las filas que
 no completen la racha de 4 se descartan.
 
+**Dos máscaras distintas (importante para la implementación):**
+- **Máscara de observación del HMM** (`is_hmm_obs_valid`): día `t` con
+  `(t-2, t-1, t)` válidos y consecutivos — lo que exige la emisión
+  causal (`step_in_km`, `cos_turning_in`). El HMM se ajusta y decodifica
+  sobre estos días.
+- **Máscara de fila de O4** (candidata supervisada): `is_hmm_obs_valid(t)`
+  **y además** `t+1` válido y consecutivo (racha de 4). Es un subconjunto
+  de la anterior.
+
+El estado/posterior causal se calcula sobre **todos** los días
+HMM-válidos y luego se une (join) a las filas candidatas de O4. Así el
+filtrado dispone de toda la historia disponible del ave, aunque algunos
+días no lleguen a ser filas de O4 por faltarles `t+1`.
+
 ## 5. Arquitectura y flujo de datos
 
 ```
@@ -192,16 +206,20 @@ en el notebook como sanity-check.
 
 ### 6.3 Decodificado por filtrado forward-only
 
-Para cada ave, sobre su secuencia ordenada de días válidos, se calcula
-el **posterior filtrado** `γ_t = P(estado_t | obs_1..t)`. Esto usa sólo
-observaciones hasta `t`, a diferencia del posterior suavizado de O3
-(`P(estado_t | obs_1..T)`).
+Para cada ave se decodifica cada **run consecutivo** de días
+HMM-válidos por separado (el filtrado reinicia en `startprob_` al
+comienzo de cada run; un hueco de calendario corta la secuencia, igual
+que la segmentación de O3 en `build_sequences`). Sobre cada run se
+calcula el **posterior filtrado** `γ_t = P(estado_t | obs_1..t)`, que
+usa sólo observaciones hasta `t`, a diferencia del posterior suavizado
+de O3 (`P(estado_t | obs_1..T)`).
 
 Se implementa como recursión forward en log-espacio (estándar,
-~15 líneas), usando `log(startprob_)`, `log(transmat_)` y la
-log-verosimilitud de emisión del modelo ajustado
-(`model._compute_log_likelihood(X)`), sin depender de API privada de
-hmmlearn para el filtrado:
+~15 líneas), usando **sólo atributos públicos del modelo ajustado**
+(`startprob_`, `transmat_`, `means_`, `covars_`): la log-verosimilitud
+de emisión gaussiana diagonal se calcula a mano desde `means_`/`covars_`,
+y la recursión forward es propia. No se depende de métodos privados de
+hmmlearn (`_do_forward_pass`, `_compute_log_likelihood`):
 
 ```
 log_alpha[0] = log_startprob + log_emission[0]
