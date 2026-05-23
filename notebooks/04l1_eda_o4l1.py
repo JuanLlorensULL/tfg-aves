@@ -339,3 +339,157 @@ save_artifact(
     table=c2_table,
     overwrite=True,
 )
+
+# %% [markdown]
+# ## Fase C — Comparativa L1-v0 vs L1-v1
+# ### L1-v1-C3 — Métricas globales side-by-side
+
+# %%
+def _filter_test(metrics_df):
+    return metrics_df[metrics_df["split"] == "test"].copy()
+
+
+m_v0 = _filter_test(metrics_v0)
+m_v1 = _filter_test(metrics_v1)
+
+# Eliminar LightGBM y baselines para que la comparativa sea simétrica (4 modelos).
+m_v0 = m_v0[~m_v0["modelo"].isin(["lgbm", "persistencia", "markov"])]
+m_v1 = m_v1[~m_v1["modelo"].isin(["lgbm", "persistencia", "markov"])]
+m_v0["version"] = "L1-v0"
+m_v1["version"] = "L1-v1"
+
+rows_c3 = pd.concat([m_v0, m_v1], ignore_index=True)
+rows_c3 = rows_c3.sort_values(["modelo", "modo", "version"])
+
+c3_table = rows_c3[[
+    "modelo", "modo", "version", "top1", "top3", "log_loss", "dist_median_km",
+]].reset_index(drop=True)
+print(c3_table.to_string(index=False))
+
+# Figura: 4 paneles, uno por (familia, modo); barras L1-v0 vs L1-v1 para
+# cada una de las 4 métricas.
+fig_c3, axes = plt.subplots(2, 2, figsize=(13, 9))
+panel_keys = [
+    ("rf", "personalizado"), ("rf", "poblacional"),
+    ("xgb", "personalizado"), ("xgb", "poblacional"),
+]
+metric_names = ["top1", "top3", "log_loss", "dist_median_km"]
+for ax, (fam, modo) in zip(axes.flatten(), panel_keys, strict=True):
+    sub = c3_table[(c3_table["modelo"] == fam) & (c3_table["modo"] == modo)]
+    v0 = sub[sub["version"] == "L1-v0"].iloc[0]
+    v1 = sub[sub["version"] == "L1-v1"].iloc[0]
+    x = np.arange(len(metric_names))
+    width = 0.35
+    ax.bar(x - width / 2, [v0[m] for m in metric_names], width, label="L1-v0")
+    ax.bar(x + width / 2, [v1[m] for m in metric_names], width, label="L1-v1")
+    ax.set_xticks(x)
+    ax.set_xticklabels(metric_names)
+    ax.set_title(f"{fam.upper()} {modo}")
+    ax.legend(loc="upper right")
+    ax.grid(True, axis="y", alpha=0.3)
+fig_c3.suptitle("L1-v1-C3 — Comparativa L1-v0 vs L1-v1 (4 modelos × 4 métricas)")
+fig_c3.tight_layout()
+
+save_artifact(
+    slug="l1v1-metrics-comparison",
+    objective="o4",
+    num=14,
+    decision="Comparativa central del aporte del viento (L1-v0 vs L1-v1)",
+    caption_es=(
+        "Comparativa side-by-side de las cuatro métricas globales en el "
+        "test split (top-1, top-3, log-loss, distancia mediana km) para "
+        "los cuatro modelos comunes a L1-v0 y L1-v1 (RF/XGB × "
+        "personalizado/poblacional). LightGBM, persistencia y Markov(1) "
+        "se excluyen para que la comparación sea simétrica. Es el "
+        "entregable narrativo central de L1: cuantifica el aporte "
+        "aislado del viento como predictor sin contaminar con otras "
+        "decisiones."
+    ),
+    fig=fig_c3,
+    table=c3_table,
+    overwrite=True,
+)
+
+# %% [markdown]
+# ### L1-v1-C4 — Comparativa por estado HMM
+#
+# El aporte esperado del viento es mayor en migración (state_b=1) que
+# en estacionario (state_b=0). Esta tabla cuantifica el desglose por
+# estado.
+
+# %%
+preds_v0 = pd.read_parquet(O4_OUT_DIR / "predictions_test.parquet")
+preds_v1 = pd.read_parquet(O4_L1V1_DIR / "predictions_test.parquet")
+preds_v0 = preds_v0[~preds_v0["modelo"].isin(["lgbm", "persistencia", "markov"])]
+preds_v1 = preds_v1[~preds_v1["modelo"].isin(["lgbm", "persistencia", "markov"])]
+preds_v0 = preds_v0.copy()
+preds_v1 = preds_v1.copy()
+preds_v0["version"] = "L1-v0"
+preds_v1["version"] = "L1-v1"
+preds = pd.concat([preds_v0, preds_v1], ignore_index=True)
+
+
+def _by_state(df):
+    rows = []
+    for (modelo, modo, version, state), sub in df.groupby(
+        ["modelo", "modo", "version", "state_b"], sort=True,
+    ):
+        rows.append({
+            "modelo": modelo,
+            "modo": modo,
+            "version": version,
+            "state_b": int(state),
+            "n": int(len(sub)),
+            "top1": float((sub["true_cell"] == sub["pred_cell_top1"]).mean()),
+            "dist_med_km": float(sub["pred_dist_km"].median()),
+        })
+    return pd.DataFrame(rows)
+
+
+c4_table = _by_state(preds).sort_values(["modelo", "modo", "state_b", "version"])
+print(c4_table.to_string(index=False))
+
+fig_c4, axes = plt.subplots(2, 2, figsize=(13, 9))
+for ax, (fam, modo) in zip(axes.flatten(), panel_keys, strict=True):
+    sub = c4_table[(c4_table["modelo"] == fam) & (c4_table["modo"] == modo)]
+    states = [0, 1]
+    width = 0.35
+    v0_top1 = [
+        sub[(sub["state_b"] == s) & (sub["version"] == "L1-v0")]["top1"].iloc[0]
+        for s in states
+    ]
+    v1_top1 = [
+        sub[(sub["state_b"] == s) & (sub["version"] == "L1-v1")]["top1"].iloc[0]
+        for s in states
+    ]
+    x = np.arange(2)
+    ax.bar(x - width / 2, v0_top1, width, label="L1-v0")
+    ax.bar(x + width / 2, v1_top1, width, label="L1-v1")
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Estacionario", "Migración"])
+    ax.set_ylabel("top-1 accuracy")
+    ax.set_title(f"{fam.upper()} {modo}")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+fig_c4.suptitle("L1-v1-C4 — top-1 por estado HMM, L1-v0 vs L1-v1")
+fig_c4.tight_layout()
+
+save_artifact(
+    slug="l1v1-by-state-comparison",
+    objective="o4",
+    num=15,
+    decision="Desglosar el aporte del viento por régimen biológico",
+    caption_es=(
+        "Comparativa de top-1 por estado HMM (estacionario vs migración) "
+        "entre L1-v0 y L1-v1 para los cuatro modelos comunes. La "
+        "hipótesis es que el aporte del viento se concentra en los días "
+        "de migración (state_b=1), donde el modelo se beneficia más de "
+        "saber si el viento es favorable o no. Si la mejora en "
+        "estacionario es nula y en migración es ≥ +3 pp absolutos en al "
+        "menos uno de los ganadores, se cumple el criterio secundario "
+        "de éxito de L1 (§9 del spec)."
+    ),
+    fig=fig_c4,
+    table=c4_table,
+    overwrite=True,
+)
