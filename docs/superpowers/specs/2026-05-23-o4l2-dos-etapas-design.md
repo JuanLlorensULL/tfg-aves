@@ -30,13 +30,22 @@ mediante dos reglas evaluadas en paralelo:
 - **Soft (canónica):**
 
   ```
-  p_final(cell) = (1 − p_move) · 𝟙{cell = cell_t}
-                +  p_move      · p_2B(cell | x) · 𝟙{cell ≠ cell_t}
+  p_final(cell_t) = 1 − p_move
+  p_final(cell)   = p_move · p_2B(cell | x) / (1 − p_2B(cell_t | x))     ∀ cell ≠ cell_t
   ```
+
+  La división renormaliza la masa que `p_2B` asignaba a `cell_t`
+  (clf_dest fue entrenado sobre filas con `y_move = 1`, pero sigue
+  teniendo prior geográfico via `lat`/`lon` que puede colocar masa
+  significativa sobre `cell_t`). Sin esa renormalización, la suma total
+  sería `1 − p_move · p_2B(cell_t | x) < 1`. Para evitar división por 0
+  cuando `p_2B(cell_t | x) → 1`, se aplica clipping defensivo a
+  `1 − ε` con `ε = 1e-7`.
 
 - **Hard (ablación):** si `p_move < τ` entonces `argmax = cell_t`; si no
   `argmax = argmax(p_2B)`. `τ` se barre en `{0,3, 0,5, 0,7}` sobre val y
-  se selecciona el de menor log-loss.
+  se selecciona el de mayor top-1 (NO log-loss; ver §6.1 y §9 sobre por
+  qué log-loss no es métrica honesta para hard).
 
 L2 **no toca features, ni target, ni split, ni hiperparámetros, ni
 familias** respecto a O4 base. La única variable manipulada es la
@@ -233,7 +242,7 @@ es consistente con la política post-cierre de O4 de **no invertir
 tiempo en tuning** (la causa real del techo es estructural, no de
 configuración).
 
-### F8 — Compensación de clases + calibración isotonic en etapa 1
+### F8 — Compensación de clases + calibración isotonic en etapa 1 (con val temporal)
 
 Dos higienes obligatorias en `clf_move`:
 
@@ -241,16 +250,24 @@ Dos higienes obligatorias en `clf_move`:
   `scale_pos_weight = n_neg / n_pos` (XGBoost). Sin estas, el modelo
   degenera a "siempre predigo 0" y la etapa 2B nunca se activa en la
   combinación soft.
-- **Calibración isotonic siempre**: `clf_move` se envuelve en
-  `CalibratedClassifierCV(method='isotonic', cv=3)` por defecto. Sin
+- **Calibración isotonic sobre el val temporal**: `clf_move` se entrena
+  primero sobre `X_train` sin calibrar, y a continuación se envuelve en
+  `CalibratedClassifierCV(base, method='isotonic', cv='prefit')` y se
+  hace `fit(X_val, y_val_move)`. Usar `cv='prefit'` (en lugar de
+  `cv=3` con KFold aleatorio) garantiza que la calibración respeta la
+  estructura temporal por ave heredada de O4 base: el train sigue
+  estrictamente antes que el val, y val antes que el test. Sin
   calibración, los valores numéricos de `p_move` no son probabilidades
-  fiables y la regla soft mezcla mal los dos componentes. La decisión
-  se toma a priori (no data-driven) para garantizar que la fórmula
-  soft tiene sentido probabilístico sin necesidad de validar
-  empíricamente que cada familia está calibrada.
+  fiables y la regla soft mezcla mal los dos componentes.
 
-Sin compensación + sin calibración, el experimento estaría sesgado por
-construcción.
+Sin compensación + sin calibración temporalmente correcta, el
+experimento estaría sesgado por construcción.
+
+**Consecuencia operativa:** `X_val` se "gasta" en calibrar la etapa 1.
+Como F7 prohíbe el tuning de hiperparámetros, esto NO entra en
+conflicto con ningún otro uso de val: el único uso restante de val es
+el barrido de `τ` para la regla hard (`sweep_tau`), que se hace sobre
+las predicciones ya calibradas de val.
 
 ### F9 — Split temporal idéntico a O4 base
 
@@ -306,8 +323,17 @@ def combine_soft(
     p_2b: np.ndarray,             # (n_rows, n_classes)
     cell_t_idx: np.ndarray,       # (n_rows,), índice de cell_t en LabelEncoder
     n_classes: int,
+    eps: float = 1e-7,
 ) -> np.ndarray:
-    """Aplica la regla soft canónica. Devuelve (n_rows, n_classes)."""
+    """Aplica la regla soft canónica con renormalización. Devuelve
+    (n_rows, n_classes) tal que cada fila suma 1.0 (±1e-6).
+
+    Para cada fila:
+        p_final[cell_t]      = 1 − p_move
+        p_final[cell≠cell_t] = p_move · p_2b[cell] / (1 − p_2b[cell_t])
+
+    El denominador se evalúa como max(1 − p_2b[cell_t], eps) para
+    evitar división por 0 si clf_dest colapsa sobre cell_t."""
 
 def combine_hard(
     p_move: np.ndarray,
@@ -318,8 +344,14 @@ def combine_hard(
 ) -> np.ndarray:
     """Aplica la regla hard con umbral tau. Devuelve (n_rows, n_classes)
     con masa 1−eps en la celda predicha (cell_t si p_move<tau, si no
-    argmax(p_2b)) y eps/(n_classes−1) en el resto. El clipping es
-    necesario para que log-loss sea finito cuando el argmax falla."""
+    argmax(p_2b)) y eps/(n_classes−1) en el resto.
+
+    El clipping existe sólo por compatibilidad con APIs que esperan
+    distribuciones estrictamente positivas (sklearn.metrics.log_loss);
+    el log-loss numérico resultante NO es una métrica honesta para
+    hard (cada fallo de argmax contribuye ~22.86 al log-loss por
+    construcción del clipping). Sólo top-1, top-3 y dist_med_km son
+    métricas comparables entre hard y soft."""
 
 def sweep_tau(
     p_move_val: np.ndarray,
@@ -329,7 +361,9 @@ def sweep_tau(
     n_classes: int,
     taus: tuple[float, ...] = (0.3, 0.5, 0.7),
 ) -> tuple[float, pd.DataFrame]:
-    """Devuelve (tau_star, tabla_de_log_losses_por_tau)."""
+    """Devuelve (tau_star, tabla_de_top1_por_tau). tau* es el tau con
+    mayor top-1 sobre val. Se usa top-1 (NO log-loss) porque hard
+    devuelve one-hot y log-loss sería degenerado para evaluarlo."""
 ```
 
 **`build_l2.py`** (orquestador):
@@ -341,10 +375,20 @@ def build_o4_l2(
     o4_predictions_path: Path = PREDICTIONS_O4_PARQUET,
     out_dir: Path = O4_OUT_DIR / "l2_v1",
 ) -> BuildO4L2Result:
-    """Orquesta el pipeline L2-v1: entrena clf_move (RF, XGB) y
-    clf_dest (RF/XGB × pers/pob), evalúa combinaciones soft y hard,
-    persiste los 6 .pkl, predictions_test_{soft,hard}.parquet y
-    metrics.parquet."""
+    """Orquesta el pipeline L2-v1.
+
+    Por cada familia f ∈ {RF, XGB}:
+      1. Entrena base_move = train_f(X_train, y_train_move).
+      2. Envuelve clf_move = CalibratedClassifierCV(base_move,
+         method='isotonic', cv='prefit').fit(X_val, y_val_move).
+      3. Filtra X_train_moves, y_train_dest = subset(X_train, y_train,
+         y_train_move == 1) y entrena clf_dest_pers y clf_dest_pob.
+      4. Aplica combine_soft y combine_hard (con sweep_tau sobre val
+         calibrado) sobre el test set.
+      5. Persiste model_clf_move_f.pkl y dos model_clf_dest_f_*.pkl.
+
+    Tras procesar ambas familias, genera predictions_test_soft.parquet,
+    predictions_test_hard.parquet, tau_sweep.parquet y metrics.parquet."""
 ```
 
 ### 6.2 Cambios en módulos existentes
@@ -422,10 +466,17 @@ En `tests/test_ml_two_stage.py` (nuevo):
   excluyendo `cell_t` (renormalizada).
 - `test_combine_soft_sums_to_one`: para entradas válidas, cada fila
   de la salida suma 1,0 (tolerancia 1e-6).
+- `test_combine_soft_renormalizes_when_p2b_has_mass_on_cellt`:
+  con `p_2b[cell_t] = 0,3` y `p_move = 0,5`, la suma sigue siendo
+  1,0 (no `1 − 0,5·0,3 = 0,85`). El test verifica explícitamente que
+  el denominador `(1 − p_2b[cell_t])` se aplica.
+- `test_combine_soft_handles_p2b_cellt_near_one`: con `p_2b[cell_t]
+  = 1 − 1e-10` y `p_move = 0,5`, no se lanza `ZeroDivisionError` ni
+  aparecen NaN/Inf en la salida (clipping defensivo a `1 − ε`).
 - `test_combine_hard_threshold`: con `p_move = [0,1, 0,9]` y `τ =
   0,5`, el primer argmax es `cell_t` y el segundo es `argmax(p_2b)`.
 - `test_sweep_tau_returns_best`: con un val sintético donde `τ = 0,5`
-  es óptimo, `sweep_tau` lo devuelve.
+  maximiza top-1, `sweep_tau` lo devuelve como `tau*`.
 
 En `tests/test_ml_evaluate.py` (extensión):
 
@@ -464,10 +515,18 @@ deben pasar; ruff limpio.
 | markov(1) | — | baseline | — | 0,550 | — | — | 24,8 |
 | RF | personalizado | L2-v0 | argmax monolítico | 0,644 | 0,754 | 5,22 | 23,1 |
 | RF | personalizado | L2-v1 | soft | ? | ? | ? | ? |
-| RF | personalizado | L2-v1 | hard (τ*) | ? | ? | ? | ? |
+| RF | personalizado | L2-v1 | hard (τ*) | ? | ? | —¹ | ? |
 | XGB | poblacional | L2-v0 | argmax monolítico | 0,610 | 0,707 | 5,52 | 24,0 |
 | XGB | poblacional | L2-v1 | soft | ? | ? | ? | ? |
-| XGB | poblacional | L2-v1 | hard (τ*) | ? | ? | ? | ? |
+| XGB | poblacional | L2-v1 | hard (τ*) | ? | ? | —¹ | ? |
+
+¹ Log-loss de la regla hard no se reporta como métrica comparable.
+Por construcción, hard devuelve una decisión one-hot clipada con
+`ε = 1e-7`, lo que implica que cada fallo de argmax añade
+`−ln(ε/(n−1)) ≈ 22,86` al log-loss. El número resultante mide el
+artefacto del clipping, no la calidad del modelo. Hard se compara
+contra soft únicamente en top-1, top-3 y dist_med_km, que sí son
+métricas honestas para una regla determinista.
 
 Esta tabla y su variante por estado HMM (L2-v1-C2) son la evidencia
 primaria que entra en el capítulo 6 de la memoria, sección "L2 —
@@ -477,12 +536,14 @@ Mejora con dos etapas".
 
 Tres criterios independientes:
 
-1. **Primaria — log-loss.** L2-v1 (soft) mejora a L2-v0 si reduce
-   log-loss ≥ 0,20 en al menos uno de los ganadores (RF personalizado
-   o XGB poblacional).
-2. **Secundaria — top-1 migración.** L2-v1 (soft) mejora si sube
-   ≥ +5 pp absolutos en al menos uno de los ganadores. Es el régimen
-   donde la descomposición en dos etapas debería aportar más.
+1. **Primaria — log-loss (sólo soft).** L2-v1 soft mejora a L2-v0 si
+   reduce log-loss ≥ 0,20 en al menos uno de los ganadores (RF
+   personalizado o XGB poblacional). Hard se excluye de este criterio
+   por la nota ¹ de §8.3.
+2. **Secundaria — top-1 migración (soft y hard).** L2-v1 mejora si
+   sube ≥ +5 pp absolutos en al menos uno de los ganadores. Es el
+   régimen donde la descomposición en dos etapas debería aportar más.
+   Se evalúa para soft y hard por separado.
 3. **Diagnóstica — coherencia interna.** El gap train-test de
    `clf_dest` (C4) se mantiene en rango sano (gap ≤ gap O4 base + 0,1
    absoluto). Si se dispara, la mejora del log-loss es sospechosa y
@@ -521,8 +582,28 @@ Cualquier resultado es válido para el TFG
   arquitectura de dos etapas".
 - **Por qué calibración a priori (no data-driven).** Garantiza que la
   fórmula soft tiene sentido probabilístico para cualquier familia
-  sin tener que validar empíricamente cada caso. El coste (un fold de
-  CV interno + ~10 % de tiempo de entrenamiento) es marginal.
+  sin tener que validar empíricamente cada caso. El coste (entrenar
+  un isotonic regressor sobre val) es marginal.
+- **Por qué `cv='prefit'` sobre `X_val` en lugar de `cv=3` con KFold
+  aleatorio.** `CalibratedClassifierCV(cv=3)` baraja aleatoriamente
+  las filas del input, sin respetar `bird_id` ni `date_utc`. Sobre un
+  dataset de panel temporal como este, eso introduce un pequeño
+  leakage futuro→pasado dentro del train y viola la regla heredada de
+  O4 de "splits respetan estructura temporal por ave". `cv='prefit'`
+  desacopla las dos etapas (entreno sobre `X_train`, calibro sobre
+  `X_val`) y respeta estrictamente el orden train < val < test.
+- **Por qué renormalizar `combine_soft` en lugar de dejar que sume
+  `1 − p_move · p_2B(cell_t)`.** Sin renormalización, la salida de
+  `combine_soft` no es una distribución de probabilidad y el log-loss
+  resultante queda sesgado (subestima la confianza del modelo). La
+  renormalización está demostrada matemáticamente en §1 y validada en
+  el test `test_combine_soft_sums_to_one`.
+- **Por qué `sweep_tau` usa top-1 en lugar de log-loss.** Hard
+  devuelve one-hot, así que su log-loss queda dominado por el clipping
+  `ε = 1e-7` (~22,86 por cada fallo de argmax). Top-1 sí es honesto
+  para una regla determinista; minimizar log-loss sobre val
+  seleccionaría `τ` por un artefacto numérico, no por calidad del
+  modelo.
 - **Por qué barrido de `τ` discreto y pequeño** (`{0,3, 0,5, 0,7}`).
   Un barrido continuo no aporta — la función log-loss(τ) es discreta
   por construcción (cambia de comportamiento cuando `p_move` cruza el
