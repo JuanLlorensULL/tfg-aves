@@ -20,7 +20,7 @@
 | `src/tfg_aves/ml/hmm_causal.py` | Fit + filtrado forward-only del HMM causal | **Crear** |
 | `src/tfg_aves/ml/build.py` | Orquestación de `build_o4` con HMM causal | Modificar |
 | `src/tfg_aves/ml/train.py` | Trainers RF/XGB/LGBM | Sin cambios |
-| `src/tfg_aves/ml/evaluate.py` | Métricas y baselines | Sin cambios |
+| `src/tfg_aves/ml/evaluate.py` | Métricas y baselines | Modificar: `state_b` → `state_b_causal` (predicciones, baselines, desglose por estado) |
 | `tests/test_ml_features.py` | Tests de cinemática causal y matriz | Modificar |
 | `tests/test_ml_hmm_causal.py` | Tests del filtrado forward-only (leak-free) | **Crear** |
 | `tests/test_ml_build.py` | Test integración end-to-end | Modificar |
@@ -730,6 +730,7 @@ git commit -m "Ajuste y decodificado filtrado del HMM causal sobre train tempora
 
 **Files:**
 - Modify: `src/tfg_aves/ml/build.py`
+- Modify: `src/tfg_aves/ml/evaluate.py` (`state_b` → `state_b_causal`; ver Step 3 (d))
 - Test: `tests/test_ml_build.py`
 
 - [ ] **Step 1: Reescribir el fixture y el test de integración**
@@ -769,6 +770,14 @@ def test_build_o4_columnas_causales(tmp_path):
     for prohibida in ["step_length_km", "cos_turning_angle", "state_b",
                       "posterior_b_migracion"]:
         assert prohibida not in cols
+
+    # Las predicciones llevan el estado causal (para el análisis por régimen),
+    # no la columna contaminada state_b.
+    preds = pd.read_parquet(res.predictions_path)
+    assert "state_b_causal" in preds.columns
+    assert "state_b" not in preds.columns
+    modelos = preds[preds["modo"] == "personalizado"]
+    assert modelos["state_b_causal"].notna().any()
 ```
 
 - [ ] **Step 2: Ejecutar y verificar fallo**
@@ -887,7 +896,16 @@ from .hmm_causal import decode_causal_states, fit_causal_hmm
             predictions_all.append(preds)
 ```
 
-(c) El bloque de baselines (desde `# --- Baselines sobre el split temporal de O4 ---` en adelante) **no se toca**: `train_p, _val_p, test_p = splits["personalizado"]` sigue siendo válido y los baselines usan `cell_id_t`/`cell_id_t_next` (presentes en la matriz), no las features. Confirmar que no requiere los estados HMM.
+(c) El bloque de baselines (desde `# --- Baselines sobre el split temporal de O4 ---` en adelante) **no se toca**: `train_p, _val_p, test_p = splits["personalizado"]` sigue siendo válido y los baselines usan `cell_id_t`/`cell_id_t_next` (presentes en la matriz), no las features. Confirmar que no requiere los estados HMM. NOTA: `train_p`/`test_p` deben tener el estado causal adjunto para que `compute_persistence_baseline`/`compute_markov_baseline` puedan reportarlo; usa los `train`/`test` ya pasados por `_attach_states` (no los crudos de `splits`).
+
+(d) **Actualizar `evaluate.py` a `state_b_causal`.** En `src/tfg_aves/ml/evaluate.py`, la Task 2 dejó un parche temporal que hacía `state_b` opcional (→ NaN). Sustituirlo por uso directo del estado causal real, ya que ahora las matrices y el meta llevan `state_b_causal`:
+- En `predict_with_meta`: la columna de salida pasa de `state_b` a `state_b_causal`, leyendo `meta["state_b_causal"].values` (quitar el fallback NaN).
+- En `compute_persistence_baseline`: salida `state_b_causal` desde `matrix_test["state_b_causal"]`.
+- En `compute_markov_baseline`: salida `state_b_causal` desde `r.state_b_causal`.
+- En la función de desglose por estado (firma `error_by_state(predictions, state_col="state_b")` ~línea 51): cambiar el default a `state_col="state_b_causal"`.
+Quitar los comentarios "state_b es opcional durante el rework" introducidos en la Task 2. El resultado: `evaluate.py` referencia exclusivamente `state_b_causal`, sin `state_b`.
+
+(e) **Puente de `build.py` de la Task 2.** La Task 2 ya insertó `kin = compute_causal_kinematics(features_o3)` y cambió las llamadas a `build_feature_matrix(kin, ...)`. Al aplicar (b), reconciliar: el bloque reescrito ya incluye esa línea `kin = ...`, así que no debe quedar duplicada.
 
 - [ ] **Step 4: Ejecutar el test de integración**
 
