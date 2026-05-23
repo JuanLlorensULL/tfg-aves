@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 from hmmlearn.hmm import GaussianHMM
 
-from tfg_aves.ml.hmm_causal import forward_filtered_posteriors
+from tfg_aves.ml.features import compute_causal_kinematics
+from tfg_aves.ml.hmm_causal import (
+    build_hmm_sequences,
+    decode_causal_states,
+    fit_causal_hmm,
+    forward_filtered_posteriors,
+)
 
 
 def _known_hmm() -> GaussianHMM:
@@ -102,3 +109,50 @@ def test_filtrado_rechaza_lengths_inconsistentes():
     X = np.array([[0.0], [4.0], [0.0]])  # 3 filas
     with pytest.raises(ValueError):
         forward_filtered_posteriors(m, X, [2])  # suma 2 != 3
+
+
+def _two_regime_bird(bird="A", n=40, seed=0):
+    """Ave con dos regímenes: primera mitad pasos cortos, segunda larga."""
+    dates = pd.date_range("2020-01-01", periods=n)
+    lat, lon = 40.0, -3.0
+    rows = []
+    for i, d in enumerate(dates):
+        step_deg = 0.01 if i < n // 2 else 0.6  # corto vs largo
+        lat += step_deg
+        rows.append({
+            "bird_id": bird, "date_utc": d, "lat": lat, "lon": lon,
+            "veg_low": 0.5, "veg_high": 0.5, "daylight_hours": 12.0,
+            "is_observation_valid": True,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_build_hmm_sequences_solo_dias_validos():
+    kin = compute_causal_kinematics(_two_regime_bird(n=20))
+    X, lengths, idx = build_hmm_sequences(kin, cutoff_by_bird=None)
+    n_valid = int(kin["is_hmm_obs_valid"].sum())
+    assert len(X) == n_valid == sum(lengths)
+    assert X.shape[1] == 5  # HMM_EMISSION_COLS
+
+
+def test_fit_causal_hmm_relabel_por_step():
+    kin = compute_causal_kinematics(_two_regime_bird(n=60))
+    model, label_map = fit_causal_hmm(kin, cutoff_by_bird=None, n_restarts=4, seed=0)
+    # El estado con mayor μ[step_in_km] debe ser 'migración'.
+    step_idx = 0  # step_in_km es la 1.ª columna de HMM_EMISSION_COLS
+    migr_state = int(np.argmax(model.means_[:, step_idx]))
+    assert label_map[migr_state] == "migración"
+
+
+def test_decode_causal_states_columnas_y_rango():
+    kin = compute_causal_kinematics(_two_regime_bird(n=60))
+    model, label_map = fit_causal_hmm(kin, cutoff_by_bird=None, n_restarts=4, seed=0)
+    states = decode_causal_states(model, label_map, kin)
+    assert set(states.columns) == {
+        "bird_id", "date_utc", "state_b_causal", "posterior_b_migracion_causal",
+    }
+    assert states["state_b_causal"].isin([0, 1]).all()
+    assert (states["posterior_b_migracion_causal"] >= 0).all()
+    assert (states["posterior_b_migracion_causal"] <= 1).all()
+    # Una fila por día HMM-válido.
+    assert len(states) == int(kin["is_hmm_obs_valid"].sum())
