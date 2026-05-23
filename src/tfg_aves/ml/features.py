@@ -12,6 +12,10 @@ _FEATURES_BASE = [
     "state_b", "posterior_b_migracion",
 ]
 
+_FEATURES_WIND = [
+    "wind_u_850", "wind_v_850", "wind_speed_850",
+]
+
 
 def add_cyclic_doy(df: pd.DataFrame, date_col: str = "date_utc") -> pd.DataFrame:
     """Añade columnas ``sin_doy`` y ``cos_doy`` a partir de ``date_col``.
@@ -69,6 +73,8 @@ def build_feature_matrix(
     features_o3: pd.DataFrame,
     cells: pd.DataFrame,
     include_bird_id: bool,
+    *,
+    wind_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Construye matriz de features para O4 a partir de ``features.parquet`` de O3.
 
@@ -89,15 +95,21 @@ def build_feature_matrix(
     df = assign_cells_to_features(df, cells)
     df = add_cyclic_doy(df)
 
+    if wind_df is not None:
+        df = merge_wind_features(df, wind_df)
+
     df = df[df["cell_id_t_next"].notna()].copy()
 
-    feature_cols = list(_FEATURES_BASE)
+    base = list(_FEATURES_BASE)
+    if wind_df is not None:
+        base = [*base, *_FEATURES_WIND]
+    feature_cols = list(base)
     if include_bird_id:
         feature_cols = ["bird_id", *feature_cols]
 
     keep_cols = list(dict.fromkeys([
         "bird_id", "date_utc",
-        *_FEATURES_BASE,
+        *base,
         "cell_id_t", "cell_id_t_next",
         "lat_t_next", "lon_t_next",
     ]))
@@ -141,3 +153,42 @@ def split_temporal_per_bird(
     for df in (train_df, val_df, test_df):
         df.attrs["_features"] = matrix.attrs.get("_features", [])
     return train_df, val_df, test_df
+
+
+def merge_wind_features(
+    matrix: pd.DataFrame,
+    wind_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Une matrix con las 3 features de viento por (bird_id, date_utc).
+
+    LEFT JOIN: el número de filas de matrix se preserva. Filas sin
+    contrapartida en wind_df reciben NaN en wind_u_850, wind_v_850,
+    wind_speed_850 (esperado raro, son fixes fuera del bbox del .nc).
+
+    Args:
+        matrix: salida parcial de build_feature_matrix antes del filtro
+            de cell_id_t_next, con columnas bird_id, date_utc.
+        wind_df: salida de build_wind (bird_id, date_utc + 3 features).
+
+    Returns:
+        DataFrame con todas las columnas de matrix + las 3 de viento.
+    """
+    if not {"bird_id", "date_utc"}.issubset(matrix.columns):
+        raise ValueError("matrix necesita columnas bird_id y date_utc.")
+    if not {"bird_id", "date_utc", *_FEATURES_WIND}.issubset(wind_df.columns):
+        raise ValueError(
+            "wind_df necesita bird_id, date_utc y las 3 features de viento.",
+        )
+
+    # Asegurar tipos compatibles para el join (date_utc como objeto Python date).
+    m = matrix.copy()
+    w = wind_df[["bird_id", "date_utc", *_FEATURES_WIND]].copy()
+
+    n_before = len(m)
+    out = m.merge(w, on=["bird_id", "date_utc"], how="left", validate="m:1")
+    if len(out) != n_before:
+        raise AssertionError(
+            f"merge cambió número de filas: {n_before} → {len(out)} "
+            "(¿wind_df tiene claves duplicadas?)",
+        )
+    return out

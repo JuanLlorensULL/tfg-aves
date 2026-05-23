@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from tfg_aves.ml.features import (
     add_cyclic_doy,
@@ -152,3 +153,72 @@ def test_build_feature_matrix_excludes_rows_around_calendar_gap() -> None:
     #   - día 5 → t+1 sería día 6 (no existe)   → NO entra (último día)
     out_dates = set(out["date_utc"].dt.date.astype(str))
     assert out_dates == {"2020-01-01", "2020-01-04"}
+
+
+def test_merge_wind_features_preserves_rows():
+    """LEFT JOIN por (bird_id, date_utc) no cambia el número de filas."""
+    from tfg_aves.ml.features import merge_wind_features
+
+    matrix = pd.DataFrame({
+        "bird_id": ["A", "A", "B"],
+        "date_utc": [
+            pd.Timestamp("2010-03-15").date(),
+            pd.Timestamp("2010-03-16").date(),
+            pd.Timestamp("2010-04-10").date(),
+        ],
+        "lat": [59.5, 59.6, 60.0],
+        "lon": [10.5, 10.6, 10.9],
+    })
+    wind = pd.DataFrame({
+        "bird_id": ["A", "A", "B", "C"],
+        "date_utc": [
+            pd.Timestamp("2010-03-15").date(),
+            pd.Timestamp("2010-03-16").date(),
+            pd.Timestamp("2010-04-10").date(),
+            pd.Timestamp("2010-04-10").date(),
+        ],
+        "wind_u_850": [1.0, 2.0, 3.0, 99.0],
+        "wind_v_850": [-1.0, -2.0, -3.0, -99.0],
+        "wind_speed_850": [1.4, 2.8, 4.2, 140.0],
+    })
+
+    out = merge_wind_features(matrix, wind)
+
+    assert len(out) == len(matrix)
+    assert set(out.columns) == {
+        "bird_id", "date_utc", "lat", "lon",
+        "wind_u_850", "wind_v_850", "wind_speed_850",
+    }
+    # La fila de C en wind no debe aparecer (LEFT JOIN sobre matrix).
+    assert "C" not in out["bird_id"].tolist()
+
+
+def test_merge_wind_features_propagates_nan_when_no_match():
+    """Filas de matrix sin contrapartida en wind → NaN en columnas de viento."""
+    from tfg_aves.ml.features import merge_wind_features
+
+    matrix = pd.DataFrame({
+        "bird_id": ["A", "B"],
+        "date_utc": [
+            pd.Timestamp("2010-03-15").date(),
+            pd.Timestamp("2010-03-16").date(),
+        ],
+        "lat": [59.5, 59.6],
+        "lon": [10.5, 10.6],
+    })
+    wind = pd.DataFrame({
+        "bird_id": ["A"],
+        "date_utc": [pd.Timestamp("2010-03-15").date()],
+        "wind_u_850": [1.0],
+        "wind_v_850": [-1.0],
+        "wind_speed_850": [1.4],
+    })
+
+    out = merge_wind_features(matrix, wind)
+
+    a_row = out[out["bird_id"] == "A"].iloc[0]
+    b_row = out[out["bird_id"] == "B"].iloc[0]
+    assert a_row["wind_u_850"] == pytest.approx(1.0)
+    assert np.isnan(b_row["wind_u_850"])
+    assert np.isnan(b_row["wind_v_850"])
+    assert np.isnan(b_row["wind_speed_850"])
