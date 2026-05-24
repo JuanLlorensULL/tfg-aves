@@ -111,3 +111,27 @@ def test_expand_proba_to_full():
     assert np.allclose(out[:, 0], 0.0)          # "A" ausente -> 0
     assert np.allclose(out[:, 1], [0.7, 0.4])   # "B"
     assert np.allclose(out[:, 2], [0.3, 0.6])   # "C"
+
+
+def test_predictions_from_proba_columns_and_top1():
+    proba_full = np.array([[0.1, 0.9, 0.0], [0.8, 0.1, 0.1]])
+    classes_full = np.array(["A", "B", "C"])
+    meta = pd.DataFrame({
+        "bird_id": ["x", "x"],
+        "date_utc": pd.to_datetime(["2010-01-01", "2010-01-02"]).date,
+        "cell_id_t_next": ["B", "A"],
+        "lat_t_next": [10.0, 10.0],
+        "lon_t_next": [0.0, 0.0],
+        "state_b_causal": [1, 0],
+    })
+    cells = pd.DataFrame({
+        "cell_id": ["A", "B", "C"],
+        "lat_c": [10.0, 10.5, 11.0],
+        "lon_c": [0.0, 0.0, 0.0],
+    })
+    preds = ts.predictions_from_proba(proba_full, classes_full, meta, cells=cells)
+    assert list(preds["pred_cell_top1"]) == ["B", "A"]
+    assert preds["true_cell"].tolist() == ["B", "A"]
+    assert preds.attrs["_proba"].shape == (2, 3)
+    assert "pred_dist_km" in preds.columns
+    assert "state_b_causal" in preds.columns

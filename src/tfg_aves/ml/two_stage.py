@@ -108,3 +108,59 @@ def expand_proba_to_full(
     for src_col, c in enumerate(classes_str):
         out[:, full_index[c]] = proba[:, src_col]
     return out
+
+
+def _centroid_lookup(cells: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    return {row.cell_id: (row.lat_c, row.lon_c) for row in cells.itertuples()}
+
+
+def _dist_to_centroid(
+    pred_cell: str, lat_next: float, lon_next: float,
+    centroids: dict[str, tuple[float, float]],
+) -> float:
+    if pd.isna(lat_next) or pd.isna(lon_next) or pred_cell not in centroids:
+        return np.nan
+    c_lat, c_lon = centroids[pred_cell]
+    return haversine_km(c_lat, c_lon, lat_next, lon_next)
+
+
+def predictions_from_proba(
+    proba_full: np.ndarray,
+    classes_full: np.ndarray,
+    meta: pd.DataFrame,
+    *,
+    cells: pd.DataFrame,
+    top_k: int = 3,
+) -> pd.DataFrame:
+    """Construye el DataFrame de predicciones estándar desde proba_full.
+
+    Hermano de evaluate.predict_with_meta pero parte de una matriz de
+    probabilidad ya combinada (no de un modelo). Columnas: bird_id,
+    date_utc, true_cell, pred_cell_top1, pred_cell_topk, pred_prob_top1,
+    pred_dist_km, state_b_causal. Adjunta proba_full y classes_full en attrs.
+    """
+    top1_idx = np.argmax(proba_full, axis=1)
+    topk_idx = np.argsort(proba_full, axis=1)[:, -top_k:][:, ::-1]
+    pred_top1 = classes_full[top1_idx]
+    pred_topk = [classes_full[row].tolist() for row in topk_idx]
+    prob_top1 = proba_full[np.arange(len(proba_full)), top1_idx]
+
+    centroids = _centroid_lookup(cells)
+    dists = [
+        _dist_to_centroid(pc, lt, ln, centroids) for pc, lt, ln in
+        zip(pred_top1, meta["lat_t_next"], meta["lon_t_next"], strict=True)
+    ]
+
+    out = pd.DataFrame({
+        "bird_id": meta["bird_id"].values,
+        "date_utc": meta["date_utc"].values,
+        "true_cell": meta["cell_id_t_next"].values,
+        "pred_cell_top1": pred_top1,
+        "pred_cell_topk": pred_topk,
+        "pred_prob_top1": prob_top1,
+        "pred_dist_km": dists,
+        "state_b_causal": meta["state_b_causal"].values,
+    })
+    out.attrs["_proba"] = proba_full
+    out.attrs["_classes"] = classes_full
+    return out
