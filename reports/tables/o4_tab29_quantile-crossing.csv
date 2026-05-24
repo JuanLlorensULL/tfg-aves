@@ -1,3 +1,5 @@
-modo,n_test,cruces_lat,cruces_lon,pct_lat,pct_lon
-poblacional,4037,61,48,1.5110230369085955,1.189001733960862
-individual,405,12,3,2.962962962962963,0.7407407407407407
+familia_modo,n_test,cruces_lat,cruces_lon,pct_lat,pct_lon
+XGBoost·poblacional,4037,61,48,1.5110230369085955,1.189001733960862
+XGBoost·individual,405,12,3,2.962962962962963,0.7407407407407407
+LightGBM·poblacional,4037,143,111,3.542234332425068,2.7495665097844935
+Random Forest·poblacional,4037,0,0,0.0,0.0

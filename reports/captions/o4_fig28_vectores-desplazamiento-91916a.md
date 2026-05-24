@@ -7,4 +7,4 @@
 
 ## Caption (memoria)
 
-Vectores de desplazamiento diario predichos (mediana p50) por el modelo individual de 91916A sobre una muestra de su test, con la banda de incertidumbre [p10, p90] por eje. Ilustra la salida geométrica e interpretable de la regresión de cuantiles, no disponible en el clasificador categórico.
+Vectores de desplazamiento diario predichos (mediana p50) por el modelo individual XGBoost de 91916A sobre una muestra de su test, con la banda de incertidumbre [p10, p90] por eje. Ilustra la salida geométrica e interpretable de la regresión de cuantiles, no disponible en el clasificador.
