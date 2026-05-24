@@ -49,3 +49,28 @@ def error_by_cell(preds: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
     )
     out = agg.merge(cells[["cell_id", "lat_c", "lon_c"]], on="cell_id", how="inner")
     return out.sort_values("cell_id").reset_index(drop=True)
+
+
+def coverage_by_cell(preds: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
+    """Cobertura empírica MARGINAL por celda de origen.
+
+    Por fila, cobertura marginal = media de ``in_interval_lat`` e
+    ``in_interval_lon`` (los dos intervalos [p10,p90] por eje, nominal ≈0,80).
+    Se promedia por celda. Devuelve [cell_id, lat_c, lon_c, n,
+    coverage_marginal].
+    """
+    df = _attach_origin_cell(preds, cells)
+    df["_cov_marginal"] = 0.5 * (
+        df["in_interval_lat"].astype(float) + df["in_interval_lon"].astype(float)
+    )
+    agg = (
+        df.groupby("origin_cell")
+        .agg(
+            n=("_cov_marginal", "size"),
+            coverage_marginal=("_cov_marginal", "mean"),
+        )
+        .reset_index()
+        .rename(columns={"origin_cell": "cell_id"})
+    )
+    out = agg.merge(cells[["cell_id", "lat_c", "lon_c"]], on="cell_id", how="inner")
+    return out.sort_values("cell_id").reset_index(drop=True)

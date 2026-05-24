@@ -47,3 +47,12 @@ def test_error_by_cell_groups_by_origin_cell_median():
     assert row_81["n"] == 1
     assert row_81["median_error_km"] == 50.0
     assert {"lat_c", "lon_c"}.issubset(out.columns)
+
+
+def test_coverage_by_cell_marginal_mean():
+    from tfg_aves.viz.error import coverage_by_cell
+    out = coverage_by_cell(_preds(), _cells())
+    row_80 = out[out["cell_id"] == "80_-6"].iloc[0]
+    assert row_80["coverage_marginal"] == 0.75
+    row_81 = out[out["cell_id"] == "81_-6"].iloc[0]
+    assert row_81["coverage_marginal"] == 0.5
