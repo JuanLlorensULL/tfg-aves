@@ -133,7 +133,7 @@
       <input type="range" id="cur" min="0" value="0">
       <input type="date" id="curDate" title="Saltar a un día exacto de la ventana">
       <div class="controls">
-        <button id="first" title="Volver al inicio de la ventana">&#9198;</button>
+        <button id="first" title="Día anterior">&#9198;</button>
         <button id="play">&#9654;&nbsp;Reproducir</button>
         <button id="step" title="Día siguiente">&#9197;</button>
       </div>
@@ -442,7 +442,7 @@ el("startDate").onchange = e => { stop(); S.start = Math.min(nearestIndex(e.targ
 el("endDate").onchange   = e => { stop(); S.end = Math.max(nearestIndex(e.target.value), S.start); refresh(); };
 el("cur").oninput    = e => { stop(); S.cur = +e.target.value; clamp(); el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
 el("curDate").onchange = e => { stop(); S.cur = nearestIndex(e.target.value, S.start, S.end); el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
-el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
+el("first").onclick  = () => { stop(); if(S.cur > S.start){ S.cur--; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); } };
 el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); } };
 el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
