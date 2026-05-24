@@ -338,9 +338,14 @@ function drawAll(){
   DATA.all.forEach((b, i) => {
     const col = ALL_PALETTE[i % ALL_PALETTE.length];
     const pl = L.polyline(b.track, {color:col, weight:1.8, opacity:.8});
-    pl.bindTooltip(b.id, {sticky:true});
+    pl.bindTooltip(`${b.id} — clic para ver`, {sticky:true});
     pl.on("mouseover", () => pl.setStyle({weight:4.5, opacity:1}).bringToFront());
     pl.on("mouseout",  () => pl.setStyle({weight:1.8, opacity:.8}));
+    // Clic en una ruta → pasar a la vista de esa ave (índice en DATA.birds).
+    pl.on("click", () => {
+      const j = DATA.birds.findIndex(x => x.id === b.id);
+      if(j >= 0){ el("bird").value = j; setBird(j); }
+    });
     pl.addTo(allLayer);
   });
   if(!map.hasLayer(allLayer)) allLayer.addTo(map);
