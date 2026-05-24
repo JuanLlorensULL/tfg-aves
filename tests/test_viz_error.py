@@ -56,3 +56,25 @@ def test_coverage_by_cell_marginal_mean():
     assert row_80["coverage_marginal"] == 0.75
     row_81 = out[out["cell_id"] == "81_-6"].iloc[0]
     assert row_81["coverage_marginal"] == 0.5
+
+
+def test_metrics_by_regime_top1_and_coverage():
+    from tfg_aves.viz.error import metrics_by_regime
+    out = metrics_by_regime(_preds())
+    estac = out[out["regimen"] == "estacionario"].iloc[0]
+    assert estac["n"] == 2
+    assert estac["top1"] == 0.5
+    assert estac["dist_median_km"] == 20.0
+    assert estac["coverage_joint"] == 0.5
+    migr = out[out["regimen"] == "migración"].iloc[0]
+    assert migr["n"] == 1
+    assert migr["top1"] == 1.0
+
+
+def test_metrics_by_month_groups_by_calendar_month():
+    from tfg_aves.viz.error import metrics_by_month
+    out = metrics_by_month(_preds())
+    ene = out[out["mes"] == 1].iloc[0]
+    assert ene["n"] == 2
+    mar = out[out["mes"] == 3].iloc[0]
+    assert mar["n"] == 1

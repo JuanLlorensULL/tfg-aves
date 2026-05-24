@@ -74,3 +74,62 @@ def coverage_by_cell(preds: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
     )
     out = agg.merge(cells[["cell_id", "lat_c", "lon_c"]], on="cell_id", how="inner")
     return out.sort_values("cell_id").reset_index(drop=True)
+
+
+_REGIME_LABEL = {0: "estacionario", 1: "migración"}
+
+
+def _metric_block(df: pd.DataFrame) -> dict:
+    """Métricas comunes sobre un bloque de predicciones."""
+    top1 = float((df["pred_cell_top1"] == df["true_cell"]).mean())
+    cov_marginal = float(
+        0.5
+        * (
+            df["in_interval_lat"].astype(float) + df["in_interval_lon"].astype(float)
+        ).mean()
+    )
+    cov_joint = float(
+        (
+            df["in_interval_lat"].astype(bool) & df["in_interval_lon"].astype(bool)
+        ).mean()
+    )
+    return {
+        "n": int(len(df)),
+        "top1": top1,
+        "dist_median_km": float(df["dist_native_km"].median()),
+        "coverage_marginal": cov_marginal,
+        "coverage_joint": cov_joint,
+    }
+
+
+def metrics_by_regime(preds: pd.DataFrame) -> pd.DataFrame:
+    """Métricas por régimen HMM causal (estacionario vs migración).
+
+    Columnas: regimen, n, top1, dist_median_km, coverage_marginal,
+    coverage_joint. La cobertura conjunta (real dentro del rectángulo) se
+    incluye junto a la marginal para documentar que la primera es menor que
+    el 80 % nominal (matiz del spec §6.2).
+    """
+    rows = []
+    for state, sub in preds.groupby("state_b_causal"):
+        block = _metric_block(sub)
+        block["regimen"] = _REGIME_LABEL.get(int(state), str(state))
+        rows.append(block)
+    cols = ["regimen", "n", "top1", "dist_median_km", "coverage_marginal", "coverage_joint"]
+    return pd.DataFrame(rows)[cols].sort_values("regimen").reset_index(drop=True)
+
+
+def metrics_by_month(preds: pd.DataFrame) -> pd.DataFrame:
+    """Mismas métricas por mes calendario (cruce con la fenología).
+
+    Columnas: mes, n, top1, dist_median_km, coverage_marginal, coverage_joint.
+    """
+    df = preds.copy()
+    df["mes"] = pd.to_datetime(df["date_utc"]).dt.month
+    rows = []
+    for mes, sub in df.groupby("mes"):
+        block = _metric_block(sub)
+        block["mes"] = int(mes)
+        rows.append(block)
+    cols = ["mes", "n", "top1", "dist_median_km", "coverage_marginal", "coverage_joint"]
+    return pd.DataFrame(rows)[cols].sort_values("mes").reset_index(drop=True)
