@@ -156,6 +156,8 @@ def build_multistep_demo(preds: pd.DataFrame, daily: pd.DataFrame, *,
     day = daily[(daily["bird_id"] == bird_id) & daily["is_valid"]].copy()
     day["date_utc"] = pd.to_datetime(day["date_utc"])
     day = day.sort_values("date_utc")
+    # Seed inclusivo: incluye el propio día de arranque (t) más el anterior
+    # (t-1). chain_trajectory necesita la posición real de t para generar t+1.
     prev = day[day["date_utc"] <= start_date].tail(2)
     if len(prev) < 2:
         return {}
