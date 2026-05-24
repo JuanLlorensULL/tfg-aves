@@ -135,3 +135,40 @@ def test_predictions_from_proba_columns_and_top1():
     assert preds.attrs["_proba"].shape == (2, 3)
     assert "pred_dist_km" in preds.columns
     assert "state_b_causal" in preds.columns
+
+
+def _toy_binary(n=400, seed=0):
+    rng = np.random.default_rng(seed)
+    X = pd.DataFrame({
+        "lat": rng.normal(50, 5, n),
+        "lon": rng.normal(0, 5, n),
+        "state_b_causal": rng.integers(0, 2, n),
+    })
+    # y_move correlado con state_b_causal para que el modelo aprenda algo
+    y = ((X["state_b_causal"] == 1) | (rng.random(n) < 0.1)).astype(int).to_numpy()
+    return X, y
+
+
+def test_train_move_rf_predicts_proba():
+    X, y = _toy_binary()
+    model = ts.train_move_rf(X, y, seed=0)
+    proba = model.predict_proba(X)
+    assert proba.shape == (len(X), 2)
+    assert list(model.classes_) == [0, 1]
+
+
+def test_train_move_xgb_predicts_proba():
+    X, y = _toy_binary()
+    model = ts.train_move_xgb(X, y, seed=0)
+    proba = model.predict_proba(X)
+    assert proba.shape == (len(X), 2)
+
+
+def test_calibrate_prefit_returns_calibrated():
+    X, y = _toy_binary(n=400, seed=1)
+    Xv, yv = _toy_binary(n=160, seed=2)
+    base = ts.train_move_rf(X, y, seed=1)
+    cal = ts.calibrate_prefit(base, Xv, yv)
+    proba = cal.predict_proba(Xv)
+    assert proba.shape == (len(Xv), 2)
+    assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-6)

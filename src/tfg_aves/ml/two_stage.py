@@ -164,3 +164,67 @@ def predictions_from_proba(
     out.attrs["_proba"] = proba_full
     out.attrs["_classes"] = classes_full
     return out
+
+
+def train_move_rf(
+    X_train: pd.DataFrame, y_move: np.ndarray, *, seed: int = 0,
+) -> RandomForestClassifier:
+    """Etapa 1 RF binaria. Config §8.6 + class_weight='balanced'.
+
+    Poblacional: X_train sólo tiene columnas numéricas (las 8 cinemáticas
+    + las 2 del HMM causal), sin bird_id, así que no necesita encoder.
+    """
+    rf = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=12,
+        min_samples_leaf=10,
+        class_weight="balanced",
+        random_state=seed,
+        n_jobs=-1,
+    )
+    rf.fit(X_train, np.asarray(y_move).astype(int))
+    return rf
+
+
+def train_move_xgb(
+    X_train: pd.DataFrame, y_move: np.ndarray, *, seed: int = 0,
+) -> xgb.XGBClassifier:
+    """Etapa 1 XGBoost binaria. Config §8.6 adaptada a binario.
+
+    n_estimators=300 FIJOS (sin early stopping) para reservar X_val
+    exclusivamente a la calibración (F8). objective='binary:logistic',
+    scale_pos_weight = n_neg / n_pos calculado sobre y_move.
+    """
+    y = np.asarray(y_move).astype(int)
+    n_pos = int(y.sum())
+    n_neg = int(len(y) - n_pos)
+    spw = (n_neg / n_pos) if n_pos > 0 else 1.0
+    model = xgb.XGBClassifier(
+        learning_rate=0.05,
+        max_depth=6,
+        min_child_weight=10,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        n_estimators=300,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        scale_pos_weight=spw,
+        tree_method="hist",
+        random_state=seed,
+        n_jobs=-1,
+    )
+    model.fit(X_train, y)
+    return model
+
+
+def calibrate_prefit(
+    base: ClassifierMixin, X_val: pd.DataFrame, y_val_move: np.ndarray,
+) -> CalibratedClassifierCV:
+    """Calibra isotónicamente un modelo ya entrenado usando el val temporal.
+
+    Usa FrozenEstimator (sklearn 1.8; reemplaza cv='prefit'). El base NO se
+    reentrena: sólo se ajusta el calibrador sobre (X_val, y_val_move).
+    """
+    cal = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic")
+    cal.fit(X_val, np.asarray(y_val_move).astype(int))
+    return cal
