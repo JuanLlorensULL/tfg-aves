@@ -79,8 +79,8 @@ def build_o5_tables(preds: pd.DataFrame, *, daily: pd.DataFrame | None = None,
                   table=regime, overwrite=True, project_root=project_root)
     save_artifact("error-por-mes", objective="o5", num=3,
                   decision="Métricas de L3 por mes calendario (cruce con fenología)",
-                  caption_es=("Métricas mensuales de L3 LightGBM poblacional. Cruza el error con "
-                              "la fenología de Larus fuscus (picos de migración abr-may y sep-oct)."),
+                  caption_es=("Métricas mensuales de L3 LightGBM poblacional. Cruza el error "
+                              "con la fenología de Larus fuscus (picos abr-may y sep-oct)."),
                   table=month, overwrite=True, project_root=project_root)
     return {"aves_curadas": curated, "por_regimen": regime, "por_mes": month}
 

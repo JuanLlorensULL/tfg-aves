@@ -51,7 +51,7 @@ def test_build_o5_maps_writes_html(tmp_path):
         "cell_id": ["80_-6", "80_-7", "82_-6"], "lat_c": [40.25, 40.25, 41.25],
         "lon_c": [-2.75, -3.25, -2.75],
     })
-    out = build_error_maps(preds, cells, out_dir=tmp_path)
+    build_error_maps(preds, cells, out_dir=tmp_path)
     assert (tmp_path / "o5_fig20_error-por-celda.html").exists()
     assert (tmp_path / "o5_fig21_calibracion-por-celda.html").exists()
 
