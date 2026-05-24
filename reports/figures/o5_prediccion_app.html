@@ -70,6 +70,9 @@
   .daynow{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--parch);
     background:var(--ink);border:1px solid var(--line);border-radius:7px;
     padding:8px 9px;text-align:center;margin-top:10px}
+  .errnow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:#ff6b6b;
+    background:var(--ink);border:1px solid #5a2a2a;border-radius:7px;
+    padding:7px 9px;text-align:center;margin-top:7px}
   .legend{margin-top:auto;padding-top:15px;border-top:1px solid var(--line);
     font-size:12.5px;line-height:1.9}
   .legend .row{display:flex;align-items:center;gap:9px}
@@ -96,7 +99,6 @@
     <div class="group">
       <label class="lbl" for="bird">Ave</label>
       <select id="bird"></select>
-      <label class="chk" style="margin-top:10px"><input type="checkbox" id="showState"> Estado HMM (O3)</label>
     </div>
 
     <div class="group">
@@ -125,8 +127,10 @@
       </div>
       <div class="fps"><span>vel.</span><input type="range" id="fps" min="1" max="15" value="3"><span id="fpsv">3&nbsp;fps</span></div>
       <div class="daynow" id="daynow">&mdash;</div>
+      <div class="errnow" id="errnow">error &mdash;</div>
       <label class="chk"><input type="checkbox" id="showMarkov" checked> Mostrar punto de Markov</label>
       <label class="chk"><input type="checkbox" id="showRoute" checked> Mostrar ruta real del ave</label>
+      <label class="chk"><input type="checkbox" id="showState"> Estado HMM (O3)</label>
     </div>
 
     <div class="legend" id="legend">
@@ -218,8 +222,9 @@ function drawDay(){
       iconAnchor:[7,7], html:'<div class="mk"></div>'})}).addTo(dayLayer);
   }
   if(d.r) L.circleMarker(d.r, {radius:6, color:C.real, weight:2, fillColor:C.real, fillOpacity:1}).addTo(dayLayer);
-  el("daynow").innerHTML = d.date +
-    (d.e != null ? ` &middot; error <b>${d.e} km</b>` : " &middot; sin dato t+1");
+  el("daynow").textContent = d.date;
+  el("errnow").style.display = "";
+  el("errnow").innerHTML = (d.e != null) ? `error <b>${d.e} km</b>` : "sin dato t+1";
 }
 
 // Capa de estado O3: punto por día coloreado (azul oscuro estacionario, rojo
@@ -323,6 +328,7 @@ function drawAll(){
   const bb = L.latLngBounds(pts);
   if(bb.isValid()) map.fitBounds(bb.pad(0.1));
   el("daynow").innerHTML = `Todas las aves &middot; <b>${DATA.all.length}</b> rutas reales (test)`;
+  el("errnow").style.display = "none";
   drawState();
 }
 
