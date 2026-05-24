@@ -19,3 +19,19 @@ def test_derive_displacement_target():
     out = derive_displacement_target(m)
     assert np.allclose(out["y_dlat"], [0.5, 0.2])
     assert np.allclose(out["y_dlon"], [1.0, -0.2])
+
+
+def test_fit_quantile_axis_shapes_and_order():
+    from tfg_aves.ml.quantile import QUANTILES, fit_quantile_axis
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"a": rng.normal(size=300), "b": rng.normal(size=300)})
+    y = (X["a"].to_numpy() * 2.0) + rng.normal(0, 0.1, size=300)
+    Xv = pd.DataFrame({"a": rng.normal(size=80), "b": rng.normal(size=80)})
+    yv = (Xv["a"].to_numpy() * 2.0) + rng.normal(0, 0.1, size=80)
+    models = fit_quantile_axis(X, y, Xv, yv, seed=0)
+    assert set(models) == set(QUANTILES)
+    p10 = models[0.10].predict(Xv)
+    p90 = models[0.90].predict(Xv)
+    assert p10.shape == (80,)
+    # En media, el cuantil 90 está por encima del 10.
+    assert float(np.mean(p90 >= p10)) > 0.9
