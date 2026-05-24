@@ -96,6 +96,7 @@
     <div class="group">
       <label class="lbl" for="bird">Ave</label>
       <select id="bird"></select>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="showState"> Estado HMM (O3)</label>
     </div>
 
     <div class="group">
@@ -146,6 +147,10 @@
         <div class="foot">Vista de conjunto: rutas reales de las aves del test, sin
           predicción. Pasa el ratón por una ruta para resaltarla y ver el id del ave.</div>
       </div>
+      <div id="statelegend" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+        <div class="row"><span class="dot" style="background:#16317d"></span> estacionario (O3)</div>
+        <div class="row"><span class="dot" style="background:#d62728"></span> migración (O3)</div>
+      </div>
     </div>
   </aside>
   <div id="map"></div>
@@ -159,15 +164,17 @@ const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8
 const ALL_PALETTE = ["#e6194B","#3cb44b","#f58231","#4363d8","#911eb4","#42d4f4",
   "#f032e6","#469990","#9A6324","#800000","#808000","#000075","#e6ab02","#1b9e77",
   "#d95f02","#7570b3"];
-const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3", err:"#d62728"};
+const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3", err:"#d62728",
+           estac:"#16317d", migr:"#d62728"};  // estado O3: estacionario / migración
 
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   {subdomains:"abcd", maxZoom:19,
    attribution:"&copy; OpenStreetMap &copy; CARTO"}).addTo(map);
-const trajLayer = L.layerGroup().addTo(map);
-const dayLayer  = L.layerGroup().addTo(map);
-const allLayer  = L.layerGroup().addTo(map);
+const trajLayer  = L.layerGroup().addTo(map);
+const dayLayer   = L.layerGroup().addTo(map);
+const allLayer   = L.layerGroup().addTo(map);
+const stateLayer = L.layerGroup().addTo(map);  // capa de estado O3 (encima)
 
 const el = id => document.getElementById(id);
 const S = {bird:0, start:0, end:0, cur:0, playing:false, fps:3, timer:null, mode:"bird"};
@@ -215,6 +222,21 @@ function drawDay(){
     (d.e != null ? ` &middot; error <b>${d.e} km</b>` : " &middot; sin dato t+1");
 }
 
+// Capa de estado O3: punto por día coloreado (azul oscuro estacionario, rojo
+// migración). En "Todas" cubre todas las aves; por ave, la ventana visible.
+function drawState(){
+  stateLayer.clearLayers();
+  if(!el("showState").checked) return;
+  const add = (lat, lon, s) => L.circleMarker([lat, lon],
+    {radius:3, weight:0, fillColor:(s ? C.migr : C.estac), fillOpacity:.85}).addTo(stateLayer);
+  if(S.mode === "all"){
+    DATA.all.forEach(b => b.track.forEach((pt, j) => add(pt[0], pt[1], b.st[j])));
+  } else {
+    const arr = days();
+    for(let i = S.start; i <= S.end; i++) add(arr[i].o[0], arr[i].o[1], arr[i].s);
+  }
+}
+
 function clamp(){
   if(S.end < S.start) S.end = S.start;
   if(S.cur < S.start) S.cur = S.start;
@@ -255,7 +277,7 @@ function applyRouteVisibility(){
   else if(map.hasLayer(trajLayer)){ map.removeLayer(trajLayer); }
 }
 
-function refresh(){ clamp(); syncInputs(); drawTrajectory(); applyRouteVisibility(); drawDay(); }
+function refresh(){ clamp(); syncInputs(); drawTrajectory(); applyRouteVisibility(); drawDay(); drawState(); }
 
 function fitBird(){
   const b = L.latLngBounds(days().map(d => d.o));
@@ -301,6 +323,7 @@ function drawAll(){
   const bb = L.latLngBounds(pts);
   if(bb.isValid()) map.fitBounds(bb.pad(0.1));
   el("daynow").innerHTML = `Todas las aves &middot; <b>${DATA.all.length}</b> rutas reales (test)`;
+  drawState();
 }
 
 function setAll(){
@@ -334,6 +357,10 @@ el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
 el("showMarkov").onchange = () => drawDay();
 el("showRoute").onchange = applyRouteVisibility;
+el("showState").onchange = () => {
+  el("statelegend").style.display = el("showState").checked ? "" : "none";
+  drawState();
+};
 
 setBird(0);
 </script>

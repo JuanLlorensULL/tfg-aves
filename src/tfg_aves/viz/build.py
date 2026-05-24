@@ -232,6 +232,7 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                 "r": list(nxt) if nxt is not None else None,
                 "m": mk.get((bird, dstr)),
                 "e": round(float(r["dist_native_km"]), 1) if has_dist else None,
+                "s": int(r["state_b_causal"]),  # 0 estacionario, 1 migración (O3)
             })
         birds_out.append({"id": bird, "days": days_out})
 
@@ -249,7 +250,8 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
             )
         ]
         if len(track) >= 2:
-            all_tracks.append({"id": str(bird_id), "track": track})
+            st = [int(s) for s in sub["state_b_causal"]]  # estado O3 por punto
+            all_tracks.append({"id": str(bird_id), "track": track, "st": st})
     return {"birds": birds_out, "all": all_tracks}
 
 
