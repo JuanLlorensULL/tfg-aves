@@ -76,6 +76,11 @@
   .sw{width:15px;height:13px;border-radius:3px;flex:0 0 15px}
   .dot{width:11px;height:11px;border-radius:50%;flex:0 0 11px}
   .ring{width:12px;height:12px;border-radius:50%;border:2px solid var(--pers);flex:0 0 12px;box-sizing:border-box}
+  .mkleg{width:10px;height:10px;background:#8e6fb3;transform:rotate(45deg);flex:0 0 10px;margin:0 3px}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:12.5px;cursor:pointer}
+  .chk input{accent-color:#8e6fb3;cursor:pointer}
+  .mk-wrap{background:none;border:none}
+  .mk{width:10px;height:10px;background:#8e6fb3;border:1.5px solid #fff;transform:rotate(45deg)}
   .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
     margin-top:11px;line-height:1.5}
   .leaflet-container{background:#dfe6e3;font-family:"IBM Plex Sans",sans-serif}
@@ -118,12 +123,13 @@
       </div>
       <div class="fps"><span>vel.</span><input type="range" id="fps" min="1" max="15" value="3"><span id="fpsv">3&nbsp;fps</span></div>
       <div class="daynow" id="daynow">&mdash;</div>
+      <label class="chk"><input type="checkbox" id="showMarkov" checked> Mostrar punto de Markov</label>
     </div>
 
     <div class="legend" id="legend">
       <div class="row"><span class="dot" style="background:var(--p50)"></span> p50 — predicción de mañana</div>
       <div class="row"><span class="sw" style="border:1px dashed var(--p50);background:rgba(59,110,165,.18)"></span> banda [p10, p90]</div>
-      <div class="row"><span class="ring"></span> persistencia (= hoy)</div>
+      <div class="row"><span class="mkleg"></span> Markov — centroide de celda 0,5°</div>
       <div class="row"><span class="dot" style="background:var(--real)"></span> posición real de mañana</div>
       <div id="yearlegend" style="margin-top:6px"></div>
       <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
@@ -136,7 +142,7 @@
 <script>
 const DATA = __PRED_DATA__;
 const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8"];
-const C = {p50:"#3b6ea5", pers:"#2e8b57", real:"#e08a3c"};
+const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3"};
 
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
@@ -180,7 +186,10 @@ function drawDay(){
     fillColor:C.p50, fillOpacity:.14}).addTo(dayLayer);
   L.polyline([d.o, d.p], {color:C.p50, weight:2}).addTo(dayLayer);
   L.circleMarker(d.p, {radius:6, color:C.p50, weight:2, fillColor:C.p50, fillOpacity:1}).addTo(dayLayer);
-  L.circleMarker(d.o, {radius:9, color:C.pers, weight:2, fill:false}).addTo(dayLayer);
+  if(d.m && el("showMarkov").checked){
+    L.marker(d.m, {icon: L.divIcon({className:"mk-wrap", iconSize:[14,14],
+      iconAnchor:[7,7], html:'<div class="mk"></div>'})}).addTo(dayLayer);
+  }
   if(d.r) L.circleMarker(d.r, {radius:6, color:C.real, weight:2, fillColor:C.real, fillOpacity:1}).addTo(dayLayer);
   el("daynow").textContent = d.date + (d.r ? "" : "  · sin dato t+1");
 }
@@ -265,6 +274,7 @@ el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur;
 el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); } };
 el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
+el("showMarkov").onchange = () => drawDay();
 
 setBird(0);
 </script>

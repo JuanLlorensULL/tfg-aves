@@ -104,7 +104,8 @@ def _app_fixtures():
 def test_prediction_app_data_shape_and_origin_recovery():
     from tfg_aves.viz.build import prediction_app_data
     preds, daily = _app_fixtures()
-    data = prediction_app_data(preds, daily)
+    markov = {("91916A", "2014-12-31"): [40.55, -2.55]}
+    data = prediction_app_data(preds, daily, markov_points=markov)
     assert [b["id"] for b in data["birds"]] == ["91916A"]
     days = data["birds"][0]["days"]
     assert len(days) == 2
@@ -117,6 +118,9 @@ def test_prediction_app_data_shape_and_origin_recovery():
     assert s < n and w < e
     # real t+1 = posición real del día siguiente (2015-01-01)
     assert d0["r"] == [40.9, -2.75]
+    # punto de Markov por (ave, fecha); None si no hay
+    assert d0["m"] == [40.55, -2.55]
+    assert days[1]["m"] is None
 
 
 def test_build_prediction_app_writes_html_with_data(tmp_path):

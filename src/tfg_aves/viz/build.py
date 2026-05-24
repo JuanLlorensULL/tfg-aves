@@ -185,15 +185,20 @@ def build_prediction_index(pred_map_paths: dict[str, Path], *,
     return p
 
 
-def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame) -> dict:
+def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
+                        markov_points: dict | None = None) -> dict:
     """Datos por ave/día para la app Leaflet a medida (función pura).
 
     Por cada ave curada con predicciones, una lista de días con: fecha, año,
-    origen ``o`` (=persistencia, recuperado como ``pred - p50``), punto ``p``
-    (p50), rectángulo de banda ``band`` [[sur,oeste],[norte,este]] y posición
-    real ``r`` del día siguiente (o ``None`` si hay hueco). Coordenadas
-    redondeadas a 5 decimales. No toca disco.
+    origen ``o`` (posición del día t, recuperado como ``pred - p50``; centro de
+    la banda y de la línea origen→p50), punto ``p`` (p50), rectángulo de banda
+    ``band`` [[sur,oeste],[norte,este]], posición real ``r`` del día siguiente
+    (o ``None`` si hay hueco) y punto de Markov ``m`` (centroide de la celda
+    0,5° que predice el baseline Markov(1), o ``None``). ``markov_points`` es un
+    dict ``(bird_id, "YYYY-MM-DD") -> [lat, lon]``. Coordenadas a 5 decimales.
+    No toca disco.
     """
+    mk = markov_points or {}
     d_valid = daily[daily["is_valid"]].copy()
     d_valid["date_utc"] = pd.to_datetime(d_valid["date_utc"])
     birds_out: list[dict] = []
@@ -209,36 +214,69 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame) -> dict:
         days_out: list[dict] = []
         for _, r in sub.iterrows():
             dt = pd.Timestamp(r["date_utc"])
+            dstr = dt.strftime("%Y-%m-%d")
             lat_t = float(r["pred_lat"]) - float(r["dlat_p50"])
             lon_t = float(r["pred_lon"]) - float(r["dlon_p50"])
             south, north = lat_t + float(r["dlat_p10"]), lat_t + float(r["dlat_p90"])
             west, east = lon_t + float(r["dlon_p10"]), lon_t + float(r["dlon_p90"])
             nxt = real_by_date.get(dt + pd.Timedelta(days=1))
             days_out.append({
-                "date": dt.strftime("%Y-%m-%d"),
+                "date": dstr,
                 "year": int(dt.year),
                 "o": [round(lat_t, 5), round(lon_t, 5)],
                 "p": [round(float(r["pred_lat"]), 5), round(float(r["pred_lon"]), 5)],
                 "band": [[round(south, 5), round(west, 5)],
                          [round(north, 5), round(east, 5)]],
                 "r": list(nxt) if nxt is not None else None,
+                "m": mk.get((bird, dstr)),
             })
         birds_out.append({"id": bird, "days": days_out})
     return {"birds": birds_out}
 
 
+def markov_points_for_test(features_o3: pd.DataFrame, cells: pd.DataFrame,
+                           *, seed: int = 0) -> dict:
+    """Punto de Markov(1) por ``(bird_id, fecha)`` del test poblacional de O4.
+
+    Reusa el MISMO baseline que O4 (``compute_markov_baseline``: Markov(1)
+    mensual reentrenado sobre el train temporal poblacional) para ser coherente
+    con la memoria, y mapea la celda predicha a su centroide. Devuelve
+    ``(bird_id, "YYYY-MM-DD") -> [lat, lon]``.
+    """
+    from tfg_aves.ml.build_l3 import _prepare_poblacional_split
+    from tfg_aves.ml.evaluate import compute_markov_baseline
+
+    train, _val, test = _prepare_poblacional_split(features_o3, cells, seed)
+    mk = compute_markov_baseline(train, test, cells=cells)
+    centroid = cells.set_index("cell_id")[["lat_c", "lon_c"]]
+    out: dict = {}
+    for r in mk.itertuples():
+        if r.pred_cell_top1 in centroid.index:
+            la, lo = centroid.loc[r.pred_cell_top1]
+            key = (r.bird_id, pd.Timestamp(r.date_utc).strftime("%Y-%m-%d"))
+            out[key] = [round(float(la), 5), round(float(lo), 5)]
+    return out
+
+
 def build_prediction_app(preds: pd.DataFrame, daily: pd.DataFrame, *,
-                         out_dir: Path) -> Path:
+                         out_dir: Path, features_o3: pd.DataFrame | None = None,
+                         cells: pd.DataFrame | None = None, seed: int = 0) -> Path:
     """App Leaflet a medida (estática) con barra lateral, selector de ave,
     ventana de días acotable por ambos lados, play/pausa y velocidad.
 
     Inyecta los datos (``prediction_app_data``) en la plantilla
     ``templates/prediccion_app.html``. Sin backend: todo va embebido. Se añade
-    a los mapas folium por ave (no los sustituye).
+    a los mapas folium por ave (no los sustituye). Si se pasan ``features_o3`` y
+    ``cells`` se calcula el punto de Markov por día (baseline de O4); si no, la
+    app se genera sin ese punto.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    data = prediction_app_data(preds, daily)
+    markov_points = (
+        markov_points_for_test(features_o3, cells, seed=seed)
+        if features_o3 is not None and cells is not None else None
+    )
+    data = prediction_app_data(preds, daily, markov_points=markov_points)
     template = _APP_TEMPLATE.read_text(encoding="utf-8")
     html = template.replace("__PRED_DATA__", json.dumps(data, ensure_ascii=False))
     out = out_dir / "o5_prediccion_app.html"
@@ -308,7 +346,8 @@ def build_o5(out_dir: Path | None = None) -> dict:
     tables = build_o5_tables(preds, daily=daily, features_o3=features_o3)
     pred_maps = build_prediction_maps(preds, daily, out_dir=out_dir)
     pred_index = build_prediction_index(pred_maps, out_dir=out_dir)
-    pred_app = build_prediction_app(preds, daily, out_dir=out_dir)
+    pred_app = build_prediction_app(preds, daily, out_dir=out_dir,
+                                    features_o3=features_o3, cells=cells)
     error_maps = build_error_maps(preds, cells, out_dir=out_dir, daily=daily)
     demo_maps = build_multistep_demo(preds, daily, out_dir=out_dir)
     return {"tables": tables, "prediction_maps": pred_maps,
