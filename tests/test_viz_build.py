@@ -91,6 +91,7 @@ def _app_fixtures():
         "pred_lat": [40.3, 41.0], "pred_lon": [-2.7, -2.6],
         "dlat_p10": [0.05, 0.05], "dlat_p50": [0.1, 0.1], "dlat_p90": [0.2, 0.2],
         "dlon_p10": [-0.05, -0.05], "dlon_p50": [0.0, 0.0], "dlon_p90": [0.05, 0.05],
+        "dist_native_km": [12.0, 45.0],
     })
     daily = pd.DataFrame({
         "bird_id": ["91916A"] * 3,
@@ -121,6 +122,8 @@ def test_prediction_app_data_shape_and_origin_recovery():
     # punto de Markov por (ave, fecha); None si no hay
     assert d0["m"] == [40.55, -2.55]
     assert days[1]["m"] is None
+    # error p50→real en km (de dist_native_km)
+    assert d0["e"] == 12.0 and days[1]["e"] == 45.0
 
 
 def test_build_prediction_app_writes_html_with_data(tmp_path):

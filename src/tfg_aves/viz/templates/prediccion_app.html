@@ -195,7 +195,8 @@ function drawDay(){
       iconAnchor:[7,7], html:'<div class="mk"></div>'})}).addTo(dayLayer);
   }
   if(d.r) L.circleMarker(d.r, {radius:6, color:C.real, weight:2, fillColor:C.real, fillOpacity:1}).addTo(dayLayer);
-  el("daynow").textContent = d.date + (d.r ? "" : "  · sin dato t+1");
+  el("daynow").innerHTML = d.date +
+    (d.e != null ? ` &middot; error <b>${d.e} km</b>` : " &middot; sin dato t+1");
 }
 
 function clamp(){

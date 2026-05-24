@@ -193,12 +193,14 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
     origen ``o`` (posición del día t, recuperado como ``pred - p50``; centro de
     la banda y de la línea origen→p50), punto ``p`` (p50), rectángulo de banda
     ``band`` [[sur,oeste],[norte,este]], posición real ``r`` del día siguiente
-    (o ``None`` si hay hueco) y punto de Markov ``m`` (centroide de la celda
-    0,5° que predice el baseline Markov(1), o ``None``). ``markov_points`` es un
-    dict ``(bird_id, "YYYY-MM-DD") -> [lat, lon]``. Coordenadas a 5 decimales.
-    No toca disco.
+    (o ``None`` si hay hueco), punto de Markov ``m`` (centroide de la celda
+    0,5° que predice el baseline Markov(1), o ``None``) y error ``e`` (km,
+    distancia haversine p50→real, tomada de ``dist_native_km``).
+    ``markov_points`` es un dict ``(bird_id, "YYYY-MM-DD") -> [lat, lon]``.
+    Coordenadas a 5 decimales. No toca disco.
     """
     mk = markov_points or {}
+    has_dist = "dist_native_km" in preds.columns
     d_valid = daily[daily["is_valid"]].copy()
     d_valid["date_utc"] = pd.to_datetime(d_valid["date_utc"])
     birds_out: list[dict] = []
@@ -229,6 +231,7 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                          [round(north, 5), round(east, 5)]],
                 "r": list(nxt) if nxt is not None else None,
                 "m": mk.get((bird, dstr)),
+                "e": round(float(r["dist_native_km"]), 1) if has_dist else None,
             })
         birds_out.append({"id": bird, "days": days_out})
     return {"birds": birds_out}
