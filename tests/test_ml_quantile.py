@@ -10,6 +10,11 @@ def test_o4_l3v1_dir_exists():
     assert O4_L3V1_DIR == O4_OUT_DIR / "l3_v1"
 
 
+def test_o4_l3v2_dir_exists():
+    from tfg_aves.ml._paths import O4_L3V2_DIR, O4_OUT_DIR
+    assert O4_L3V2_DIR == O4_OUT_DIR / "l3_v2"
+
+
 def test_derive_displacement_target():
     from tfg_aves.ml.quantile import derive_displacement_target
     m = pd.DataFrame({

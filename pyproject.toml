@@ -32,6 +32,7 @@ dependencies = [
     # Meteo
     "netcdf4>=1.6",
     "xarray>=2024.0",
+    "quantile-forest>=1.4.1",
 ]
 
 [project.optional-dependencies]
