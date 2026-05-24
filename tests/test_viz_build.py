@@ -84,6 +84,53 @@ def test_build_multistep_demo_with_injected_axes(tmp_path):
     assert (tmp_path / "o5_fig30_demo-multipaso-91916A.html").exists()
 
 
+def _app_fixtures():
+    preds = pd.DataFrame({
+        "bird_id": ["91916A"] * 2,
+        "date_utc": pd.to_datetime(["2014-12-31", "2015-01-01"]),
+        "pred_lat": [40.3, 41.0], "pred_lon": [-2.7, -2.6],
+        "dlat_p10": [0.05, 0.05], "dlat_p50": [0.1, 0.1], "dlat_p90": [0.2, 0.2],
+        "dlon_p10": [-0.05, -0.05], "dlon_p50": [0.0, 0.0], "dlon_p90": [0.05, 0.05],
+    })
+    daily = pd.DataFrame({
+        "bird_id": ["91916A"] * 3,
+        "date_utc": pd.to_datetime(["2014-12-31", "2015-01-01", "2015-01-02"]),
+        "lat": [40.2, 40.9, 41.05], "lon": [-2.75, -2.75, -2.60],
+        "is_valid": [True, True, True],
+    })
+    return preds, daily
+
+
+def test_prediction_app_data_shape_and_origin_recovery():
+    from tfg_aves.viz.build import prediction_app_data
+    preds, daily = _app_fixtures()
+    data = prediction_app_data(preds, daily)
+    assert [b["id"] for b in data["birds"]] == ["91916A"]
+    days = data["birds"][0]["days"]
+    assert len(days) == 2
+    d0 = days[0]
+    # origen recuperado = pred - p50 = (40.3-0.1, -2.7-0.0)
+    assert d0["o"] == [40.2, -2.7]
+    assert d0["year"] == 2014
+    # banda [[sur,oeste],[norte,este]] con sur<norte y oeste<este
+    (s, w), (n, e) = d0["band"]
+    assert s < n and w < e
+    # real t+1 = posición real del día siguiente (2015-01-01)
+    assert d0["r"] == [40.9, -2.75]
+
+
+def test_build_prediction_app_writes_html_with_data(tmp_path):
+    from tfg_aves.viz.build import build_prediction_app
+    preds, daily = _app_fixtures()
+    p = build_prediction_app(preds, daily, out_dir=tmp_path)
+    assert p.name == "o5_prediccion_app.html"
+    html = p.read_text(encoding="utf-8")
+    # placeholder sustituido por datos reales + UI presente
+    assert "__PRED_DATA__" not in html
+    assert '"id": "91916A"' in html or '"id":"91916A"' in html
+    assert 'id="map"' in html and "Ventana de días" in html
+
+
 def test_build_prediction_index_has_selector_and_iframe(tmp_path):
     from tfg_aves.viz.build import build_prediction_index
     paths = {

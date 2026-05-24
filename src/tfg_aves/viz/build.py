@@ -6,6 +6,7 @@ vía save_artifact.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import joblib
@@ -27,6 +28,9 @@ from tfg_aves.viz.maps import (
     multistep_demo_map,
     prediction_map,
 )
+
+# Plantilla de la app Leaflet a medida (HTML/CSS/JS estático con hueco de datos).
+_APP_TEMPLATE: Path = Path(__file__).parent / "templates" / "prediccion_app.html"
 
 
 def load_lgbm_predictions(path: Path = P.PREDICTIONS_L3V2_PARQUET) -> pd.DataFrame:
@@ -181,6 +185,67 @@ def build_prediction_index(pred_map_paths: dict[str, Path], *,
     return p
 
 
+def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame) -> dict:
+    """Datos por ave/día para la app Leaflet a medida (función pura).
+
+    Por cada ave curada con predicciones, una lista de días con: fecha, año,
+    origen ``o`` (=persistencia, recuperado como ``pred - p50``), punto ``p``
+    (p50), rectángulo de banda ``band`` [[sur,oeste],[norte,este]] y posición
+    real ``r`` del día siguiente (o ``None`` si hay hueco). Coordenadas
+    redondeadas a 5 decimales. No toca disco.
+    """
+    d_valid = daily[daily["is_valid"]].copy()
+    d_valid["date_utc"] = pd.to_datetime(d_valid["date_utc"])
+    birds_out: list[dict] = []
+    for bird in P.CURATED_BIRDS:
+        sub = preds[preds["bird_id"] == bird].sort_values("date_utc")
+        if sub.empty:
+            continue
+        dsub = d_valid[d_valid["bird_id"] == bird]
+        real_by_date = {
+            pd.Timestamp(dt): (round(float(la), 5), round(float(lo), 5))
+            for dt, la, lo in zip(dsub["date_utc"], dsub["lat"], dsub["lon"], strict=True)
+        }
+        days_out: list[dict] = []
+        for _, r in sub.iterrows():
+            dt = pd.Timestamp(r["date_utc"])
+            lat_t = float(r["pred_lat"]) - float(r["dlat_p50"])
+            lon_t = float(r["pred_lon"]) - float(r["dlon_p50"])
+            south, north = lat_t + float(r["dlat_p10"]), lat_t + float(r["dlat_p90"])
+            west, east = lon_t + float(r["dlon_p10"]), lon_t + float(r["dlon_p90"])
+            nxt = real_by_date.get(dt + pd.Timedelta(days=1))
+            days_out.append({
+                "date": dt.strftime("%Y-%m-%d"),
+                "year": int(dt.year),
+                "o": [round(lat_t, 5), round(lon_t, 5)],
+                "p": [round(float(r["pred_lat"]), 5), round(float(r["pred_lon"]), 5)],
+                "band": [[round(south, 5), round(west, 5)],
+                         [round(north, 5), round(east, 5)]],
+                "r": list(nxt) if nxt is not None else None,
+            })
+        birds_out.append({"id": bird, "days": days_out})
+    return {"birds": birds_out}
+
+
+def build_prediction_app(preds: pd.DataFrame, daily: pd.DataFrame, *,
+                         out_dir: Path) -> Path:
+    """App Leaflet a medida (estática) con barra lateral, selector de ave,
+    ventana de días acotable por ambos lados, play/pausa y velocidad.
+
+    Inyecta los datos (``prediction_app_data``) en la plantilla
+    ``templates/prediccion_app.html``. Sin backend: todo va embebido. Se añade
+    a los mapas folium por ave (no los sustituye).
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data = prediction_app_data(preds, daily)
+    template = _APP_TEMPLATE.read_text(encoding="utf-8")
+    html = template.replace("__PRED_DATA__", json.dumps(data, ensure_ascii=False))
+    out = out_dir / "o5_prediccion_app.html"
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
 def _load_lgbm_axes():
     """Carga los predictores de eje lgbm poblacional (dict joblib → axis)."""
     return joblib.load(P.MODEL_LGBM_DLAT)["model"], joblib.load(P.MODEL_LGBM_DLON)["model"]
@@ -243,8 +308,9 @@ def build_o5(out_dir: Path | None = None) -> dict:
     tables = build_o5_tables(preds, daily=daily, features_o3=features_o3)
     pred_maps = build_prediction_maps(preds, daily, out_dir=out_dir)
     pred_index = build_prediction_index(pred_maps, out_dir=out_dir)
+    pred_app = build_prediction_app(preds, daily, out_dir=out_dir)
     error_maps = build_error_maps(preds, cells, out_dir=out_dir, daily=daily)
     demo_maps = build_multistep_demo(preds, daily, out_dir=out_dir)
     return {"tables": tables, "prediction_maps": pred_maps,
-            "prediction_index": pred_index,
+            "prediction_index": pred_index, "prediction_app": pred_app,
             "error_maps": error_maps, "demo_maps": demo_maps}

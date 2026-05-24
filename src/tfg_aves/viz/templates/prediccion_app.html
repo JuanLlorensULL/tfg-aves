@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O5 — Predicción del destino · Larus fuscus</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#18222a; --panel:#212e39; --panel2:#2a3a47;
+    --parch:#f1ead9; --muted:#9fb0bd; --line:#3a4a58;
+    --p50:#3b6ea5; --pers:#2e8b57; --real:#e08a3c;
+    --side-w:320px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--parch);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;overflow:hidden}
+  #app{display:flex;height:100%}
+  #side{width:var(--side-w);flex:0 0 var(--side-w);height:100%;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border-right:1px solid var(--line);
+    background-image:radial-gradient(rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:13px 13px;
+    display:flex;flex-direction:column;padding:20px 18px 14px;overflow-y:auto}
+  #map{flex:1;height:100%}
+  h1{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:22px;
+    line-height:1.05;margin:0 0 3px;letter-spacing:.2px}
+  .sub{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
+    text-transform:uppercase;letter-spacing:1.6px;margin:0 0 20px}
+  .group{margin-bottom:17px}
+  .lbl{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:1.1px;
+    color:var(--muted);margin-bottom:7px}
+  select{width:100%;background:var(--ink);color:var(--parch);border:1px solid var(--line);
+    border-radius:7px;padding:9px 10px;font:inherit;font-size:14px;cursor:pointer}
+  select:hover{border-color:var(--p50)}
+  .rangewrap{margin-bottom:11px}
+  .rangehead{display:flex;justify-content:space-between;font-family:"IBM Plex Mono",monospace;
+    font-size:12px;margin-bottom:3px;color:var(--muted)}
+  .rangehead .v{color:var(--parch)}
+  input[type=range]{width:100%;accent-color:var(--p50);cursor:pointer}
+  .controls{display:flex;gap:6px;align-items:center;margin:9px 0 4px}
+  button{background:var(--ink);color:var(--parch);border:1px solid var(--line);
+    border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--p50);color:#fff}
+  #play{flex:1;font-weight:600;letter-spacing:.3px}
+  .fps{display:flex;align-items:center;gap:9px;font-family:"IBM Plex Mono",monospace;
+    font-size:12px;color:var(--muted);margin-top:4px}
+  .fps input{flex:1}
+  .daynow{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--parch);
+    background:var(--ink);border:1px solid var(--line);border-radius:7px;
+    padding:8px 9px;text-align:center;margin-top:10px}
+  .legend{margin-top:auto;padding-top:15px;border-top:1px solid var(--line);
+    font-size:12.5px;line-height:1.9}
+  .legend .row{display:flex;align-items:center;gap:9px}
+  .sw{width:15px;height:13px;border-radius:3px;flex:0 0 15px}
+  .dot{width:11px;height:11px;border-radius:50%;flex:0 0 11px}
+  .ring{width:12px;height:12px;border-radius:50%;border:2px solid var(--pers);flex:0 0 12px;box-sizing:border-box}
+  .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
+    margin-top:11px;line-height:1.5}
+  .leaflet-container{background:#dfe6e3;font-family:"IBM Plex Sans",sans-serif}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>Predicción del destino</h1>
+    <p class="sub">Larus&nbsp;fuscus · modelo L3 · horizonte 1 día</p>
+
+    <div class="group">
+      <label class="lbl" for="bird">Ave</label>
+      <select id="bird"></select>
+    </div>
+
+    <div class="group">
+      <label class="lbl">Ventana de días (acota inicio y fin)</label>
+      <div class="rangewrap">
+        <div class="rangehead"><span>inicio</span><span class="v" id="startv">—</span></div>
+        <input type="range" id="start" min="0" value="0">
+      </div>
+      <div class="rangewrap">
+        <div class="rangehead"><span>fin</span><span class="v" id="endv">—</span></div>
+        <input type="range" id="end" min="0" value="0">
+      </div>
+    </div>
+
+    <div class="group">
+      <label class="lbl">Reproducción</label>
+      <div class="rangehead"><span>día actual</span><span class="v" id="curv">—</span></div>
+      <input type="range" id="cur" min="0" value="0">
+      <div class="controls">
+        <button id="first" title="Volver al inicio de la ventana">&#9198;</button>
+        <button id="play">&#9654;&nbsp;Reproducir</button>
+        <button id="step" title="Día siguiente">&#9197;</button>
+      </div>
+      <div class="fps"><span>vel.</span><input type="range" id="fps" min="1" max="15" value="3"><span id="fpsv">3&nbsp;fps</span></div>
+      <div class="daynow" id="daynow">&mdash;</div>
+    </div>
+
+    <div class="legend" id="legend">
+      <div class="row"><span class="dot" style="background:var(--p50)"></span> p50 — predicción de mañana</div>
+      <div class="row"><span class="sw" style="border:1px dashed var(--p50);background:rgba(59,110,165,.18)"></span> banda [p10, p90]</div>
+      <div class="row"><span class="ring"></span> persistencia (= hoy)</div>
+      <div class="row"><span class="dot" style="background:var(--real)"></span> posición real de mañana</div>
+      <div id="yearlegend" style="margin-top:6px"></div>
+      <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
+    </div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DATA = __PRED_DATA__;
+const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8"];
+const C = {p50:"#3b6ea5", pers:"#2e8b57", real:"#e08a3c"};
+
+const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  {subdomains:"abcd", maxZoom:19,
+   attribution:"&copy; OpenStreetMap &copy; CARTO"}).addTo(map);
+const trajLayer = L.layerGroup().addTo(map);
+const dayLayer  = L.layerGroup().addTo(map);
+
+const el = id => document.getElementById(id);
+const S = {bird:0, start:0, end:0, cur:0, playing:false, fps:3, timer:null};
+
+const birdObj = () => DATA.birds[S.bird];
+const days = () => birdObj().days;
+const fmt = i => (days()[i] ? days()[i].date : "—");
+
+function yearColorMap(){
+  const ys = [...new Set(days().slice(S.start, S.end+1).map(d => d.year))].sort();
+  const m = {};
+  ys.forEach((y,i) => m[y] = YEAR_PALETTE[i % YEAR_PALETTE.length]);
+  return m;
+}
+
+function drawTrajectory(){
+  trajLayer.clearLayers();
+  const cm = yearColorMap(), arr = days();
+  for(let i = S.start; i < S.end; i++){
+    L.polyline([arr[i].o, arr[i+1].o],
+      {color:cm[arr[i].year], weight:2, opacity:.7}).addTo(trajLayer);
+  }
+  const keys = Object.keys(cm);
+  el("yearlegend").innerHTML = (keys.length > 1)
+    ? keys.map(y => `<div class="row"><span class="sw" style="background:${cm[y]}"></span> ruta real ${y}</div>`).join("")
+    : `<div class="row"><span class="sw" style="background:${C.real}"></span> ruta real (ventana)</div>`;
+}
+
+function drawDay(){
+  dayLayer.clearLayers();
+  const d = days()[S.cur];
+  if(!d) return;
+  L.rectangle(d.band, {color:C.p50, weight:1, dashArray:"5,3",
+    fillColor:C.p50, fillOpacity:.14}).addTo(dayLayer);
+  L.polyline([d.o, d.p], {color:C.p50, weight:2}).addTo(dayLayer);
+  L.circleMarker(d.p, {radius:6, color:C.p50, weight:2, fillColor:C.p50, fillOpacity:1}).addTo(dayLayer);
+  L.circleMarker(d.o, {radius:9, color:C.pers, weight:2, fill:false}).addTo(dayLayer);
+  if(d.r) L.circleMarker(d.r, {radius:6, color:C.real, weight:2, fillColor:C.real, fillOpacity:1}).addTo(dayLayer);
+  el("daynow").textContent = d.date + (d.r ? "" : "  · sin dato t+1");
+}
+
+function clamp(){
+  if(S.end < S.start) S.end = S.start;
+  if(S.cur < S.start) S.cur = S.start;
+  if(S.cur > S.end)   S.cur = S.end;
+}
+
+function syncInputs(){
+  const n = days().length - 1;
+  el("start").max = n; el("end").max = n;
+  el("start").value = S.start; el("end").value = S.end;
+  el("cur").min = S.start; el("cur").max = S.end; el("cur").value = S.cur;
+  el("startv").textContent = fmt(S.start);
+  el("endv").textContent = fmt(S.end);
+  el("curv").textContent = fmt(S.cur);
+}
+
+function refresh(){ clamp(); syncInputs(); drawTrajectory(); drawDay(); }
+
+function fitBird(){
+  const b = L.latLngBounds(days().map(d => d.o));
+  if(b.isValid()) map.fitBounds(b.pad(0.25));
+}
+
+function stop(){
+  S.playing = false;
+  if(S.timer){ clearInterval(S.timer); S.timer = null; }
+  el("play").innerHTML = "&#9654;&nbsp;Reproducir";
+}
+
+function play(){
+  if(S.playing){ stop(); return; }
+  if(S.cur >= S.end) S.cur = S.start;
+  S.playing = true;
+  el("play").innerHTML = "&#9208;&nbsp;Pausar";
+  S.timer = setInterval(() => {
+    if(S.cur >= S.end){ stop(); return; }
+    S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay();
+  }, 1000 / S.fps);
+}
+
+function setBird(i){
+  stop(); S.bird = i; S.start = 0; S.end = days().length - 1; S.cur = 0;
+  refresh(); fitBird();
+}
+
+DATA.birds.forEach((b,i) => {
+  const o = document.createElement("option");
+  o.value = i; o.textContent = b.id; el("bird").appendChild(o);
+});
+el("bird").onchange  = e => setBird(+e.target.value);
+el("start").oninput  = e => { stop(); S.start = +e.target.value; refresh(); };
+el("end").oninput    = e => { stop(); S.end = +e.target.value; refresh(); };
+el("cur").oninput    = e => { stop(); S.cur = +e.target.value; clamp(); el("curv").textContent = fmt(S.cur); drawDay(); };
+el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); };
+el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); } };
+el("play").onclick   = play;
+el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
+
+setBird(0);
+</script>
+</body>
+</html>
