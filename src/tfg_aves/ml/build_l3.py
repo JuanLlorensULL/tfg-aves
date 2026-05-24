@@ -41,6 +41,7 @@ class BuildO4L3Result:
     """Resumen serializable de build_o4_l3."""
 
     n_rows_train_pob: int
+    n_rows_val_pob: int
     n_rows_test_pob: int
     n_rows_train_ind: int
     n_rows_test_ind: int
@@ -282,6 +283,7 @@ def build_o4_l3(
     ind_test = splits_by_mode["individual"][2]
     return BuildO4L3Result(
         n_rows_train_pob=len(train_pob),
+        n_rows_val_pob=len(val_pob),
         n_rows_test_pob=len(test_pob),
         n_rows_train_ind=len(ind_train),
         n_rows_test_ind=len(ind_test),

@@ -41,15 +41,15 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_prepare_poblacional_split_attaches_hmm(tmp_path):
-    from tfg_aves.ml.build_l3 import _prepare_poblacional_split
+    from tfg_aves.ml.build_l3 import _FEATURES, _prepare_poblacional_split
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     features_o3 = pd.read_parquet(feat_path)
     cells = pd.read_parquet(cells_path)
     train, val, test = _prepare_poblacional_split(features_o3, cells, seed=0)
+    assert "bird_id" not in _FEATURES
     for df in (train, val, test):
         assert "state_b_causal" in df.columns
         assert "posterior_b_migracion_causal" in df.columns
-        assert "bird_id" not in [c for c in df.columns if c == "bird_id_feature"]
     assert len(train) > 0 and len(test) > 0
 
 
@@ -80,6 +80,11 @@ def test_build_o4_l3_artifacts(tmp_path):
     # La cobertura global está reportada (no NaN) para cada modo.
     glob = metrics[(metrics["modo"] == "poblacional") & (metrics["scope"] == "global")]
     assert not np.isnan(glob["coverage_lat"].iloc[0])
+    # El corte poblacional@A (núcleo analítico de L3) está poblado y tiene métricas finitas.
+    pob_at = metrics[(metrics["modo"] == "poblacional@A") & (metrics["scope"] == "global")]
+    assert len(pob_at) == 1
+    assert np.isfinite(pob_at["top1"].iloc[0])
+    assert np.isfinite(pob_at["dist_centroide_km"].iloc[0])
     assert result.n_rows_test_ind > 0
 
 
