@@ -34,6 +34,11 @@ def combine_soft(
     una normalización final por fila para garantizar suma 1.0 incluso en
     el caso degenerado en que clf_dest colapsa sobre cell_t.
     """
+    if p_2b.shape[1] != n_classes:
+        raise ValueError(
+            f"p_2b tiene {p_2b.shape[1]} columnas pero n_classes={n_classes}; "
+            "deben coincidir (p_2b ya proyectada al espacio completo de clases).",
+        )
     n = p_move.shape[0]
     rows = np.arange(n)
     p2b_cellt = p_2b[rows, cell_t_idx]
