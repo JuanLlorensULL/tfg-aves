@@ -134,6 +134,23 @@ def test_fit_quantile_axis_lgbm_shapes_and_order():
     assert float(np.mean(raw[:, 2] >= raw[:, 0])) > 0.9
 
 
+def test_fit_quantile_axis_rf_monotonic_by_construction():
+    from tfg_aves.ml.quantile import _QRFAxis, fit_quantile_axis, predict_quantiles
+    rng = np.random.default_rng(3)
+    X = pd.DataFrame({"a": rng.normal(size=400), "b": rng.normal(size=400)})
+    y = (X["a"].to_numpy() * 2.0) + rng.normal(0, 0.2, size=400)
+    Xv = pd.DataFrame({"a": rng.normal(size=100), "b": rng.normal(size=100)})
+    yv = (Xv["a"].to_numpy() * 2.0) + rng.normal(0, 0.2, size=100)
+    axis = fit_quantile_axis(X, y, Xv, yv, family="rf", seed=0)
+    assert isinstance(axis, _QRFAxis)
+    raw = axis.predict_raw(Xv)
+    assert raw.shape == (100, 3)
+    # QRF: cuantiles monótonos por construcción → CERO cruces antes de ordenar.
+    _, crossings = predict_quantiles(axis, axis, Xv)
+    assert crossings["lat"] == 0
+    assert crossings["lon"] == 0
+
+
 def test_build_regression_predictions_schema():
     from tfg_aves.ml.evaluate import evaluate_by_state, evaluate_moves_only
     from tfg_aves.ml.quantile import build_regression_predictions
