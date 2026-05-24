@@ -82,3 +82,18 @@ def test_build_multistep_demo_with_injected_axes(tmp_path):
                                axes=(_FakeAxis(), _FakeAxis()), k=3)
     assert out
     assert (tmp_path / "o5_fig30_demo-multipaso-91916A.html").exists()
+
+
+def test_build_prediction_index_has_selector_and_iframe(tmp_path):
+    from tfg_aves.viz.build import build_prediction_index
+    paths = {
+        "91916A": tmp_path / "o5_fig01_prediccion-91916A.html",
+        "91752A": tmp_path / "o5_fig02_prediccion-91752A.html",
+    }
+    p = build_prediction_index(paths, out_dir=tmp_path)
+    html = p.read_text(encoding="utf-8")
+    assert "<select" in html and "<iframe" in html
+    assert html.count("<option") == 2
+    # Los src son relativos (basename), no rutas absolutas.
+    assert 'src="o5_fig01_prediccion-91916A.html"' in html
+    assert "o5_fig02_prediccion-91752A.html" in html

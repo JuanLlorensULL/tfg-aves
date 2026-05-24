@@ -127,6 +127,60 @@ def build_prediction_maps(preds: pd.DataFrame, daily: pd.DataFrame, *,
     return paths
 
 
+def build_prediction_index(pred_map_paths: dict[str, Path], *,
+                           out_dir: Path) -> Path:
+    """Página única con un selector de ave (arriba-derecha) sobre un iframe.
+
+    Envuelve los HTML folium por ave —que se conservan intactos, cada uno con
+    su slider/leyenda— en un ``iframe`` cuyo ``src`` cambia el ``<select>``.
+    Es HTML+JS estático, sin backend (coherente con "solo folium HTML"). Los
+    ``src`` son relativos: el índice debe vivir en el mismo directorio que los
+    mapas por ave.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    birds = list(pred_map_paths)
+    options = "\n".join(
+        f'        <option value="{Path(pred_map_paths[b]).name}">{b}</option>'
+        for b in birds
+    )
+    first = Path(pred_map_paths[birds[0]]).name if birds else ""
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>O5 — Predicción del destino por ave</title>
+<style>
+  html, body {{ margin: 0; height: 100%; font-family: sans-serif; }}
+  #bar {{ position: fixed; top: 0; left: 0; right: 0; height: 42px;
+         background: #2b3a4a; color: #fff; display: flex; align-items: center;
+         justify-content: space-between; padding: 0 14px; box-sizing: border-box;
+         z-index: 10000; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }}
+  #bar b {{ font-size: 14px; }}
+  #bar label {{ font-size: 13px; margin-right: 6px; }}
+  select {{ font-size: 14px; padding: 3px 6px; }}
+  iframe {{ position: fixed; top: 42px; left: 0; right: 0; bottom: 0;
+           width: 100%; height: calc(100% - 42px); border: 0; }}
+</style>
+</head>
+<body>
+  <div id="bar">
+    <b>O5 — Predicción del destino a 1 día</b>
+    <span>
+      <label for="sel">Ave:</label>
+      <select id="sel" onchange="document.getElementById('map').src = this.value;">
+{options}
+      </select>
+    </span>
+  </div>
+  <iframe id="map" title="Mapa de predicción" src="{first}"></iframe>
+</body>
+</html>"""
+    p = out_dir / "o5_prediccion_index.html"
+    p.write_text(html, encoding="utf-8")
+    return p
+
+
 def _load_lgbm_axes():
     """Carga los predictores de eje lgbm poblacional (dict joblib → axis)."""
     return joblib.load(P.MODEL_LGBM_DLAT)["model"], joblib.load(P.MODEL_LGBM_DLON)["model"]
@@ -188,7 +242,9 @@ def build_o5(out_dir: Path | None = None) -> dict:
 
     tables = build_o5_tables(preds, daily=daily, features_o3=features_o3)
     pred_maps = build_prediction_maps(preds, daily, out_dir=out_dir)
+    pred_index = build_prediction_index(pred_maps, out_dir=out_dir)
     error_maps = build_error_maps(preds, cells, out_dir=out_dir, daily=daily)
     demo_maps = build_multistep_demo(preds, daily, out_dir=out_dir)
     return {"tables": tables, "prediction_maps": pred_maps,
+            "prediction_index": pred_index,
             "error_maps": error_maps, "demo_maps": demo_maps}
