@@ -7,4 +7,4 @@
 
 ## Caption (memoria)
 
-Idem C5 para el ganador poblacional (xgb, sin bird_id). El patrón es prácticamente idéntico al personalizado: estacionario ~0,63 y migración ~0,13-0,14. La pequeña diferencia (~+1 pp en estacionario para el personalizado) refleja la señal generalizable que aporta bird_id sin aumentar el overfit (ver C7). La coherencia entre ambos modos refuerza que el colapso en migración es estructural y no atribuible a la presencia o ausencia de la identidad del ave. Fenología de referencia: estado 1 (migración) representa el 11,7 % del test, concentrado en abr-may y sep-oct, coherente con la fenología conocida de Larus fuscus.
+Idem C5 para el ganador poblacional (xgb, sin bird_id). El patrón es el característico del pipeline: estacionario alto y migración baja, sobre las 82 aves. La coherencia entre ambos modos refuerza que el colapso en migración es estructural y no atribuible a la presencia o ausencia de la identidad del ave. Fenología de referencia: estado 1 (migración) representa el 11,7 % del test, concentrado en abr-may y sep-oct, coherente con la fenología conocida de Larus fuscus.
