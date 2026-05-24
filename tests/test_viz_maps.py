@@ -51,3 +51,30 @@ def test_prediction_map_one_bird_layers():
     })
     m = prediction_map(preds, daily, bird_id="A")
     assert m.get_root().render()
+
+
+def test_failure_vectors_map_migration_only():
+    from tfg_aves.viz.maps import failure_vectors_map
+    preds = pd.DataFrame({
+        "bird_id": ["A", "B"], "date_utc": pd.to_datetime(["2020-04-01", "2020-09-01"]),
+        "pred_lat": [42.0, 50.0], "pred_lon": [-2.0, 3.0],
+        "dlat_p50": [1.0, 1.0], "dlon_p50": [1.0, 1.0],
+        "dist_native_km": [300.0, 500.0], "state_b_causal": [1, 1],
+    })
+    daily = pd.DataFrame({
+        "bird_id": ["A", "B"], "date_utc": pd.to_datetime(["2020-04-02", "2020-09-02"]),
+        "lat": [43.0, 52.0], "lon": [-1.0, 4.0], "is_valid": [True, True],
+    })
+    m = failure_vectors_map(preds, daily, top_n=2)
+    assert m.get_root().render()
+
+
+def test_multistep_demo_map_renders():
+    from tfg_aves.viz.maps import multistep_demo_map
+    chain = pd.DataFrame({
+        "step": [1, 2], "lat": [40.2, 40.3], "lon": [-3.0, -3.0],
+        "cone_halfwidth_lat": [0.05, 0.10], "cone_halfwidth_lon": [0.05, 0.10],
+    })
+    real = pd.DataFrame({"lat": [40.1, 40.15, 40.18], "lon": [-3.0, -2.98, -2.95]})
+    m = multistep_demo_map(chain, real, start=(40.1, -3.0))
+    assert m.get_root().render()
