@@ -125,6 +125,7 @@
       <div class="fps"><span>vel.</span><input type="range" id="fps" min="1" max="15" value="3"><span id="fpsv">3&nbsp;fps</span></div>
       <div class="daynow" id="daynow">&mdash;</div>
       <label class="chk"><input type="checkbox" id="showMarkov" checked> Mostrar punto de Markov</label>
+      <label class="chk"><input type="checkbox" id="showRoute" checked> Mostrar ruta real del ave</label>
     </div>
 
     <div class="legend" id="legend">
@@ -138,7 +139,6 @@
         <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
       </div>
       <div id="alllegend" style="display:none">
-        <button id="toggleRoutes" style="width:100%;margin-bottom:10px">Ocultar rutas reales</button>
         <div class="row">
           <span class="sw" style="background:linear-gradient(90deg,#e6194B,#3cb44b,#4363d8,#911eb4)"></span>
           ruta real de cada ave (un color por ave)
@@ -250,7 +250,12 @@ function syncInputs(){
   updateFill();
 }
 
-function refresh(){ clamp(); syncInputs(); drawTrajectory(); drawDay(); }
+function applyRouteVisibility(){
+  if(el("showRoute").checked){ if(!map.hasLayer(trajLayer)) trajLayer.addTo(map); }
+  else if(map.hasLayer(trajLayer)){ map.removeLayer(trajLayer); }
+}
+
+function refresh(){ clamp(); syncInputs(); drawTrajectory(); applyRouteVisibility(); drawDay(); }
 
 function fitBird(){
   const b = L.latLngBounds(days().map(d => d.o));
@@ -275,7 +280,7 @@ function play(){
 }
 
 function setControlsEnabled(on){
-  ["start","end","cur","fps","play","first","step","startDate","endDate","showMarkov"]
+  ["start","end","cur","fps","play","first","step","startDate","endDate","showMarkov","showRoute"]
     .forEach(k => el(k).disabled = !on);
   el("daylegend").style.display = on ? "" : "none";
   el("alllegend").style.display = on ? "none" : "";
@@ -292,7 +297,6 @@ function drawAll(){
     pl.addTo(allLayer);
   });
   if(!map.hasLayer(allLayer)) allLayer.addTo(map);
-  el("toggleRoutes").textContent = "Ocultar rutas reales";
   const pts = DATA.all.flatMap(b => b.track);
   const bb = L.latLngBounds(pts);
   if(bb.isValid()) map.fitBounds(bb.pad(0.1));
@@ -329,13 +333,7 @@ el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").val
 el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
 el("showMarkov").onchange = () => drawDay();
-el("toggleRoutes").onclick = () => {
-  if(map.hasLayer(allLayer)){
-    map.removeLayer(allLayer); el("toggleRoutes").textContent = "Mostrar rutas reales";
-  } else {
-    allLayer.addTo(map); el("toggleRoutes").textContent = "Ocultar rutas reales";
-  }
-};
+el("showRoute").onchange = applyRouteVisibility;
 
 setBird(0);
 </script>
