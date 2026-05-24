@@ -61,6 +61,10 @@
     border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;
     font-size:12px;color-scheme:dark}
   .daterow input[type=date]:hover{border-color:var(--p50)}
+  #curDate{width:100%;margin-top:6px;background:var(--ink);color:var(--parch);
+    border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;
+    font-size:12px;color-scheme:dark;font-family:"IBM Plex Mono",monospace}
+  #curDate:hover{border-color:var(--p50)}
   .controls{display:flex;gap:6px;align-items:center;margin:9px 0 4px}
   button{background:var(--ink);color:var(--parch);border:1px solid var(--line);
     border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer;transition:.15s}
@@ -123,6 +127,7 @@
       <label class="lbl">Reproducción</label>
       <div class="rangehead"><span>día actual</span><span class="v" id="curv">—</span></div>
       <input type="range" id="cur" min="0" value="0">
+      <input type="date" id="curDate" title="Saltar a un día exacto de la ventana">
       <div class="controls">
         <button id="first" title="Volver al inicio de la ventana">&#9198;</button>
         <button id="play">&#9654;&nbsp;Reproducir</button>
@@ -262,11 +267,14 @@ function updateFill(){
   el("fill").style.width = (100 * (S.end - S.start) / n) + "%";
 }
 
-function nearestIndex(dateStr){
+function nearestIndex(dateStr, lo, hi){
+  const arr = days();
+  if(lo == null) lo = 0;
+  if(hi == null) hi = arr.length - 1;
   const t = new Date(dateStr).getTime();
-  if(isNaN(t)) return S.start;
-  const arr = days(); let best = 0, bd = Infinity;
-  for(let i = 0; i < arr.length; i++){
+  if(isNaN(t)) return lo;
+  let best = lo, bd = Infinity;
+  for(let i = lo; i <= hi; i++){
     const dd = Math.abs(new Date(arr[i].date).getTime() - t);
     if(dd < bd){ bd = dd; best = i; }
   }
@@ -282,6 +290,9 @@ function syncInputs(){
   const lo = days()[0].date, hi = days()[n].date;
   el("startDate").min = lo; el("startDate").max = hi; el("startDate").value = fmt(S.start);
   el("endDate").min = lo;   el("endDate").max = hi;   el("endDate").value = fmt(S.end);
+  // El datepicker del día actual se acota a la ventana [inicio, fin].
+  el("curDate").min = fmt(S.start); el("curDate").max = fmt(S.end);
+  el("curDate").value = fmt(S.cur);
   updateFill();
 }
 
@@ -310,12 +321,13 @@ function play(){
   el("play").innerHTML = "&#9208;&nbsp;Pausar";
   S.timer = setInterval(() => {
     if(S.cur >= S.end){ stop(); return; }
-    S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay();
+    S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur);
+    el("curDate").value = fmt(S.cur); drawDay();
   }, 1000 / S.fps);
 }
 
 function setControlsEnabled(on){
-  ["start","end","cur","fps","play","first","step","startDate","endDate","showMarkov","showRoute"]
+  ["start","end","cur","curDate","fps","play","first","step","startDate","endDate","showMarkov","showRoute"]
     .forEach(k => el(k).disabled = !on);
   el("daylegend").style.display = on ? "" : "none";
   el("alllegend").style.display = on ? "none" : "";
@@ -364,9 +376,10 @@ el("end").oninput    = e => { stop(); S.end = Math.max(+e.target.value, S.start)
 // Datepickers: día exacto sin arrastrar; si cae en hueco, salta al más cercano.
 el("startDate").onchange = e => { stop(); S.start = Math.min(nearestIndex(e.target.value), S.end); refresh(); };
 el("endDate").onchange   = e => { stop(); S.end = Math.max(nearestIndex(e.target.value), S.start); refresh(); };
-el("cur").oninput    = e => { stop(); S.cur = +e.target.value; clamp(); el("curv").textContent = fmt(S.cur); drawDay(); };
-el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); };
-el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); } };
+el("cur").oninput    = e => { stop(); S.cur = +e.target.value; clamp(); el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
+el("curDate").onchange = e => { stop(); S.cur = nearestIndex(e.target.value, S.start, S.end); el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
+el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); };
+el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); el("curDate").value = fmt(S.cur); drawDay(); } };
 el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
 el("showMarkov").onchange = () => drawDay();
