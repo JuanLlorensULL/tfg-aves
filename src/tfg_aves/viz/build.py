@@ -241,7 +241,14 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                 "e": round(float(r["dist_native_km"]), 1) if has_dist else None,
                 "s": int(r["state_b_causal"]),  # 0 estacionario, 1 migración (O3)
             })
-        birds_out.append({"id": str(bird), "days": days_out})
+        # Recorrido histórico COMPLETO (train+val+test): todos los días
+        # válidos del ave, no solo los de test. Contexto opcional en la app.
+        dh = dsub.sort_values("date_utc")
+        hist = [
+            [round(float(la), 5), round(float(lo), 5)]
+            for la, lo in zip(dh["lat"], dh["lon"], strict=True)
+        ]
+        birds_out.append({"id": str(bird), "days": days_out, "hist": hist})
 
     # Rutas reales del test de TODAS las aves (no solo las curadas) para la
     # vista "Todas": la secuencia de orígenes (pred - p50) por ave.

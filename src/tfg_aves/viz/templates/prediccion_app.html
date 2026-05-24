@@ -91,6 +91,7 @@
   .mk-wrap{background:none;border:none}
   .mk{width:10px;height:10px;background:var(--markov);border:1.5px solid #fff;transform:rotate(45deg)}
   .errline{width:16px;height:0;border-top:2px dashed var(--err);flex:0 0 16px}
+  .histline{width:16px;height:0;border-top:2px solid #868e96;flex:0 0 16px}
   .leglabel{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:2px 0 5px}
   .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
     margin-top:11px;line-height:1.5}
@@ -138,6 +139,7 @@
       <div class="errnow" id="errnow">error &mdash;</div>
       <label class="chk"><input type="checkbox" id="showMarkov" checked> Mostrar punto de Markov</label>
       <label class="chk"><input type="checkbox" id="showRoute" checked> Mostrar ruta real del ave</label>
+      <label class="chk"><input type="checkbox" id="showHist"> Histórico completo (train+test)</label>
       <label class="chk"><input type="checkbox" id="showState"> Estado HMM (O3)</label>
     </div>
 
@@ -151,6 +153,7 @@
         <div class="row"><span class="mkleg"></span> Markov — centroide celda 0,5°</div>
         <div class="leglabel" style="margin-top:9px">Ruta real del ave</div>
         <div id="yearlegend"></div>
+        <div class="row"><span class="histline"></span> histórico completo (train+test)</div>
         <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
       </div>
       <div id="alllegend" style="display:none">
@@ -188,6 +191,7 @@ const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   {subdomains:"abcd", maxZoom:19,
    attribution:"&copy; OpenStreetMap &copy; CARTO"}).addTo(map);
+const histLayer  = L.layerGroup().addTo(map);  // recorrido histórico (debajo)
 const trajLayer  = L.layerGroup().addTo(map);
 const dayLayer   = L.layerGroup().addTo(map);
 const allLayer   = L.layerGroup().addTo(map);
@@ -301,6 +305,16 @@ function applyRouteVisibility(){
   else if(map.hasLayer(trajLayer)){ map.removeLayer(trajLayer); }
 }
 
+// Recorrido histórico completo del ave (train+val+test), línea gris tenue
+// por debajo del resto. Solo en vista por ave y si el toggle está activo.
+function drawHist(){
+  histLayer.clearLayers();
+  if(S.mode !== "bird" || !el("showHist").checked) return;
+  const h = birdObj().hist;
+  if(h && h.length >= 2)
+    L.polyline(h, {color:"#868e96", weight:1.3, opacity:.6}).addTo(histLayer).bringToBack();
+}
+
 function refresh(){ clamp(); syncInputs(); drawTrajectory(); applyRouteVisibility(); drawDay(); drawState(); }
 
 function fitBird(){
@@ -327,14 +341,14 @@ function play(){
 }
 
 function setControlsEnabled(on){
-  ["start","end","cur","curDate","fps","play","first","step","startDate","endDate","showMarkov","showRoute"]
+  ["start","end","cur","curDate","fps","play","first","step","startDate","endDate","showMarkov","showRoute","showHist"]
     .forEach(k => el(k).disabled = !on);
   el("daylegend").style.display = on ? "" : "none";
   el("alllegend").style.display = on ? "none" : "";
 }
 
 function drawAll(){
-  trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers();
+  trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers(); histLayer.clearLayers();
   DATA.all.forEach((b, i) => {
     const col = ALL_PALETTE[i % ALL_PALETTE.length];
     const pl = L.polyline(b.track, {color:col, weight:1.8, opacity:.8});
@@ -364,7 +378,7 @@ function setAll(){
 function setBird(i){
   stop(); S.mode = "bird"; setControlsEnabled(true); allLayer.clearLayers();
   S.bird = i; S.start = 0; S.end = days().length - 1; S.cur = 0;
-  refresh(); fitBird();
+  refresh(); fitBird(); drawHist();
 }
 
 const optAll = document.createElement("option");
@@ -390,6 +404,7 @@ el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
 el("showMarkov").onchange = () => drawDay();
 el("showRoute").onchange = applyRouteVisibility;
+el("showHist").onchange = drawHist;
 el("showState").onchange = () => {
   el("statelegend").style.display = el("showState").checked ? "" : "none";
   drawState();
