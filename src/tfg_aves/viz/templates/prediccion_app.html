@@ -156,6 +156,7 @@
         <div class="row"><span class="dot" style="background:var(--real)"></span> posición real (mañana)</div>
         <div class="row"><span class="mkleg"></span> Markov — centroide celda 0,5°</div>
         <div class="row"><span class="mkerrline"></span> error Markov → real</div>
+        <div class="row" style="color:var(--muted);font-size:11px">estela: traza el p50 por año al reproducir</div>
         <div class="leglabel" style="margin-top:9px">Ruta real del ave</div>
         <div id="yearlegend"></div>
         <div class="row" style="color:var(--muted);font-size:11px">+ histórico completo: línea fina, por año (toggle)</div>
@@ -205,6 +206,7 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
    attribution:"&copy; OpenStreetMap &copy; CARTO"}).addTo(map);
 const histLayer  = L.layerGroup().addTo(map);  // recorrido histórico (debajo)
 const trajLayer  = L.layerGroup().addTo(map);
+const trailLayer = L.layerGroup().addTo(map);  // estela de la predicción (p50)
 const dayLayer   = L.layerGroup().addTo(map);
 const allLayer   = L.layerGroup().addTo(map);
 const stateLayer = L.layerGroup().addTo(map);  // capa de estado O3 (encima)
@@ -239,10 +241,23 @@ function drawTrajectory(){
     : `<div class="row"><span class="sw" style="background:${C.real}"></span> ruta</div>`;
 }
 
+// Estela de la predicción: traza los p50 desde el inicio de la ventana hasta
+// el día actual, coloreada por año (mismo mapa que la ruta real). Crece al
+// avanzar la simulación; se redibuja cada frame.
+function drawTrail(){
+  trailLayer.clearLayers();
+  if(S.mode !== "bird") return;
+  const arr = days(), cm = birdYearColors();
+  for(let i = S.start; i < S.cur; i++){
+    L.polyline([arr[i].p, arr[i+1].p],
+      {color:cm[arr[i].year], weight:2.5, opacity:.9}).addTo(trailLayer);
+  }
+}
+
 function drawDay(){
   dayLayer.clearLayers();
   const d = days()[S.cur];
-  if(!d) return;
+  if(!d){ drawTrail(); return; }
   L.rectangle(d.band, {color:C.p50, weight:1, dashArray:"5,3",
     fillColor:C.p50, fillOpacity:.14}).addTo(dayLayer);
   L.polyline([d.o, d.p], {color:C.p50, weight:2}).addTo(dayLayer);
@@ -266,6 +281,7 @@ function drawDay(){
   } else {
     el("mkerrnow").style.display = "none";
   }
+  drawTrail();
 }
 
 // Capa de estado O3: punto por día coloreado (azul oscuro estacionario, rojo
@@ -375,7 +391,8 @@ function setControlsEnabled(on){
 }
 
 function drawAll(){
-  trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers(); histLayer.clearLayers();
+  trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers();
+  histLayer.clearLayers(); trailLayer.clearLayers();
   DATA.birds.forEach((b, i) => {
     const track = b.hist.map(p => [p[0], p[1]]);  // recorrido completo (train+test)
     if(track.length < 2) return;
