@@ -97,22 +97,24 @@ def chain_trajectory(
     cum_hw_lon = 0.0
     for step in range(1, k + 1):
         lat_t, lon_t = history[-1]
+        # date_t es el día t (origen del paso); se predicen las condiciones de
+        # t+1 a partir del estado en t (causal). La fila de salida se fecha en t+1.
         date_t = pd.Timestamp(start_date) + pd.Timedelta(days=step - 1)
         kin = incoming_kinematics(history)
         X = _feature_row(lat_t, lon_t, date_t, kin, frozen_state_b, frozen_posterior_mig)
         qp, _ = predict_quantiles(axis_lat, axis_lon, X)
-        dlat = qp.iloc[0]
-        lat_next = lat_t + float(dlat["dlat_p50"])
-        lon_next = lon_t + float(dlat["dlon_p50"])
-        cum_hw_lat += (float(dlat["dlat_p90"]) - float(dlat["dlat_p10"])) / 2.0
-        cum_hw_lon += (float(dlat["dlon_p90"]) - float(dlat["dlon_p10"])) / 2.0
+        pred = qp.iloc[0]  # fila con los 6 cuantiles (dlat_p* y dlon_p*)
+        lat_next = lat_t + float(pred["dlat_p50"])
+        lon_next = lon_t + float(pred["dlon_p50"])
+        cum_hw_lat += (float(pred["dlat_p90"]) - float(pred["dlat_p10"])) / 2.0
+        cum_hw_lon += (float(pred["dlon_p90"]) - float(pred["dlon_p10"])) / 2.0
         rows.append({
             "step": step, "date": date_t + pd.Timedelta(days=1),
             "lat": lat_next, "lon": lon_next,
-            "dlat_p10": float(dlat["dlat_p10"]), "dlat_p50": float(dlat["dlat_p50"]),
-            "dlat_p90": float(dlat["dlat_p90"]),
-            "dlon_p10": float(dlat["dlon_p10"]), "dlon_p50": float(dlat["dlon_p50"]),
-            "dlon_p90": float(dlat["dlon_p90"]),
+            "dlat_p10": float(pred["dlat_p10"]), "dlat_p50": float(pred["dlat_p50"]),
+            "dlat_p90": float(pred["dlat_p90"]),
+            "dlon_p10": float(pred["dlon_p10"]), "dlon_p50": float(pred["dlon_p50"]),
+            "dlon_p90": float(pred["dlon_p90"]),
             "cone_halfwidth_lat": cum_hw_lat, "cone_halfwidth_lon": cum_hw_lon,
         })
         history.append((lat_next, lon_next))
