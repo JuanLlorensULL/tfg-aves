@@ -1,0 +1,294 @@
+"""Orquestador del pipeline L3 (regresión de cuantiles) de O4 causal."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from ._paths import CELLS_PARQUET, FEATURES_O3_PARQUET, O4_L3V1_DIR
+from .evaluate import (
+    compute_persistence_baseline,
+    evaluate_by_state,
+    evaluate_moves_only,
+)
+from .features import (
+    FEATURES_HMM,
+    FEATURES_KINEMATIC,
+    build_feature_matrix,
+    compute_causal_kinematics,
+    split_temporal_per_bird,
+)
+from .hmm_causal import decode_causal_states, fit_causal_hmm
+from .quantile import (
+    QUANTILES,
+    build_regression_predictions,
+    derive_displacement_target,
+    fit_quantile_axis,
+    interval_coverage,
+    pinball_loss,
+    predict_quantiles,
+)
+
+_FEATURES = [*FEATURES_KINEMATIC, *FEATURES_HMM]
+_MODES = ("poblacional", "individual")
+
+
+@dataclass
+class BuildO4L3Result:
+    """Resumen serializable de build_o4_l3."""
+
+    n_rows_train_pob: int
+    n_rows_test_pob: int
+    n_rows_train_ind: int
+    n_rows_test_ind: int
+    individual_bird_id: str
+    n_crossings: dict[str, dict[str, int]] = field(default_factory=dict)
+    coverage: dict[str, dict[str, float]] = field(default_factory=dict)
+    model_paths: dict[str, Path] = field(default_factory=dict)
+    predictions_path: Path = Path()
+    metrics_path: Path = Path()
+
+
+def _prepare_poblacional_split(
+    features_o3: pd.DataFrame, cells: pd.DataFrame, seed: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Replica el ensamblaje causal de build_o4 SOLO para el modo poblacional
+    (sin bird_id) y adjunta state_b_causal/posterior_b_migracion_causal del HMM
+    causal global. Se replica (en vez de importar de build.py) para no tocar el
+    build.py estabilizado; usa exactamente las mismas funciones leak-free.
+    """
+    kin = compute_causal_kinematics(features_o3)
+    matrix = build_feature_matrix(kin, cells, include_bird_id=False)
+    train, val, test = split_temporal_per_bird(matrix)
+
+    cutoff_by_bird = (
+        train.assign(_d=pd.to_datetime(train["date_utc"]))
+        .groupby("bird_id")["_d"].max().to_dict()
+    )
+    hmm_model, hmm_labels = fit_causal_hmm(
+        kin, cutoff_by_bird, n_restarts=10, seed=seed,
+    )
+    states = decode_causal_states(hmm_model, hmm_labels, kin)
+
+    def attach(df: pd.DataFrame) -> pd.DataFrame:
+        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
+        if merged[FEATURES_HMM].isna().any().any():
+            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
+        return merged
+
+    return attach(train), attach(val), attach(test)
+
+
+def _y_move(df: pd.DataFrame) -> np.ndarray:
+    return (df["cell_id_t_next"].astype(str) != df["cell_id_t"].astype(str)).to_numpy()
+
+
+def _metric_rows(
+    preds: pd.DataFrame, y_move: np.ndarray, modo_label: str,
+    *, pinball_lat: float, pinball_lon: float, cov_lat: float, cov_lon: float,
+) -> list[dict]:
+    """Filas de métrica por estado (global/estacionario/migración) + moves."""
+    rows: list[dict] = []
+    by = evaluate_by_state(preds)
+    for _, r in by.iterrows():
+        scope = r["state"]
+        if scope == "estacionario":
+            sub = preds[preds["state_b_causal"] == 0]
+        elif scope == "migración":
+            sub = preds[preds["state_b_causal"] == 1]
+        else:
+            sub = preds
+        native = float(np.median(sub["dist_native_km"])) if len(sub) else np.nan
+        is_global = scope == "global"
+        rows.append({
+            "modo": modo_label, "scope": scope, "n_obs": int(r["n_obs"]),
+            "top1": r["top1"], "top3": r["top3"],
+            "dist_centroide_km": r["dist_median_km"], "dist_nativa_km": native,
+            "pinball_lat": pinball_lat if is_global else np.nan,
+            "pinball_lon": pinball_lon if is_global else np.nan,
+            "coverage_lat": cov_lat if is_global else np.nan,
+            "coverage_lon": cov_lon if is_global else np.nan,
+        })
+    mask = np.asarray(y_move).astype(bool)
+    mo = evaluate_moves_only(preds, mask)
+    native_moves = (
+        float(np.median(preds[mask]["dist_native_km"])) if mask.any() else np.nan
+    )
+    rows.append({
+        "modo": modo_label, "scope": "moves", "n_obs": mo["n_obs"],
+        "top1": mo["top1"], "top3": mo["top3"],
+        "dist_centroide_km": mo["dist_median_km"], "dist_nativa_km": native_moves,
+        "pinball_lat": np.nan, "pinball_lon": np.nan,
+        "coverage_lat": np.nan, "coverage_lon": np.nan,
+    })
+    return rows
+
+
+def _baseline_rows(preds: pd.DataFrame, modo_label: str) -> list[dict]:
+    by = evaluate_by_state(preds)
+    rows = []
+    for _, r in by.iterrows():
+        rows.append({
+            "modo": modo_label, "scope": r["state"], "n_obs": int(r["n_obs"]),
+            "top1": r["top1"], "top3": r["top3"],
+            "dist_centroide_km": r["dist_median_km"], "dist_nativa_km": np.nan,
+            "pinball_lat": np.nan, "pinball_lon": np.nan,
+            "coverage_lat": np.nan, "coverage_lon": np.nan,
+        })
+    return rows
+
+
+def build_o4_l3(
+    features_path: Path = FEATURES_O3_PARQUET,
+    cells_path: Path = CELLS_PARQUET,
+    out_dir: Path = O4_L3V1_DIR,
+    seed: int = 0,
+    *,
+    individual_bird_id: str | None = None,
+) -> BuildO4L3Result:
+    """Pipeline L3-v1: regresor de cuantiles en modo poblacional + individual.
+
+    individual_bird_id: ave del modo individual. Por defecto INDIVIDUAL_BIRD_ID
+    (91916A). Se expone como parámetro para los tests con fixtures sintéticos.
+    """
+    from .quantile import INDIVIDUAL_BIRD_ID
+    if individual_bird_id is None:
+        individual_bird_id = INDIVIDUAL_BIRD_ID
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    features_o3 = pd.read_parquet(features_path)
+    cells = pd.read_parquet(cells_path)
+
+    train_pob, val_pob, test_pob = _prepare_poblacional_split(features_o3, cells, seed)
+
+    model_paths: dict[str, Path] = {}
+    n_crossings: dict[str, dict[str, int]] = {}
+    coverage: dict[str, dict[str, float]] = {}
+    metric_rows: list[dict] = []
+    preds_frames: list[pd.DataFrame] = []
+    # Guardamos las preds poblacionales para el corte @individual.
+    preds_pob_full: pd.DataFrame | None = None
+
+    splits_by_mode = {
+        "poblacional": (train_pob, val_pob, test_pob),
+        "individual": tuple(
+            d[d["bird_id"] == individual_bird_id].reset_index(drop=True)
+            for d in (train_pob, val_pob, test_pob)
+        ),
+    }
+
+    for mode in _MODES:
+        train_m, val_m, test_m = splits_by_mode[mode]
+        tgt_tr = derive_displacement_target(train_m)
+        tgt_va = derive_displacement_target(val_m)
+
+        models_lat = fit_quantile_axis(
+            train_m[_FEATURES], tgt_tr["y_dlat"].to_numpy(),
+            val_m[_FEATURES], tgt_va["y_dlat"].to_numpy(), seed=seed,
+        )
+        models_lon = fit_quantile_axis(
+            train_m[_FEATURES], tgt_tr["y_dlon"].to_numpy(),
+            val_m[_FEATURES], tgt_va["y_dlon"].to_numpy(), seed=seed,
+        )
+
+        qp_test, crossings = predict_quantiles(models_lat, models_lon, test_m[_FEATURES])
+        n_crossings[mode] = crossings
+        preds = build_regression_predictions(qp_test, test_m, cells)
+
+        # Pinball (media sobre los 3 cuantiles) y cobertura por eje.
+        tgt_te = derive_displacement_target(test_m)
+        pin_lat = float(np.mean([
+            pinball_loss(
+                tgt_te["y_dlat"].to_numpy(),
+                qp_test[f"dlat_p{int(q*100):02d}"].to_numpy(), q,
+            )
+            for q in QUANTILES
+        ]))
+        pin_lon = float(np.mean([
+            pinball_loss(
+                tgt_te["y_dlon"].to_numpy(),
+                qp_test[f"dlon_p{int(q*100):02d}"].to_numpy(), q,
+            )
+            for q in QUANTILES
+        ]))
+        cov_lat = interval_coverage(
+            tgt_te["y_dlat"].to_numpy(),
+            qp_test["dlat_p10"].to_numpy(), qp_test["dlat_p90"].to_numpy(),
+        )
+        cov_lon = interval_coverage(
+            tgt_te["y_dlon"].to_numpy(),
+            qp_test["dlon_p10"].to_numpy(), qp_test["dlon_p90"].to_numpy(),
+        )
+        coverage[mode] = {"lat": cov_lat, "lon": cov_lon}
+
+        y_move_m = _y_move(test_m)
+        metric_rows.extend(_metric_rows(
+            preds, y_move_m, mode,
+            pinball_lat=pin_lat, pinball_lon=pin_lon, cov_lat=cov_lat, cov_lon=cov_lon,
+        ))
+
+        for q in QUANTILES:
+            tag = f"p{int(q * 100):02d}"
+            for axis, models in (("dlat", models_lat), ("dlon", models_lon)):
+                mp = out_dir / f"model_{mode}_{axis}_{tag}.pkl"
+                joblib.dump({
+                    "model": models[q], "feature_cols": _FEATURES,
+                    "mode": mode, "axis": axis, "quantile": q,
+                }, mp)
+                model_paths[f"{mode}_{axis}_{tag}"] = mp
+
+        preds_out = preds.copy()
+        preds_out["modo"] = mode
+        preds_out["pred_cell_topk"] = preds_out["pred_cell_topk"].apply(list)
+        preds_frames.append(preds_out)
+        if mode == "poblacional":
+            preds_pob_full = preds.copy()
+
+    # --- Corte poblacional@individual: mismas filas del individual ---
+    assert preds_pob_full is not None
+    pob_at_ind = preds_pob_full[
+        preds_pob_full["bird_id"] == individual_bird_id
+    ].reset_index(drop=True)
+    if len(pob_at_ind) > 0:
+        test_ind = splits_by_mode["individual"][2]
+        metric_rows.extend(_metric_rows(
+            pob_at_ind, _y_move(test_ind), f"poblacional@{individual_bird_id}",
+            pinball_lat=np.nan, pinball_lon=np.nan, cov_lat=np.nan, cov_lon=np.nan,
+        ))
+
+    # --- Baselines de persistencia (test completo + corte individual) ---
+    persistence = compute_persistence_baseline(test_pob, cells=cells)
+    metric_rows.extend(_baseline_rows(persistence, "persistencia"))
+    pers_ind = persistence[persistence["bird_id"] == individual_bird_id]
+    if len(pers_ind) > 0:
+        metric_rows.extend(_baseline_rows(
+            pers_ind.reset_index(drop=True), f"persistencia@{individual_bird_id}"))
+
+    # --- Guardar artefactos ---
+    metrics = pd.DataFrame(metric_rows)
+    metrics_path = out_dir / "metrics.parquet"
+    metrics.to_parquet(metrics_path)
+
+    predictions_df = pd.concat(preds_frames, ignore_index=True)
+    predictions_path = out_dir / "predictions_test.parquet"
+    predictions_df.to_parquet(predictions_path)
+
+    ind_train = splits_by_mode["individual"][0]
+    ind_test = splits_by_mode["individual"][2]
+    return BuildO4L3Result(
+        n_rows_train_pob=len(train_pob),
+        n_rows_test_pob=len(test_pob),
+        n_rows_train_ind=len(ind_train),
+        n_rows_test_ind=len(ind_test),
+        individual_bird_id=individual_bird_id,
+        n_crossings=n_crossings,
+        coverage=coverage,
+        model_paths=model_paths,
+        predictions_path=predictions_path,
+        metrics_path=metrics_path,
+    )
