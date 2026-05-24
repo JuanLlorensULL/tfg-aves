@@ -1,44 +1,51 @@
-# L2 — Modelo de dos etapas (O4) Implementation Plan
+# L2 — Modelo de dos etapas (O4 causal) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implementar el pipeline supervisado de O4 en dos etapas (clasificador binario de movimiento `clf_move` + clasificador multiclase condicional `clf_dest`) y compararlo contra O4 base (L2-v0) para atacar la causa estructural D1 (dominio de self-loops).
+> **⚠ ACTUALIZADO 2026-05-24 al pipeline CAUSAL de O4.** Tras detectarse
+> data leakage en O4 base, se ejecutó el rework causal (tag
+> `v0.4.2-o4-rework-causal`). L2 se construye sobre el **feature set
+> causal de 10 features**, NO sobre las 8 antiguas (que filtraban el
+> target). El baseline L2-v0 se re-deriva del O4 **causal**. Las features
+> del HMM causal (`state_b_causal`, `posterior_b_migracion_causal`) NO las
+> produce `build_feature_matrix`: se adjuntan tras el split vía
+> `fit_causal_hmm` + `decode_causal_states`, igual que `build_o4`. Ver
+> `feedback-causal-features-no-leakage` y el spec refrescado.
 
-**Architecture:** Etapa 1 (`clf_move`, siempre poblacional) predice `p_move ∈ [0,1]`; etapa 2B (`clf_dest`, dos modos) predice destino condicionado a movimiento, entrenada sólo sobre filas con `y_move=1`. Dos reglas de combinación: soft (canónica, distribución probabilística renormalizada) y hard (ablación, one-hot con umbral τ). Todo reutiliza features, split, familias e hiperparámetros de O4 base; la única variable manipulada es la estructura del decisor.
+**Goal:** Implementar el pipeline supervisado de O4 causal en dos etapas (clasificador binario de movimiento `clf_move` + clasificador multiclase condicional `clf_dest`) y compararlo contra O4 causal monolítico (L2-v0) para atacar la causa estructural D1 (dominio de self-loops).
 
-**Tech Stack:** Python 3.12, scikit-learn 1.8 (`RandomForestClassifier`, `CalibratedClassifierCV` + `FrozenEstimator`), xgboost (`XGBClassifier` binario y multiclase), pandas, numpy, pytest, ruff. Reutiliza `tfg_aves.ml.{features,train,evaluate}` y `tfg_aves.markov.discretize`.
+**Architecture:** Etapa 1 (`clf_move`, siempre poblacional) predice `p_move ∈ [0,1]`; etapa 2B (`clf_dest`, dos modos) predice destino condicionado a movimiento, entrenada sólo sobre filas con `y_move=1`. Dos reglas de combinación: soft (canónica, distribución probabilística renormalizada) y hard (ablación, one-hot con umbral τ). Reutiliza features causales, split, familias e hiperparámetros de O4 causal; la única variable manipulada es la estructura del decisor.
 
-**Spec:** `docs/superpowers/specs/2026-05-23-o4l2-dos-etapas-design.md`
+**Tech Stack:** Python 3.12, scikit-learn 1.8 (`RandomForestClassifier`, `CalibratedClassifierCV` + `FrozenEstimator`), xgboost (`XGBClassifier` binario y multiclase), pandas, numpy, pytest, ruff. Reutiliza `tfg_aves.ml.{features,train,evaluate,hmm_causal}` y `tfg_aves.markov.discretize`.
 
-> **⚠ ACTUALIZACIÓN 2026-05-23 — rework causal de O4.** El feature set
-> base de O4 cambió: las 8 features antiguas tenían *data leakage*
-> (cinemática saliente `t → t+1` + estado HMM suavizado, ambos codifican
-> el target). Antes de ejecutar este plan, rebasar el pipeline sobre las
-> **10 features causales** del rework (`step_in_km`, `sin/cos_bearing_in`,
-> `cos_turning_in`, `state_b_causal`, `posterior_b_migracion_causal` +
-> lat/lon/sin_doy/cos_doy). El baseline L2-v0 se re-deriva del O4 causal.
-> Ver `2026-05-23-o4-rework-causal-design.md` §12. Registro interno.
+**Spec:** `docs/superpowers/specs/2026-05-23-o4l2-dos-etapas-design.md` (refrescado al pipeline causal).
+
+**Feature set causal (10 features) — la fuente es `tfg_aves.ml.features`:**
+- `FEATURES_KINEMATIC` = `lat, lon, sin_doy, cos_doy, step_in_km, sin_bearing_in, cos_bearing_in, cos_turning_in` (cinemática entrante `t-1→t`, leak-free).
+- `FEATURES_HMM` = `state_b_causal, posterior_b_migracion_causal` (HMM causal filtrado forward-only, adjuntado tras el split).
+- En modo personalizado se antepone `bird_id`.
 
 **Refinamientos sobre el spec (decisiones "cómo", no "qué"):**
-- §6.2 decía "reutiliza `train_xgboost` tal cual" — incorrecto para la etapa 1: `_XGBoostWrapper` tiene `objective='multi:softprob'` hardcodeado y no expone `scale_pos_weight`. La etapa 1 usa trainers binarios dedicados en `two_stage.py` (`objective='binary:logistic'`, `scale_pos_weight`, `n_estimators=300` fijos sin early stopping, para reservar `val` exclusivamente a la calibración). La etapa 2B (multiclase) SÍ reutiliza `train_random_forest`/`train_xgboost` sin cambios.
+- §6.2 dice "reutiliza `train_xgboost` tal cual" — válido SÓLO para la etapa 2B (multiclase). NO para la etapa 1: `_XGBoostWrapper` tiene `objective='multi:softprob'` hardcodeado y no expone `scale_pos_weight`. La etapa 1 usa trainers binarios dedicados en `two_stage.py` (`objective='binary:logistic'`, `scale_pos_weight`, `n_estimators=300` fijos sin early stopping, para reservar `val` a la calibración).
 - Calibración: `cv='prefit'` fue eliminado en sklearn 1.8 → se usa `CalibratedClassifierCV(FrozenEstimator(base), method='isotonic').fit(X_val, y_val_move)`. Misma intención de F8 (respetar estructura temporal), API correcta.
 - `combine_soft` aplica una normalización final de fila para garantizar suma 1.0 incluso si el clipping defensivo se activa (clf_dest colapsado sobre cell_t).
-- `predictions_from_proba` vive en `two_stage.py` (hermano de `predict_with_meta`) para mantener L2 autocontenido y no tocar `evaluate.py` más allá de añadir `evaluate_moves_only`.
+- `predictions_from_proba` vive en `two_stage.py` (hermano de `predict_with_meta`); produce la columna `state_b_causal` para que `evaluate_by_state` (que ya usa `state_col="state_b_causal"`) y `evaluate_moves_only` funcionen sin tocar `evaluate.py` más allá del helper nuevo.
+- El ensamblaje causal de features (cinemática + HMM filtrado) se replica en un helper privado `_prepare_causal_splits` dentro de `build_l2.py` reutilizando las funciones de `features`/`hmm_causal`. Se opta por replicar (~20 LOC) en vez de extraer un helper compartido de `build.py` para NO modificar el `build.py` recién estabilizado por el rework. Es leak-safe: usa exactamente las mismas funciones leak-free.
 
 ---
 
 ## File Structure
 
 - **Create** `src/tfg_aves/ml/two_stage.py` — funciones puras de L2: `derive_y_move`, trainers binarios (`train_move_rf`, `train_move_xgb`), `calibrate_prefit`, `expand_proba_to_full`, `combine_soft`, `combine_hard`, `sweep_tau`, `predictions_from_proba`.
-- **Create** `src/tfg_aves/ml/build_l2.py` — orquestador `build_o4_l2()` + dataclass `BuildO4L2Result`.
+- **Create** `src/tfg_aves/ml/build_l2.py` — orquestador `build_o4_l2()` + helper `_prepare_causal_splits()` + dataclass `BuildO4L2Result`.
 - **Modify** `src/tfg_aves/ml/_paths.py` — añadir `O4_L2V1_DIR` y `PREDICTIONS_O4_PARQUET`.
 - **Modify** `src/tfg_aves/ml/evaluate.py` — añadir `evaluate_moves_only`.
 - **Create** `tests/test_ml_two_stage.py` — tests de las funciones puras.
 - **Modify** `tests/test_ml_evaluate.py` — test de `evaluate_moves_only`.
-- **Create** `tests/test_ml_build_l2.py` — test de integración con fixture sintético.
+- **Create** `tests/test_ml_build_l2.py` — test de integración con fixture sintético causal (reusa el patrón de `tests/test_ml_build.py`).
 - **Create** `notebooks/04l2_eda_o4l2.py` — notebook jupytext que ejecuta `build_o4_l2` y genera los 7 artefactos.
 
-**Nota sobre trabajo en paralelo:** L1 está modificando `src/tfg_aves/ml/{features,build}.py` en paralelo. L2 NO toca esos dos ficheros (sólo añade ficheros nuevos + `_paths.py` + `evaluate.py`, ninguno de los cuales L1 modifica). Aun así, **antes de cada commit** ejecutar `git log --oneline -3` para confirmar HEAD y usar SIEMPRE commits nuevos (nunca `--amend`).
+**Nota sobre trabajo en paralelo:** L1 y el rework causal ya cerraron. L2 NO modifica `features.py`, `build.py`, `hmm_causal.py` ni `train.py` (sólo los importa). Aun así, **antes de cada commit** ejecutar `git log --oneline -3` para confirmar HEAD y usar SIEMPRE commits nuevos (nunca `--amend`).
 
 ---
 
@@ -62,7 +69,7 @@ PREDICTIONS_O4_PARQUET: Path = O4_OUT_DIR / "predictions_test.parquet"
 Crear `src/tfg_aves/ml/two_stage.py`:
 
 ```python
-"""Funciones puras del pipeline L2 (modelo de dos etapas) de O4."""
+"""Funciones puras del pipeline L2 (modelo de dos etapas) de O4 causal."""
 from __future__ import annotations
 
 import numpy as np
@@ -96,6 +103,9 @@ git commit -m "L2: scaffolding de rutas y módulo two_stage"
 **Files:**
 - Modify: `src/tfg_aves/ml/two_stage.py`
 - Test: `tests/test_ml_two_stage.py`
+
+> `y_move` se deriva de `cell_id_t` y `cell_id_t_next` (posiciones; el
+> target estructural, NO una feature). Es leak-free por construcción.
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -490,6 +500,9 @@ git commit -m "L2: expand_proba_to_full (espacio común de clases)"
 - Modify: `src/tfg_aves/ml/two_stage.py`
 - Test: `tests/test_ml_two_stage.py`
 
+> La columna de régimen es `state_b_causal` (coherente con
+> `evaluate_by_state`, que usa `state_col="state_b_causal"`).
+
 - [ ] **Step 1: Escribir el test que falla**
 
 Añadir a `tests/test_ml_two_stage.py`:
@@ -504,7 +517,7 @@ def test_predictions_from_proba_columns_and_top1():
         "cell_id_t_next": ["B", "A"],
         "lat_t_next": [10.0, 10.0],
         "lon_t_next": [0.0, 0.0],
-        "state_b": [1, 0],
+        "state_b_causal": [1, 0],
     })
     cells = pd.DataFrame({
         "cell_id": ["A", "B", "C"],
@@ -516,6 +529,7 @@ def test_predictions_from_proba_columns_and_top1():
     assert preds["true_cell"].tolist() == ["B", "A"]
     assert preds.attrs["_proba"].shape == (2, 3)
     assert "pred_dist_km" in preds.columns
+    assert "state_b_causal" in preds.columns
 ```
 
 - [ ] **Step 2: Ejecutar el test para verificar que falla**
@@ -555,7 +569,7 @@ def predictions_from_proba(
     Hermano de evaluate.predict_with_meta pero parte de una matriz de
     probabilidad ya combinada (no de un modelo). Columnas: bird_id,
     date_utc, true_cell, pred_cell_top1, pred_cell_topk, pred_prob_top1,
-    pred_dist_km, state_b. Adjunta proba_full y classes_full en attrs.
+    pred_dist_km, state_b_causal. Adjunta proba_full y classes_full en attrs.
     """
     top1_idx = np.argmax(proba_full, axis=1)
     topk_idx = np.argsort(proba_full, axis=1)[:, -top_k:][:, ::-1]
@@ -577,7 +591,7 @@ def predictions_from_proba(
         "pred_cell_topk": pred_topk,
         "pred_prob_top1": prob_top1,
         "pred_dist_km": dists,
-        "state_b": meta["state_b"].values,
+        "state_b_causal": meta["state_b_causal"].values,
     })
     out.attrs["_proba"] = proba_full
     out.attrs["_classes"] = classes_full
@@ -617,7 +631,7 @@ def test_evaluate_moves_only_filters_correctly():
         "pred_cell_top1": ["A", "B", "X", "D", "Y"],
         "pred_cell_topk": [["A"], ["B"], ["X"], ["D"], ["Y"]],
         "pred_dist_km":   [0.0, 0.0, 50.0, 0.0, 80.0],
-        "state_b":        [0, 1, 1, 1, 0],
+        "state_b_causal": [0, 1, 1, 1, 0],
     })
     # 3 filas se mueven (índices 1,2,3); de ellas aciertan top1 las 1 y 3
     y_move = np.array([False, True, True, True, False])
@@ -694,10 +708,10 @@ def _toy_binary(n=400, seed=0):
     X = pd.DataFrame({
         "lat": rng.normal(50, 5, n),
         "lon": rng.normal(0, 5, n),
-        "state_b": rng.integers(0, 2, n),
+        "state_b_causal": rng.integers(0, 2, n),
     })
-    # y_move correlado con state_b para que el modelo aprenda algo
-    y = ((X["state_b"] == 1) | (rng.random(n) < 0.1)).astype(int).to_numpy()
+    # y_move correlado con state_b_causal para que el modelo aprenda algo
+    y = ((X["state_b_causal"] == 1) | (rng.random(n) < 0.1)).astype(int).to_numpy()
     return X, y
 
 
@@ -741,8 +755,8 @@ def train_move_rf(
 ) -> RandomForestClassifier:
     """Etapa 1 RF binaria. Config §8.6 + class_weight='balanced'.
 
-    Poblacional: X_train sólo tiene columnas numéricas, sin bird_id, así
-    que no necesita encoder de categóricas.
+    Poblacional: X_train sólo tiene columnas numéricas (las 8 cinemáticas
+    + las 2 del HMM causal), sin bird_id, así que no necesita encoder.
     """
     rf = RandomForestClassifier(
         n_estimators=300,
@@ -820,7 +834,7 @@ git commit -m "L2: trainers binarios de etapa 1 + calibración isotonic"
 
 ---
 
-## Task 10: Orquestador `build_o4_l2`
+## Task 10: Orquestador `build_o4_l2` (con ensamblaje causal)
 
 **Files:**
 - Create: `src/tfg_aves/ml/build_l2.py`
@@ -828,92 +842,66 @@ git commit -m "L2: trainers binarios de etapa 1 + calibración isotonic"
 
 - [ ] **Step 1: Escribir el test de integración que falla**
 
-Crear `tests/test_ml_build_l2.py`:
+Crear `tests/test_ml_build_l2.py` (reusa el patrón de fixture causal de `tests/test_ml_build.py`: incluye `veg_low/veg_high/daylight_hours`, que la emisión del HMM causal exige):
 
 ```python
-"""Test de integración de build_o4_l2 con un fixture sintético."""
+"""Test de integración de build_o4_l2 con un fixture sintético causal."""
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from tfg_aves.ml.build_l2 import build_o4_l2
 
 
-@pytest.fixture
-def synthetic_inputs(tmp_path):
-    """Genera features.parquet y cells.parquet sintéticos válidos.
+def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    """5 aves × 90 días válidos consecutivos sobre celdas activas.
 
-    Construye 6 aves × 120 días consecutivos. La posición salta de celda
-    según un patrón estacional simple para que existan filas con y_move=1.
+    Mismo patrón que tests/test_ml_build.py pero con más días para
+    garantizar suficientes filas con y_move=1 tras la máscara de racha
+    de 4 días del HMM causal.
     """
     rng = np.random.default_rng(0)
-    # Grid 0.5° pequeño: 5x5 celdas alrededor de (50, 0)
-    lat_nodes = np.array([48.0, 48.5, 49.0, 49.5, 50.0])
-    lon_nodes = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])
-
+    birds = ["A", "B", "C", "D", "E"]
+    dates = pd.date_range("2020-01-01", periods=90)
     rows = []
-    for b in range(6):
-        bird = f"bird{b}"
-        base_lat, base_lon = 49.0, 0.0
-        start = pd.Timestamp("2010-01-01")
-        for d in range(120):
-            date = (start + pd.Timedelta(days=d)).date()
-            # se mueve ~30% de los días
-            if rng.random() < 0.3:
-                base_lat = float(rng.choice(lat_nodes))
-                base_lon = float(rng.choice(lon_nodes))
+    for b in birds:
+        lat0 = 40.0 + rng.uniform(-1, 1)
+        lon0 = -3.0 + rng.uniform(-1, 1)
+        for i, d in enumerate(dates):
+            lat = lat0 + 0.05 * i + rng.normal(0, 0.05)
+            lon = lon0 + 0.05 * i + rng.normal(0, 0.05)
             rows.append({
-                "bird_id": bird,
-                "date_utc": date,
-                "lat": base_lat + rng.normal(0, 0.01),
-                "lon": base_lon + rng.normal(0, 0.01),
+                "bird_id": b, "date_utc": d, "lat": lat, "lon": lon,
+                "daylight_hours": 12.0, "veg_low": 0.5, "veg_high": 0.5,
                 "is_observation_valid": True,
-                "step_length_km": rng.exponential(20),
-                "cos_turning_angle": rng.uniform(-1, 1),
-                "state_b": int(rng.integers(0, 2)),
-                "posterior_b_migracion": rng.random(),
             })
-    features = pd.DataFrame(rows)
-    features_path = tmp_path / "features.parquet"
-    features.to_parquet(features_path)
+    feat = pd.DataFrame(rows)
+    feat_path = tmp_path / "features.parquet"
+    feat.to_parquet(feat_path)
 
-    # cells.parquet: todas las celdas del grid pequeño
-    cell_rows = []
-    for i, la in enumerate(lat_nodes):
-        for j, lo in enumerate(lon_nodes):
-            cell_rows.append({
-                "cell_id": f"{i:03d}_{j:03d}",  # placeholder, no se usa para match
-                "lat_c": la, "lon_c": lo,
+    cells = []
+    for i in range(78, 86):
+        for j in range(-9, -1):
+            cells.append({
+                "cell_id": f"{i}_{j}",
+                "cell_lat_idx": i, "cell_lon_idx": j,
+                "lat_c": (i + 0.5) * 0.5, "lon_c": (j + 0.5) * 0.5,
+                "n_obs_total": 30,
             })
-    # Las celdas reales las define assign_cell sobre lat/lon; generamos
-    # cells coherente recomputando con la malla 0.5°.
-    from tfg_aves.markov.discretize import _format_cell_id, assign_cell
-    seen = {}
-    for la in np.linspace(47.5, 50.5, 20):
-        for lo in np.linspace(-1.5, 1.5, 20):
-            i, j = assign_cell(la, lo, 0.5)
-            cid = _format_cell_id(i, j)
-            if cid not in seen:
-                seen[cid] = (round((i + 0.5) * 0.5, 4), round((j + 0.5) * 0.5, 4))
-    cells = pd.DataFrame(
-        [{"cell_id": c, "lat_c": v[0], "lon_c": v[1]} for c, v in seen.items()],
-    )
+    cells_df = pd.DataFrame(cells)
     cells_path = tmp_path / "cells.parquet"
-    cells.to_parquet(cells_path)
+    cells_df.to_parquet(cells_path)
+    return feat_path, cells_path
 
-    return features_path, cells_path, tmp_path
 
-
-def test_build_o4_l2_artifacts(synthetic_inputs):
-    features_path, cells_path, tmp_path = synthetic_inputs
+def test_build_o4_l2_artifacts(tmp_path):
+    feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "l2_v1"
     result = build_o4_l2(
-        features_path=features_path,
-        cells_path=cells_path,
-        out_dir=out_dir,
-        seed=0,
+        features_path=feat_path, cells_path=cells_path, out_dir=out_dir, seed=0,
     )
     # 6 modelos: 2 clf_move (rf, xgb) + 4 clf_dest (rf/xgb × pers/pob)
     assert (out_dir / "model_clf_move_rf.pkl").exists()
@@ -926,23 +914,21 @@ def test_build_o4_l2_artifacts(synthetic_inputs):
     assert (out_dir / "tau_sweep.parquet").exists()
 
     metrics = pd.read_parquet(out_dir / "metrics.parquet")
-    # 4 combos × 2 reglas = 8 filas de L2 + 2 baselines = 10
     assert {"modelo", "modo", "regla", "top1", "log_loss"}.issubset(metrics.columns)
     assert len(metrics) >= 8
 
     # log_loss de hard debe ser NaN (no comparable)
     hard_rows = metrics[metrics["regla"] == "hard"]
     assert hard_rows["log_loss"].isna().all()
+    assert result.n_moves_train > 0
 
 
-def test_build_o4_l2_idempotent(synthetic_inputs):
-    features_path, cells_path, tmp_path = synthetic_inputs
+def test_build_o4_l2_idempotent(tmp_path):
+    feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "l2_v1"
-    r1 = build_o4_l2(features_path=features_path, cells_path=cells_path,
-                     out_dir=out_dir, seed=0)
+    build_o4_l2(features_path=feat_path, cells_path=cells_path, out_dir=out_dir, seed=0)
     m1 = pd.read_parquet(out_dir / "metrics.parquet")
-    r2 = build_o4_l2(features_path=features_path, cells_path=cells_path,
-                     out_dir=out_dir, seed=0)
+    build_o4_l2(features_path=feat_path, cells_path=cells_path, out_dir=out_dir, seed=0)
     m2 = pd.read_parquet(out_dir / "metrics.parquet")
     pd.testing.assert_frame_equal(
         m1.sort_values(["modelo", "modo", "regla"]).reset_index(drop=True),
@@ -960,7 +946,7 @@ Expected: FAIL con `ModuleNotFoundError: No module named 'tfg_aves.ml.build_l2'`
 Crear `src/tfg_aves/ml/build_l2.py`:
 
 ```python
-"""Orquestador único del pipeline L2 (modelo de dos etapas) de O4."""
+"""Orquestador único del pipeline L2 (modelo de dos etapas) de O4 causal."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -969,6 +955,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.metrics import log_loss
 from sklearn.preprocessing import LabelEncoder
 
 from ._paths import CELLS_PARQUET, FEATURES_O3_PARQUET, O4_L2V1_DIR
@@ -979,7 +966,14 @@ from .evaluate import (
     evaluate_moves_only,
     top_k_accuracy,
 )
-from .features import build_feature_matrix, split_temporal_per_bird
+from .features import (
+    FEATURES_HMM,
+    FEATURES_KINEMATIC,
+    build_feature_matrix,
+    compute_causal_kinematics,
+    split_temporal_per_bird,
+)
+from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .train import train_random_forest, train_xgboost
 from .two_stage import (
     calibrate_prefit,
@@ -992,6 +986,9 @@ from .two_stage import (
     train_move_rf,
     train_move_xgb,
 )
+
+_FAMILIES = ("rf", "xgb")
+_MODES = ("personalizado", "poblacional")
 
 
 @dataclass
@@ -1008,14 +1005,46 @@ class BuildO4L2Result:
     metrics_path: Path = Path()
 
 
-_FAMILIES = ("rf", "xgb")
-_MODES = ("personalizado", "poblacional")
+def _prepare_causal_splits(
+    features_o3: pd.DataFrame, cells: pd.DataFrame, seed: int,
+) -> dict[str, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+    """Replica el ensamblaje causal de build_o4 (cinemática entrante + HMM
+    causal filtrado forward-only) y devuelve {mode: (train, val, test)} con
+    state_b_causal y posterior_b_migracion_causal ya adjuntados.
+
+    Se replica (en vez de extraer un helper de build.py) para NO tocar el
+    build.py recién estabilizado; es leak-safe porque usa exactamente las
+    mismas funciones leak-free.
+    """
+    kin = compute_causal_kinematics(features_o3)
+    matrices = {
+        "personalizado": build_feature_matrix(kin, cells, include_bird_id=True),
+        "poblacional": build_feature_matrix(kin, cells, include_bird_id=False),
+    }
+    raw_splits = {m: split_temporal_per_bird(mat) for m, mat in matrices.items()}
+
+    train_ref = raw_splits["poblacional"][0]
+    cutoff_by_bird = (
+        train_ref.assign(_d=pd.to_datetime(train_ref["date_utc"]))
+        .groupby("bird_id")["_d"].max().to_dict()
+    )
+    hmm_model, hmm_labels = fit_causal_hmm(
+        kin, cutoff_by_bird, n_restarts=10, seed=seed,
+    )
+    states = decode_causal_states(hmm_model, hmm_labels, kin)
+
+    def attach(df: pd.DataFrame) -> pd.DataFrame:
+        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
+        if merged[FEATURES_HMM].isna().any().any():
+            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
+        return merged
+
+    return {m: tuple(attach(d) for d in raw_splits[m]) for m in _MODES}
 
 
-def _log_loss_full(proba_full, classes_full, true_cells) -> float:
-    from sklearn.metrics import log_loss
-    y_str = np.asarray(pd.Series(true_cells).astype(str))
-    return float(log_loss(y_str, proba_full, labels=list(classes_full)))
+def _feature_cols(mode: str) -> list[str]:
+    base = [*FEATURES_KINEMATIC, *FEATURES_HMM]
+    return ["bird_id", *base] if mode == "personalizado" else list(base)
 
 
 def build_o4_l2(
@@ -1024,47 +1053,31 @@ def build_o4_l2(
     out_dir: Path = O4_L2V1_DIR,
     seed: int = 0,
 ) -> BuildO4L2Result:
-    """Pipeline L2-v1 completo (ver spec §6.1).
-
-    Por cada familia f ∈ {rf, xgb}:
-      1. Entrena base_move sobre (X_train poblacional, y_move).
-      2. Calibra clf_move sobre el val temporal (isotonic, FrozenEstimator).
-      3. Por cada modo m ∈ {personalizado, poblacional}: entrena clf_dest
-         sobre las filas train con y_move=1.
-      4. Combina (soft y hard) sobre test y evalúa.
-    Persiste 6 .pkl, predictions_test_{soft,hard}.parquet, tau_sweep.parquet
-    y metrics.parquet.
-    """
+    """Pipeline L2-v1 completo sobre el feature set CAUSAL (ver spec §6.1)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     features_o3 = pd.read_parquet(features_path)
     cells = pd.read_parquet(cells_path)
 
-    # --- Matrices y splits para ambos modos ---
-    matrices = {
-        "personalizado": build_feature_matrix(features_o3, cells, include_bird_id=True),
-        "poblacional": build_feature_matrix(features_o3, cells, include_bird_id=False),
-    }
-    splits = {m: split_temporal_per_bird(mat) for m, mat in matrices.items()}
+    splits = _prepare_causal_splits(features_o3, cells, seed)
 
-    # y_move se deriva del modo poblacional (las filas son idénticas entre modos)
+    # y_move se deriva del modo poblacional (filas idénticas entre modos).
     train_pob, val_pob, test_pob = splits["poblacional"]
-    feat_pob = train_pob.attrs["_features"]
+    feat_pob = _feature_cols("poblacional")
     y_move_train = derive_y_move(train_pob).to_numpy().astype(int)
     y_move_val = derive_y_move(val_pob).to_numpy().astype(int)
     y_move_test = derive_y_move(test_pob).to_numpy().astype(int)
-
     moves_mask_train = y_move_train.astype(bool)
 
-    # --- Espacio de clases común para la combinación ---
+    # Espacio de clases común para la combinación.
     classes_full = np.array(sorted(
         set(test_pob["cell_id_t_next"].astype(str))
         | set(test_pob["cell_id_t"].astype(str)),
     ))
     full_index = {c: j for j, c in enumerate(classes_full)}
+    n_classes = len(classes_full)
     cell_t_idx_test = test_pob["cell_id_t"].astype(str).map(full_index).to_numpy()
-    y_true_idx_test = test_pob["cell_id_t_next"].astype(str).map(full_index).to_numpy()
 
     model_paths: dict[str, Path] = {}
     tau_star_by_combo: dict[str, float] = {}
@@ -1084,7 +1097,6 @@ def build_o4_l2(
             base_move = train_move_xgb(X_train_move, y_move_train, seed=seed)
         clf_move = calibrate_prefit(base_move, X_val_move, y_move_val)
 
-        # índice de la clase positiva (1) en clf_move
         pos_col = list(clf_move.classes_).index(1)
         p_move_test = clf_move.predict_proba(X_test_move)[:, pos_col]
         p_move_val = clf_move.predict_proba(X_val_move)[:, pos_col]
@@ -1095,7 +1107,7 @@ def build_o4_l2(
 
         for mode in _MODES:
             train_m, val_m, test_m = splits[mode]
-            feat_m = train_m.attrs["_features"]
+            feat_m = _feature_cols(mode)
             cat_cols = ["bird_id"] if "bird_id" in feat_m else []
 
             # --- Etapa 2B: clf_dest sobre filas con y_move=1 ---
@@ -1109,15 +1121,15 @@ def build_o4_l2(
                     X_dest_train, y_dest, categorical_cols=cat_cols, seed=seed,
                 )
             else:
-                # XGB usa el subset y_move=1 del val para early stopping
-                val_moves = val_m[derive_y_move(val_m).to_numpy().astype(bool)]
-                val_moves = val_moves.reset_index(drop=True)
+                val_moves = val_m[
+                    derive_y_move(val_m).to_numpy().astype(bool)
+                ].reset_index(drop=True)
                 known = set(le_dest.classes_)
                 fallback = le_dest.classes_[0]
-                y_dest_val = le_dest.transform(
-                    [c if c in known else fallback
-                     for c in val_moves["cell_id_t_next"].astype(str)],
-                )
+                y_dest_val = le_dest.transform([
+                    c if c in known else fallback
+                    for c in val_moves["cell_id_t_next"].astype(str)
+                ])
                 clf_dest = train_xgboost(
                     X_dest_train, y_dest, val_moves[feat_m], y_dest_val,
                     categorical_cols=cat_cols, seed=seed,
@@ -1135,14 +1147,17 @@ def build_o4_l2(
             p2b_test = expand_proba_to_full(
                 clf_dest.predict_proba(test_m[feat_m]), classes_dest, classes_full,
             )
-            n_classes = len(classes_full)
-
-            # tau* sobre val
             p2b_val = expand_proba_to_full(
                 clf_dest.predict_proba(val_m[feat_m]), classes_dest, classes_full,
             )
-            cell_t_idx_val = val_m["cell_id_t"].astype(str).map(full_index).fillna(0).to_numpy().astype(int)
-            y_true_idx_val = val_m["cell_id_t_next"].astype(str).map(full_index).fillna(0).to_numpy().astype(int)
+            cell_t_idx_val = (
+                val_m["cell_id_t"].astype(str).map(full_index).fillna(0)
+                .to_numpy().astype(int)
+            )
+            y_true_idx_val = (
+                val_m["cell_id_t_next"].astype(str).map(full_index).fillna(0)
+                .to_numpy().astype(int)
+            )
             tau_star, tau_table = sweep_tau(
                 p_move_val, p2b_val, cell_t_idx_val, y_true_idx_val, n_classes,
             )
@@ -1155,13 +1170,14 @@ def build_o4_l2(
             proba_hard = combine_hard(p_move_test, p2b_test, cell_t_idx_test, tau_star)
 
             for rule, proba in (("soft", proba_soft), ("hard", proba_hard)):
-                preds = predictions_from_proba(
-                    proba, classes_full, test_m, cells=cells,
-                )
-                ll = (
-                    _log_loss_full(proba, classes_full, test_m["cell_id_t_next"])
-                    if rule == "soft" else np.nan
-                )
+                preds = predictions_from_proba(proba, classes_full, test_m, cells=cells)
+                if rule == "soft":
+                    ll = float(log_loss(
+                        test_m["cell_id_t_next"].astype(str).to_numpy(),
+                        proba, labels=list(classes_full),
+                    ))
+                else:
+                    ll = np.nan
                 row = {
                     "modelo": family, "modo": mode, "regla": rule,
                     "top1": top_k_accuracy(preds, k=1),
@@ -1169,7 +1185,6 @@ def build_o4_l2(
                     "log_loss": ll,
                     "dist_median_km": dist_median_km(preds),
                 }
-                # subset moves-only (sólo soft, donde log_loss tiene sentido)
                 if rule == "soft":
                     mo = evaluate_moves_only(preds, y_move_test)
                     row["top1_moves"] = mo["top1"]
@@ -1183,12 +1198,9 @@ def build_o4_l2(
                 preds_out["modo"] = mode
                 preds_out["regla"] = rule
                 preds_out["pred_cell_topk"] = preds_out["pred_cell_topk"].apply(list)
-                if rule == "soft":
-                    preds_soft_frames.append(preds_out)
-                else:
-                    preds_hard_frames.append(preds_out)
+                (preds_soft_frames if rule == "soft" else preds_hard_frames).append(preds_out)
 
-    # --- Baselines (sobre el test poblacional) ---
+    # --- Baselines sobre el test poblacional ---
     persistence = compute_persistence_baseline(test_pob, cells=cells)
     markov = compute_markov_baseline(train_pob, test_pob, cells=cells)
     for name, bl in (("persistencia", persistence), ("markov", markov)):
@@ -1225,26 +1237,25 @@ def build_o4_l2(
 - [ ] **Step 4: Ejecutar los tests para verificar que pasan**
 
 Run: `uv run pytest tests/test_ml_build_l2.py -v`
-Expected: PASS (2 tests). Si `compute_markov_baseline` falla por el fixture sintético (celdas escasas), ver nota abajo.
+Expected: PASS (2 tests).
 
-> **Nota de implementación:** si el baseline Markov rompe con el fixture
-> sintético (p.ej. por meses sin transiciones), envolver las dos líneas
-> de baselines en la implementación con un guardado defensivo NO es
-> aceptable (oculta bugs). En su lugar, ampliar el fixture a más días o
-> celdas hasta que el baseline corra. Los baselines son código heredado
-> de O4 base ya testado; el problema sería del fixture, no del baseline.
+> **Nota de implementación:** si el baseline Markov o el HMM causal
+> rompen con el fixture sintético (p.ej. celdas escasas o pocas filas con
+> racha de 4 días), **ampliar el fixture** (más días/aves) hasta que corra.
+> NO envolver en guardas defensivas: el código heredado (build_o4,
+> hmm_causal, baselines) ya está testado; el problema sería del fixture.
 
 - [ ] **Step 5: Ejecutar la suite completa + ruff**
 
 Run: `uv run pytest -q && uv run ruff check src/tfg_aves/ml/`
-Expected: todos los tests PASS (99 previos + nuevos), ruff sin errores
+Expected: todos los tests PASS (suite previa + nuevos), ruff sin errores
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git log --oneline -3
 git add src/tfg_aves/ml/build_l2.py tests/test_ml_build_l2.py
-git commit -m "L2: orquestador build_o4_l2 (dos etapas + soft/hard + baselines)"
+git commit -m "L2: orquestador build_o4_l2 causal (dos etapas + soft/hard + baselines)"
 ```
 
 ---
@@ -1255,9 +1266,10 @@ git commit -m "L2: orquestador build_o4_l2 (dos etapas + soft/hard + baselines)"
 - Create: `notebooks/04l2_eda_o4l2.py`
 
 > **Requisito:** este task necesita los datos reales en `data/processed/`
-> (gitignored, regenerables). Si no existen, regenerar con los builds de
-> O1..O4 antes de empezar. El notebook NO se ejecuta en CI; produce
-> evidencia para la memoria.
+> (gitignored, regenerables) y el O4 **causal** ya regenerado en
+> `data/processed/o4/` (tag `v0.4.2-o4-rework-causal`). Si no existen,
+> regenerar con `build_o4()` (causal) antes de empezar. El notebook NO se
+> ejecuta en CI; produce evidencia para la memoria.
 
 - [ ] **Step 1: Crear el notebook jupytext (percent) con la fase de build**
 
@@ -1274,9 +1286,9 @@ Crear `notebooks/04l2_eda_o4l2.py` con cabecera jupytext y primera celda:
 # ---
 
 # %% [markdown]
-# # O4 · L2 — Modelo de dos etapas (régimen → posición)
+# # O4 · L2 — Modelo de dos etapas (régimen → posición), pipeline causal
 # Ejecuta `build_o4_l2` y genera los 7 artefactos (D1, D2, C1..C5)
-# comparando L2-v1 contra O4 base (L2-v0).
+# comparando L2-v1 contra O4 causal monolítico (L2-v0).
 
 # %%
 import pandas as pd
@@ -1290,13 +1302,14 @@ print("movimientos en train:", result.n_moves_train)
 print("tau* por combo:", result.tau_star)
 
 metrics_l2 = pd.read_parquet(O4_L2V1_DIR / "metrics.parquet")
-metrics_v0 = pd.read_parquet(O4_OUT_DIR / "metrics.parquet")
+metrics_v0 = pd.read_parquet(O4_OUT_DIR / "metrics.parquet")  # O4 causal
 ```
 
 - [ ] **Step 2: Añadir celda del artefacto D1 (calidad de clf_move)**
 
 Añadir celda que computa AUC/accuracy/Brier/precision/recall de cada
-`clf_move` sobre test y lo guarda:
+`clf_move` sobre test y lo guarda. **Usa el ensamblaje causal** para
+reconstruir el test (mismo que `build_l2._prepare_causal_splits`):
 
 ```python
 # %%
@@ -1305,16 +1318,16 @@ import numpy as np
 from sklearn.metrics import (
     accuracy_score, brier_score_loss, precision_score, recall_score, roc_auc_score,
 )
-from tfg_aves.ml.features import build_feature_matrix, split_temporal_per_bird
+from tfg_aves.ml.build_l2 import _prepare_causal_splits, _feature_cols
 from tfg_aves.ml.two_stage import derive_y_move
 from tfg_aves.ml._paths import CELLS_PARQUET, FEATURES_O3_PARQUET
 from tfg_aves.reporting import save_artifact
 
 features_o3 = pd.read_parquet(FEATURES_O3_PARQUET)
 cells = pd.read_parquet(CELLS_PARQUET)
-mat_pob = build_feature_matrix(features_o3, cells, include_bird_id=False)
-_, _, test_pob = split_temporal_per_bird(mat_pob)
-feat_pob = mat_pob.attrs["_features"]
+splits = _prepare_causal_splits(features_o3, cells, seed=0)
+_, _, test_pob = splits["poblacional"]
+feat_pob = _feature_cols("poblacional")
 y_move_test = derive_y_move(test_pob).to_numpy().astype(int)
 
 rows = []
@@ -1349,8 +1362,8 @@ save_artifact(
 ```
 
 > **Nota:** los `num=` de save_artifact (17, 18, ...) deben elegirse según
-> el siguiente número libre de `o4_*` en `reports/INDEX.md` en el momento de
-> ejecutar (L1 está consumiendo 14, 15, 16). Verificar con
+> el siguiente número libre de `o4_*` en `reports/INDEX.md` en el momento
+> de ejecutar (L1 consumió hasta 16). Verificar con
 > `grep "o4_fig\|o4_tab" reports/INDEX.md | tail` y ajustar.
 
 - [ ] **Step 3: Añadir celda del artefacto D2 (barrido de τ)**
@@ -1384,9 +1397,11 @@ save_artifact(
 
 - [ ] **Step 4: Añadir celda del artefacto C1 (comparativa global L2-v0 vs L2-v1)**
 
+L2-v0 = O4 **causal** monolítico (de `metrics_v0`, filas `split=="test"`).
+
 ```python
 # %%
-# C1: tabla central — L2-v0 (O4 base) vs L2-v1 (soft/hard), globales.
+# C1: tabla central — L2-v0 (O4 causal) vs L2-v1 (soft/hard), globales.
 v0 = metrics_v0[metrics_v0.get("split", "test") == "test"][
     ["modelo", "modo", "top1", "top3", "log_loss", "dist_median_km"]
 ].assign(version="L2-v0", regla="argmax")
@@ -1397,25 +1412,25 @@ c1 = pd.concat([v0, v1], ignore_index=True).round(4)
 
 fig, ax = plt.subplots(figsize=(8, 4.5))
 soft = c1[(c1["version"] == "L2-v1") & (c1["regla"] == "soft")]
-base = c1[c1["version"] == "L2-v0"]
+base = c1[(c1["version"] == "L2-v0") & (c1["modo"].isin(["personalizado", "poblacional"]))]
 labels = [f"{r.modelo}-{r.modo}" for r in base.itertuples()]
 x = np.arange(len(labels))
-ax.bar(x - 0.2, base["top1"], width=0.4, label="L2-v0 (base)")
-ax.bar(x + 0.2, soft.set_index(["modelo", "modo"]).reindex(
-    base.set_index(["modelo", "modo"]).index)["top1"].values,
-    width=0.4, label="L2-v1 (soft)")
+soft_aligned = soft.set_index(["modelo", "modo"]).reindex(
+    base.set_index(["modelo", "modo"]).index)["top1"].values
+ax.bar(x - 0.2, base["top1"], width=0.4, label="L2-v0 (causal)")
+ax.bar(x + 0.2, soft_aligned, width=0.4, label="L2-v1 (soft)")
 ax.set_xticks(x); ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
-ax.set_ylabel("top-1"); ax.set_title("L2-v0 vs L2-v1 (soft) — top-1 global")
+ax.set_ylabel("top-1"); ax.set_title("L2-v0 (causal) vs L2-v1 (soft) — top-1 global")
 ax.legend()
 fig.tight_layout()
 
 save_artifact(
     "l2v1-metrics-comparison",
     objective="o4", num=19,
-    decision="Comparativa global L2-v0 vs L2-v1 (entregable central de L2)",
+    decision="Comparativa global L2-v0 (O4 causal) vs L2-v1 (entregable central de L2)",
     caption_es=(
         "Comparativa de métricas globales entre el modelo monolítico de O4 "
-        "base (L2-v0) y el modelo de dos etapas (L2-v1), con reglas soft y "
+        "causal (L2-v0) y el modelo de dos etapas (L2-v1), con reglas soft y "
         "hard. El log-loss de la regla hard se omite por no ser comparable."
     ),
     fig=fig, table=c1,
@@ -1425,12 +1440,12 @@ save_artifact(
 - [ ] **Step 5: Añadir celdas de C2..C5**
 
 Añadir cuatro celdas análogas que generen y guarden:
-- **C2** (`l2v1-by-state-comparison`, num=20): tabla + figura de top-1/dist por estado HMM (estacionario/migración) para L2-v0 vs L2-v1 soft. Reutilizar `evaluate_by_state` de `evaluate.py` aplicada a `predictions_test_soft.parquet` filtrado por combo, y a las predicciones de O4 base. **Es el artefacto que mide el lift en migración.**
-- **C3** (`l2v1-moves-only`, num=21): tabla con `top1_moves` y `dist_median_km_moves` (ya calculadas en `metrics.parquet`) frente al top-1 de O4 base sobre el mismo subset. Aísla la calidad de clf_dest.
-- **C4** (`l2v1-gap-train-test`, num=22): figura de gap train-test de clf_dest por combo. Recomputar top-1 de cada `clf_dest` sobre su propio train (filas y_move=1) y sobre test, graficar la diferencia frente al gap de O4 base.
-- **C5** (`l2v1-state-confusion`, num=23): matriz `state_b verdad × (predice cambio de celda sí/no)` para L2-v1 soft (RF personalizado) vs O4 base, vía `pd.crosstab`. Diagnóstico de cuándo L2 cambia su decisión.
+- **C2** (`l2v1-by-state-comparison`, num=20): tabla + figura de top-1/dist por estado HMM (estacionario/migración) para L2-v0 vs L2-v1 soft. Reutilizar `evaluate_by_state` de `evaluate.py` (usa `state_col="state_b_causal"` por defecto) aplicada a `predictions_test_soft.parquet` filtrado por combo, y a `predictions_test.parquet` de O4 causal. **Es el artefacto que mide el lift en migración.**
+- **C3** (`l2v1-moves-only`, num=21): tabla con `top1_moves` y `dist_median_km_moves` (ya en `metrics.parquet`) frente al top-1 de O4 causal sobre el mismo subset. Aísla la calidad de clf_dest.
+- **C4** (`l2v1-gap-train-test`, num=22): figura de gap train-test de clf_dest por combo. Recomputar top-1 de cada `clf_dest` sobre su propio train (filas y_move=1) y sobre test, graficar la diferencia frente al gap de O4 causal.
+- **C5** (`l2v1-state-confusion`, num=23): matriz `state_b_causal verdad × (predice cambio de celda sí/no)` para L2-v1 soft (RF personalizado) vs O4 causal, vía `pd.crosstab`. Diagnóstico de cuándo L2 cambia su decisión.
 
-Cada celda termina en un `save_artifact(...)` con `objective="o4"`, su `num` libre y un `caption_es` descriptivo en castellano.
+Cada celda termina en un `save_artifact(...)` con `objective="o4"`, su `num` libre y un `caption_es` descriptivo en castellano. Patrón completo ya mostrado en C1 (steps 2-4).
 
 - [ ] **Step 6: Sincronizar el `.ipynb` con jupytext y ejecutar de punta a punta**
 
@@ -1445,7 +1460,7 @@ Expected: ficheros presentes; `grep -c` ≥ 7
 ```bash
 git log --oneline -3
 git add notebooks/04l2_eda_o4l2.py notebooks/04l2_eda_o4l2.ipynb reports/
-git commit -m "Notebook L2: dos etapas, 7 artefactos (D1-D2, C1-C5)"
+git commit -m "Notebook L2: dos etapas causal, 7 artefactos (D1-D2, C1-C5)"
 ```
 
 ---
@@ -1453,9 +1468,9 @@ git commit -m "Notebook L2: dos etapas, 7 artefactos (D1-D2, C1-C5)"
 ## Cierre de L2 (fuera del bucle de tasks, decisión del autor)
 
 Tras completar las 11 tasks, el autor decide:
-- Notas de memoria en `reports/memoria/06_o4_ml.md` (sección "L2 — Mejora con dos etapas") según `feedback-memoria-tone`.
+- Notas de memoria en `reports/memoria/06_o4_ml.md` (sección "L2 — Mejora con dos etapas") según `feedback-memoria-tone`. **Narrativa esperada:** L2 no rompe el techo estructural (no añade señal), pero tiene un tiro honesto en recuperar una ventaja de calibración/log-loss sobre persistencia que el rework causal le quitó al monolítico — porque dos etapas es el sesgo inductivo correcto para un proceso 77 % self-loop. NO se narra la fuga de O4 (registro interno).
 - Entrada en `reports/ai-log/` (`00NN-o4l2-dos-etapas.md`) según la regla de scope.
-- Tag `v0.4.2-o4l2-dos-etapas`.
+- Tag `v0.4.3-o4l2-dos-etapas`.
 - Actualizar `CLAUDE.md` (estado de L2) y la memoria `project-o4-improvement-lines`.
 
 Estos pasos NO son tasks de implementación: dependen de los resultados numéricos y del juicio del autor sobre la narrativa.
@@ -1466,26 +1481,28 @@ Estos pasos NO son tasks de implementación: dependen de los resultados numéric
 
 **Spec coverage:**
 - F1 (dos etapas) → Tasks 3-5, 9, 10. ✓
-- F2 (8 features O4 base) → Task 10 usa `build_feature_matrix` sin `wind_df`. ✓
+- F2 (10 features causales) → Task 10 `_feature_cols` = `FEATURES_KINEMATIC + FEATURES_HMM`; `_prepare_causal_splits` adjunta el HMM causal. ✓
 - F3 (etapa 1 poblacional) → Task 10 entrena clf_move sólo sobre `splits["poblacional"]`. ✓
 - F4 (etapa 2B dos modos) → Task 10 itera `_MODES`. ✓
 - F5 (RF+XGB, sin LGBM) → Task 9/10 sólo `("rf", "xgb")`. ✓
 - F6 (soft+hard, τ por top-1) → Tasks 3,4,5,10. ✓
-- F7 (hiperparámetros §8.6 sin tuning) → Task 9 config fija; etapa 2B reusa trainers O4. ✓
-- F8 (class weighting + calibración prefit) → Task 9. ✓
+- F7 (hiperparámetros §8.6 sin tuning) → Task 9 config fija; etapa 2B reusa trainers causales de O4. ✓
+- F8 (class weighting + calibración prefit/FrozenEstimator sobre val) → Task 9. ✓
 - F9 (split idéntico) → Task 10 usa `split_temporal_per_bird`. ✓
 - F10 (y_move de columnas existentes) → Task 2. ✓
-- §8.1 tests → Tasks 2-10 (cada función con test). ✓
+- §6.1 ensamblaje causal (kin → matrix → split → fit_causal_hmm → decode → attach) → Task 10 `_prepare_causal_splits`. ✓
+- §8.1 tests → Tasks 2-10. ✓
 - §8.2 artefactos D1,D2,C1-C5 → Task 11. ✓
-- §8.3 tabla central → Task 11 C1 + `metrics.parquet`. ✓
-- §6.3 estructura outputs → Task 10 genera los 6 .pkl + 4 parquet. ✓
+- §8.3 tabla central con baseline causal → Task 11 C1 + `metrics.parquet`. ✓
 - §6.2 `evaluate_moves_only` → Task 8. ✓
 
-**Placeholder scan:** Task 11 step 5 (C2-C5) describe artefactos sin todo el código inline. Es deliberado: son variaciones del patrón save_artifact ya mostrado completo en C1 (steps 2-4); el detalle de cada uno depende de números reales y reutiliza `evaluate_by_state`/`pd.crosstab` ya existentes. No hay placeholders en las funciones núcleo (Tasks 1-10), que sí llevan código completo.
+**Placeholder scan:** Task 11 step 5 (C2-C5) describe artefactos sin todo el código inline; deliberado (variaciones del patrón completo de C1, dependientes de números reales, reutilizan `evaluate_by_state`/`pd.crosstab`). Las funciones núcleo (Tasks 1-10) llevan código completo, sin placeholders.
 
 **Type consistency:**
-- `combine_soft`/`combine_hard` devuelven `(n, n_classes)`; `predictions_from_proba` y `sweep_tau` consumen ese shape. ✓
+- `combine_soft`/`combine_hard` devuelven `(n, n_classes)`; `predictions_from_proba`, `sweep_tau` y `evaluate_moves_only` consumen ese shape. ✓
+- Columna de régimen `state_b_causal` consistente: `predictions_from_proba` la produce, `evaluate_by_state` la espera (`state_col="state_b_causal"`). ✓
+- `_feature_cols(mode)` = `[*FEATURES_KINEMATIC, *FEATURES_HMM]` (+bird_id), idéntico a `build_o4` (build.py:184-185). Las features del HMM causal se adjuntan tras el split vía `_prepare_causal_splits`, NO desde `attrs["_features"]` (que sólo tiene cinemáticas). ✓
 - `clf_move.classes_` → `pos_col` localiza la clase 1; `predict_proba[:, pos_col]` es `p_move`. ✓
-- `expand_proba_to_full(clf_dest.predict_proba(...), le_dest.inverse_transform(clf_dest.classes_), classes_full)` — `classes_str` son strings, `classes_full` strings ordenados. ✓
-- `metrics.parquet` columnas (`modelo, modo, regla, top1, top3, log_loss, dist_median_km`) consistentes entre Task 10 (escritura) y Task 10 test (asserts) y Task 11 C1 (lectura). ✓
-- `evaluate_moves_only(preds, y_move_test)` recibe `predictions` con attrs `_proba`/`_classes` (presentes porque `predictions_from_proba` los adjunta antes de que Task 10 los borre para el parquet — el borrado ocurre en `preds_out`, una copia; `preds` conserva attrs para `evaluate_moves_only`). ✓
+- `metrics.parquet` columnas (`modelo, modo, regla, top1, top3, log_loss, dist_median_km`) consistentes entre Task 10 (escritura), su test (asserts) y Task 11 C1 (lectura). ✓
+- `evaluate_moves_only(preds, y_move_test)` recibe `preds` con attrs `_proba`/`_classes` (los borra `preds_out`, una copia; `preds` conserva attrs). ✓
+- Fixture de integración (Task 10) incluye `veg_low/veg_high/daylight_hours` requeridos por la emisión del HMM causal, igual que `tests/test_ml_build.py`. ✓
