@@ -56,6 +56,7 @@ def test_predict_quantiles_monotonic_and_crossings():
     assert (preds["dlat_p10"] <= preds["dlat_p50"]).all()
     assert (preds["dlat_p50"] <= preds["dlat_p90"]).all()
     assert (preds["dlon_p10"] <= preds["dlon_p50"]).all()
+    assert (preds["dlon_p50"] <= preds["dlon_p90"]).all()
     assert crossings["lat"] == 3
     assert crossings["lon"] == 0
     assert len(preds) == 3
@@ -102,6 +103,18 @@ def test_interval_coverage():
     p10 = np.full(10, 1.0)
     p90 = np.full(10, 8.0)                    # dentro de [1,8]: 1..8 = 8 valores
     assert np.isclose(interval_coverage(y, p10, p90), 0.8)
+
+
+def test_fit_quantile_axis_handles_empty_val():
+    from tfg_aves.ml.quantile import fit_quantile_axis
+    rng = np.random.default_rng(1)
+    X = pd.DataFrame({"a": rng.normal(size=120), "b": rng.normal(size=120)})
+    y = X["a"].to_numpy() + rng.normal(0, 0.1, size=120)
+    X_val = X.iloc[:0]                      # empty val
+    y_val = np.empty(0, dtype=float)
+    models = fit_quantile_axis(X, y, X_val, y_val, seed=0)
+    preds = models[0.50].predict(X)
+    assert preds.shape == (120,)
 
 
 def test_build_regression_predictions_schema():

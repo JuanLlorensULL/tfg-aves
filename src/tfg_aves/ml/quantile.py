@@ -51,24 +51,25 @@ class _XGBQuantileRegressor(BaseEstimator, RegressorMixin):
         X_val: pd.DataFrame | None = None,
         y_val: np.ndarray | None = None,
     ) -> _XGBQuantileRegressor:
-        self._reg = xgb.XGBRegressor(
-            objective="reg:quantileerror",
-            quantile_alpha=self.quantile,
-            n_estimators=1000,
-            learning_rate=0.05,
-            max_depth=6,
-            min_child_weight=10,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            reg_lambda=1.0,
-            tree_method="hist",
-            random_state=self.seed,
-            n_jobs=-1,
-            early_stopping_rounds=50,
-        )
-        eval_set = None
-        if X_val is not None and y_val is not None and len(X_val) > 0:
-            eval_set = [(X_val, y_val)]
+        has_val = X_val is not None and y_val is not None and len(X_val) > 0
+        params = {
+            "objective": "reg:quantileerror",
+            "quantile_alpha": self.quantile,
+            "n_estimators": 1000,
+            "learning_rate": 0.05,
+            "max_depth": 6,
+            "min_child_weight": 10,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "reg_lambda": 1.0,
+            "tree_method": "hist",
+            "random_state": self.seed,
+            "n_jobs": -1,
+        }
+        if has_val:
+            params["early_stopping_rounds"] = 50
+        self._reg = xgb.XGBRegressor(**params)
+        eval_set = [(X_val, y_val)] if has_val else None
         self._reg.fit(X, y, eval_set=eval_set, verbose=False)
         return self
 
@@ -138,6 +139,7 @@ def point_to_cell(
     cent_lon (centroide analítico de la celda contenedora) e is_active (bool,
     si la celda está en ``cells``). El centroide es analítico para que la
     distancia vía centroide quede definida también fuera del grid activo.
+    lat_pred/lon_pred no deben contener NaN (el floor de NaN produce un cell_id sin sentido).
     """
     lat_pred = np.asarray(lat_pred, dtype=np.float64)
     lon_pred = np.asarray(lon_pred, dtype=np.float64)
