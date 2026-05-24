@@ -135,7 +135,12 @@ def build_o4_l2(
     ))
     full_index = {c: j for j, c in enumerate(classes_full)}
     n_classes = len(classes_full)
-    cell_t_idx_test = test_pob["cell_id_t"].astype(str).map(full_index).to_numpy()
+    # classes_full incluye todas las celdas de test, así que map nunca es NaN;
+    # fillna(0) + int por paridad con cell_t_idx_val y seguridad explícita.
+    cell_t_idx_test = (
+        test_pob["cell_id_t"].astype(str).map(full_index).fillna(0)
+        .to_numpy().astype(int)
+    )
 
     model_paths: dict[str, Path] = {}
     tau_star_by_combo: dict[str, float] = {}
