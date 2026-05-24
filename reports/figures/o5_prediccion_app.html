@@ -233,7 +233,7 @@ function drawTrajectory(){
   const cm = birdYearColors(), arr = days();
   for(let i = S.start; i < S.end; i++){
     L.polyline([arr[i].o, arr[i+1].o],
-      {color:cm[arr[i].year], weight:2, opacity:.75}).addTo(trajLayer);
+      {color:cm[arr[i].year], weight:3.5, opacity:.9}).addTo(trajLayer);
   }
   const ys = Object.keys(cm);
   el("yearlegend").innerHTML = ys.length
@@ -250,7 +250,7 @@ function drawTrail(){
   const arr = days(), cm = birdYearColors();
   for(let i = S.start; i < S.cur; i++){
     L.polyline([arr[i].p, arr[i+1].p],
-      {color:cm[arr[i].year], weight:2.5, opacity:.9}).addTo(trailLayer);
+      {color:cm[arr[i].year], weight:1.8, opacity:.45}).addTo(trailLayer);
   }
 }
 
