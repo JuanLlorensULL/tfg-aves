@@ -1,0 +1,17 @@
+modelo,modo,top1,top3,log_loss,dist_median_km,version,regla
+persistencia,—,0.7751,0.7751,,20.9567,L2-v0,argmax
+markov,—,0.5482,0.6322,,24.9026,L2-v0,argmax
+rf,personalizado,0.5796,0.735,5.6657,24.0483,L2-v0,argmax
+xgb,personalizado,0.5923,0.7015,5.7924,24.0351,L2-v0,argmax
+lgbm,personalizado,0.3584,0.5474,13.3378,121.6732,L2-v0,argmax
+rf,poblacional,0.5695,0.725,5.8358,24.3493,L2-v0,argmax
+xgb,poblacional,0.5811,0.7008,5.8271,24.3459,L2-v0,argmax
+lgbm,poblacional,0.3797,0.5898,13.2195,97.9473,L2-v0,argmax
+rf,personalizado,0.7798,0.8692,2.8058,20.8895,L2-v1,soft
+rf,personalizado,0.7716,0.7736,,20.9567,L2-v1,hard
+rf,poblacional,0.7795,0.8662,2.8211,20.9074,L2-v1,soft
+rf,poblacional,0.7706,0.7726,,20.9568,L2-v1,hard
+xgb,personalizado,0.7795,0.8638,2.9025,20.9108,L2-v1,soft
+xgb,personalizado,0.7676,0.7696,,20.9976,L2-v1,hard
+xgb,poblacional,0.779,0.8628,2.9088,20.9122,L2-v1,soft
+xgb,poblacional,0.7679,0.7699,,20.9976,L2-v1,hard

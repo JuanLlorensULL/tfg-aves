@@ -1,0 +1,13 @@
+version,modelo,modo,state,n_obs,top1,top3,dist_median_km
+L2-v0 causal,rf,personalizado,global,4037,0.5796,0.735,24.0483
+L2-v0 causal,rf,personalizado,estacionario,3566,0.6388,0.7984,22.9272
+L2-v0 causal,rf,personalizado,migración,471,0.1316,0.2548,274.7619
+L2-v1 soft,rf,personalizado,global,4037,0.7798,0.8692,20.8895
+L2-v1 soft,rf,personalizado,estacionario,3566,0.8466,0.9319,19.4039
+L2-v1 soft,rf,personalizado,migración,471,0.2739,0.3949,54.6845
+L2-v0 causal,xgb,poblacional,global,4037,0.5811,0.7008,24.3459
+L2-v0 causal,xgb,poblacional,estacionario,3566,0.6391,0.7625,23.085
+L2-v0 causal,xgb,poblacional,migración,471,0.1423,0.2335,164.5154
+L2-v1 soft,xgb,poblacional,global,4037,0.779,0.8628,20.9122
+L2-v1 soft,xgb,poblacional,estacionario,3566,0.846,0.9296,19.4232
+L2-v1 soft,xgb,poblacional,migración,471,0.2718,0.3567,54.6845

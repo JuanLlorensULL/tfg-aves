@@ -1,0 +1,3 @@
+familia,auc,accuracy,brier,precision_mov,recall_mov
+rf,0.8613,0.8353,0.116,0.7341,0.4196
+xgb,0.856,0.834,0.1178,0.738,0.4064
