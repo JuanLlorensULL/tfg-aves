@@ -23,6 +23,7 @@ from .features import (
 )
 from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .quantile import (
+    INDIVIDUAL_BIRD_ID,
     QUANTILES,
     build_regression_predictions,
     derive_displacement_target,
@@ -44,6 +45,7 @@ class BuildO4L3Result:
     n_rows_val_pob: int
     n_rows_test_pob: int
     n_rows_train_ind: int
+    n_rows_val_ind: int
     n_rows_test_ind: int
     individual_bird_id: str
     n_crossings: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -129,6 +131,8 @@ def _metric_rows(
 
 
 def _baseline_rows(preds: pd.DataFrame, modo_label: str) -> list[dict]:
+    # Sin fila "moves": la persistencia no necesita el corte y_move (su
+    # asimetría con _metric_rows, que sí lo tiene, es intencional).
     by = evaluate_by_state(preds)
     rows = []
     for _, r in by.iterrows():
@@ -155,7 +159,6 @@ def build_o4_l3(
     individual_bird_id: ave del modo individual. Por defecto INDIVIDUAL_BIRD_ID
     (91916A). Se expone como parámetro para los tests con fixtures sintéticos.
     """
-    from .quantile import INDIVIDUAL_BIRD_ID
     if individual_bird_id is None:
         individual_bird_id = INDIVIDUAL_BIRD_ID
 
@@ -240,6 +243,9 @@ def build_o4_l3(
                 joblib.dump({
                     "model": models[q], "feature_cols": _FEATURES,
                     "mode": mode, "axis": axis, "quantile": q,
+                    "individual_bird_id": (
+                        individual_bird_id if mode == "individual" else None
+                    ),
                 }, mp)
                 model_paths[f"{mode}_{axis}_{tag}"] = mp
 
@@ -286,6 +292,7 @@ def build_o4_l3(
         n_rows_val_pob=len(val_pob),
         n_rows_test_pob=len(test_pob),
         n_rows_train_ind=len(ind_train),
+        n_rows_val_ind=len(splits_by_mode["individual"][1]),
         n_rows_test_ind=len(ind_test),
         individual_bird_id=individual_bird_id,
         n_crossings=n_crossings,
