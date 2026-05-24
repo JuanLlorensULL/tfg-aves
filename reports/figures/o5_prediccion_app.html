@@ -41,6 +41,24 @@
     font-size:12px;margin-bottom:3px;color:var(--muted)}
   .rangehead .v{color:var(--parch)}
   input[type=range]{width:100%;accent-color:var(--p50);cursor:pointer}
+  .dual{position:relative;height:28px;margin:2px 0 12px}
+  .dual .track,.dual .fill{position:absolute;top:12px;height:4px;border-radius:2px}
+  .dual .track{left:0;right:0;background:var(--line)}
+  .dual .fill{background:var(--p50)}
+  .dual input.thumb{position:absolute;top:0;left:0;width:100%;height:28px;margin:0;
+    -webkit-appearance:none;appearance:none;background:transparent;pointer-events:none}
+  .dual input.thumb::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:16px;height:16px;border-radius:50%;background:var(--parch);
+    border:2px solid var(--p50);cursor:pointer;pointer-events:all}
+  .dual input.thumb::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
+    background:var(--parch);border:2px solid var(--p50);cursor:pointer;pointer-events:all}
+  #start{z-index:5} #end{z-index:4}
+  .daterow{display:flex;align-items:center;gap:8px;color:var(--muted);
+    font-family:"IBM Plex Mono",monospace;font-size:12px}
+  .daterow input[type=date]{flex:1;background:var(--ink);color:var(--parch);
+    border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;
+    font-size:12px;color-scheme:dark}
+  .daterow input[type=date]:hover{border-color:var(--p50)}
   .controls{display:flex;gap:6px;align-items:center;margin:9px 0 4px}
   button{background:var(--ink);color:var(--parch);border:1px solid var(--line);
     border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer;transition:.15s}
@@ -76,13 +94,16 @@
 
     <div class="group">
       <label class="lbl">Ventana de días (acota inicio y fin)</label>
-      <div class="rangewrap">
-        <div class="rangehead"><span>inicio</span><span class="v" id="startv">—</span></div>
-        <input type="range" id="start" min="0" value="0">
+      <div class="dual">
+        <div class="track"></div>
+        <div class="fill" id="fill"></div>
+        <input type="range" class="thumb" id="start" min="0" value="0">
+        <input type="range" class="thumb" id="end" min="0" value="0">
       </div>
-      <div class="rangewrap">
-        <div class="rangehead"><span>fin</span><span class="v" id="endv">—</span></div>
-        <input type="range" id="end" min="0" value="0">
+      <div class="daterow">
+        <input type="date" id="startDate" title="Día de inicio">
+        <span>&rarr;</span>
+        <input type="date" id="endDate" title="Día de fin">
       </div>
     </div>
 
@@ -170,14 +191,33 @@ function clamp(){
   if(S.cur > S.end)   S.cur = S.end;
 }
 
+function updateFill(){
+  const n = days().length - 1 || 1;
+  el("fill").style.left  = (100 * S.start / n) + "%";
+  el("fill").style.width = (100 * (S.end - S.start) / n) + "%";
+}
+
+function nearestIndex(dateStr){
+  const t = new Date(dateStr).getTime();
+  if(isNaN(t)) return S.start;
+  const arr = days(); let best = 0, bd = Infinity;
+  for(let i = 0; i < arr.length; i++){
+    const dd = Math.abs(new Date(arr[i].date).getTime() - t);
+    if(dd < bd){ bd = dd; best = i; }
+  }
+  return best;
+}
+
 function syncInputs(){
   const n = days().length - 1;
   el("start").max = n; el("end").max = n;
   el("start").value = S.start; el("end").value = S.end;
   el("cur").min = S.start; el("cur").max = S.end; el("cur").value = S.cur;
-  el("startv").textContent = fmt(S.start);
-  el("endv").textContent = fmt(S.end);
   el("curv").textContent = fmt(S.cur);
+  const lo = days()[0].date, hi = days()[n].date;
+  el("startDate").min = lo; el("startDate").max = hi; el("startDate").value = fmt(S.start);
+  el("endDate").min = lo;   el("endDate").max = hi;   el("endDate").value = fmt(S.end);
+  updateFill();
 }
 
 function refresh(){ clamp(); syncInputs(); drawTrajectory(); drawDay(); }
@@ -214,8 +254,12 @@ DATA.birds.forEach((b,i) => {
   o.value = i; o.textContent = b.id; el("bird").appendChild(o);
 });
 el("bird").onchange  = e => setBird(+e.target.value);
-el("start").oninput  = e => { stop(); S.start = +e.target.value; refresh(); };
-el("end").oninput    = e => { stop(); S.end = +e.target.value; refresh(); };
+// Slider de dos topes: inicio y fin no se cruzan (se topan uno con otro).
+el("start").oninput  = e => { stop(); S.start = Math.min(+e.target.value, S.end); refresh(); };
+el("end").oninput    = e => { stop(); S.end = Math.max(+e.target.value, S.start); refresh(); };
+// Datepickers: día exacto sin arrastrar; si cae en hueco, salta al más cercano.
+el("startDate").onchange = e => { stop(); S.start = Math.min(nearestIndex(e.target.value), S.end); refresh(); };
+el("endDate").onchange   = e => { stop(); S.end = Math.max(nearestIndex(e.target.value), S.start); refresh(); };
 el("cur").oninput    = e => { stop(); S.cur = +e.target.value; clamp(); el("curv").textContent = fmt(S.cur); drawDay(); };
 el("first").onclick  = () => { stop(); S.cur = S.start; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); };
 el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").value = S.cur; el("curv").textContent = fmt(S.cur); drawDay(); } };
