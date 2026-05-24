@@ -120,6 +120,20 @@ def test_fit_quantile_axis_handles_empty_val():
     assert raw.shape == (120, 3)
 
 
+def test_fit_quantile_axis_lgbm_shapes_and_order():
+    from tfg_aves.ml.quantile import _PerQuantileAxis, fit_quantile_axis
+    rng = np.random.default_rng(2)
+    X = pd.DataFrame({"a": rng.normal(size=400), "b": rng.normal(size=400)})
+    y = (X["a"].to_numpy() * 2.0) + rng.normal(0, 0.2, size=400)
+    Xv = pd.DataFrame({"a": rng.normal(size=100), "b": rng.normal(size=100)})
+    yv = (Xv["a"].to_numpy() * 2.0) + rng.normal(0, 0.2, size=100)
+    axis = fit_quantile_axis(X, y, Xv, yv, family="lgbm", seed=0)
+    assert isinstance(axis, _PerQuantileAxis)
+    raw = axis.predict_raw(Xv)
+    assert raw.shape == (100, 3)
+    assert float(np.mean(raw[:, 2] >= raw[:, 0])) > 0.9
+
+
 def test_build_regression_predictions_schema():
     from tfg_aves.ml.evaluate import evaluate_by_state, evaluate_moves_only
     from tfg_aves.ml.quantile import build_regression_predictions

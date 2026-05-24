@@ -1,12 +1,13 @@
 """Regresión de cuantiles del desplazamiento (L3 de O4).
 
-Modela el target continuo (Δlat, Δlon) en grados con XGBoost
-(`objective='reg:quantileerror'`), tres cuantiles {p10,p50,p90} por eje.
-Las predicciones imitan el esquema de las de clasificación para reutilizar
-``tfg_aves.ml.evaluate`` sin cambios.
+Modela el target continuo (Δlat, Δlon) en grados con tres familias:
+XGBoost (`reg:quantileerror`) y LightGBM (`objective='quantile'`) con pérdida
+pinball nativa, y Random Forest vía Quantile Regression Forest. Tres cuantiles
+{p10, p50, p90} por eje; las predicciones son compatibles con ``tfg_aves.ml.evaluate``.
 """
 from __future__ import annotations
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -81,6 +82,51 @@ class _XGBQuantileRegressor(BaseEstimator, RegressorMixin):
         return getattr(self._reg, "best_iteration", None)
 
 
+class _LGBMQuantileRegressor(BaseEstimator, RegressorMixin):
+    """Espejo de _XGBQuantileRegressor con la API de LightGBM
+    (objective='quantile', alpha=q). Pérdida pinball nativa, un cuantil por
+    instancia. Config conservadora análoga a §8.6 de O4 (G4 del spec).
+    Early stopping sobre val con metric='quantile' si val no está vacío."""
+
+    def __init__(self, quantile: float, seed: int = 0) -> None:
+        self.quantile = quantile
+        self.seed = seed
+
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        X_val: pd.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> _LGBMQuantileRegressor:
+        has_val = X_val is not None and y_val is not None and len(X_val) > 0
+        self._reg = lgb.LGBMRegressor(
+            objective="quantile",
+            alpha=self.quantile,
+            n_estimators=1000,
+            learning_rate=0.05,
+            max_depth=6,
+            num_leaves=31,
+            min_child_samples=20,
+            subsample=0.8,
+            subsample_freq=1,      # necesario para que subsample<1 actúe en LGBM
+            colsample_bytree=0.8,
+            reg_lambda=1.0,
+            random_state=self.seed,
+            n_jobs=-1,
+            verbose=-1,
+        )
+        callbacks = [lgb.early_stopping(50, verbose=False)] if has_val else None
+        eval_set = [(X_val, y_val)] if has_val else None
+        self._reg.fit(
+            X, y, eval_set=eval_set, eval_metric="quantile", callbacks=callbacks,
+        )
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return np.asarray(self._reg.predict(X), dtype=np.float64)
+
+
 class _PerQuantileAxis:
     """Predictor de eje que envuelve un regresor independiente por cuantil
     (XGBoost o LightGBM). ``predict_raw`` apila los 3 cuantiles en orden
@@ -129,7 +175,7 @@ def fit_quantile_axis(
     """
     y_tr = np.asarray(y_train_axis, dtype=np.float64)
     if family in ("xgb", "lgbm"):
-        cls = _XGBQuantileRegressor if family == "xgb" else _LGBMQuantileRegressor  # noqa: F821
+        cls = _XGBQuantileRegressor if family == "xgb" else _LGBMQuantileRegressor
         y_va = np.asarray(y_val_axis, dtype=np.float64)
         models = {
             q: cls(quantile=q, seed=seed).fit(X_train, y_tr, X_val, y_va)
