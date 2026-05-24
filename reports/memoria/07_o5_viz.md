@@ -127,6 +127,40 @@ Cada decisión cita su evidencia en `reports/INDEX.md`.
   de secuencia (trabajo futuro de O4); una banda conjunta calibrada
   requeriría modelar la dependencia entre ejes.
 
+## Interpretación: ¿predecimos la misma ruta para todas las aves?
+
+Pregunta natural ante los mapas (y probable en defensa). **No existe una
+ruta fija común, pero sí una única *función* compartida por todas las aves.**
+
+- **El modelo es poblacional (sin `bird_id`).** Sus entradas son posición
+  actual (`lat`, `lon`), día del año (`sin/cos_doy`), cinemática reciente
+  (`step_in_km`, rumbo y giro entrantes) y estado del HMM
+  (`state_b_causal`, `posterior_b_migracion_causal`). **No incluye la
+  identidad del ave.**
+- **La predicción depende de *dónde está y cómo se ha movido* el ave, no de
+  *quién es*.** Cada ave obtiene una predicción distinta porque está en
+  posición/fecha/estado distintos (entradas distintas → salidas distintas);
+  por eso las trayectorias de los mapas difieren. Pero dos aves en
+  exactamente el mismo estado (misma posición, mismo día del año, misma
+  cinemática y mismo estado HMM) recibirían **la misma predicción**: el
+  modelo no personaliza.
+- **El modelo aprende el comportamiento *medio* de la población:** "una
+  gaviota que está aquí, en esta época, moviéndose así, mañana tiende a ir
+  allí". La regla es compartida; lo que cambia entre aves es la entrada, no
+  la regla.
+- **Es una decisión deliberada de O4** (no un descuido): el modelo
+  personalizado (con `bird_id`) aportaba ~0–1 pp y el individual de L3 empató
+  al poblacional → poblacional canónico. La personalización por ave aporta
+  poco a un día vista con estas features.
+- **En los mapas:** la vista A es predicción a un día (t→t+1) recalculada
+  para la posición real de cada día (no una ruta fija); la demo multi-paso
+  encadena una ruta, pero **partiendo de la posición real de un ave
+  concreta** —con otra ave u otro punto de partida saldría otra—, generada
+  por la misma función poblacional.
+- **Límite honesto:** sin `bird_id` ni historial multi-día, el modelo **no
+  captura rutas idiosincrásicas por individuo**. Queda como trabajo futuro
+  (modelos por individuo/jerárquicos o de secuencia con memoria multi-día).
+
 ## Notas para la redacción final
 
 - Expandir el matiz **marginal vs conjunta** de la calibración: es un punto
