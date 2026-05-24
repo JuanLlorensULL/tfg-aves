@@ -114,3 +114,19 @@ def test_persistence_predicts_cell_id_t() -> None:
         "pred_prob_top1", "pred_dist_km", "state_b_causal",
     }
     assert expected_cols.issubset(out.columns)
+
+
+def test_evaluate_moves_only_filters_correctly():
+    from tfg_aves.ml.evaluate import evaluate_moves_only
+    preds = pd.DataFrame({
+        "true_cell":      ["A", "B", "C", "D", "E"],
+        "pred_cell_top1": ["A", "B", "X", "D", "Y"],
+        "pred_cell_topk": [["A"], ["B"], ["X"], ["D"], ["Y"]],
+        "pred_dist_km":   [0.0, 0.0, 50.0, 0.0, 80.0],
+        "state_b_causal": [0, 1, 1, 1, 0],
+    })
+    # 3 filas se mueven (índices 1,2,3); de ellas aciertan top1 las 1 y 3
+    y_move = np.array([False, True, True, True, False])
+    result = evaluate_moves_only(preds, y_move)
+    assert result["n_obs"] == 3
+    assert np.isclose(result["top1"], 2 / 3)

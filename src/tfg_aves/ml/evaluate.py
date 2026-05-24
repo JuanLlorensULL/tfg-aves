@@ -264,6 +264,33 @@ def compute_markov_baseline(
     return pd.DataFrame(rows)
 
 
+def evaluate_moves_only(
+    predictions: pd.DataFrame, y_move_true: np.ndarray,
+) -> dict[str, float]:
+    """Métricas restringidas al subset donde verdaderamente y_move=1.
+
+    Aísla la calidad de clf_dest sin que la persistencia trivial domine.
+    Si predictions trae attrs["_proba"]/["_classes"], computa también
+    log_loss sobre el subset.
+    """
+    mask = np.asarray(y_move_true).astype(bool)
+    sub = predictions[mask].reset_index(drop=True)
+    result: dict[str, float] = {
+        "n_obs": int(mask.sum()),
+        "top1": top_k_accuracy(sub, k=1),
+        "top3": top_k_accuracy(sub, k=3),
+        "dist_median_km": dist_median_km(sub),
+    }
+    proba = predictions.attrs.get("_proba")
+    classes = predictions.attrs.get("_classes")
+    if proba is not None and classes is not None and mask.any():
+        y_str = sub["true_cell"].astype(str).to_numpy()
+        result["log_loss"] = float(
+            log_loss(y_str, np.asarray(proba)[mask], labels=list(classes)),
+        )
+    return result
+
+
 def compare_models(
     metrics_per_model: dict[str, dict[str, Any]],
     *, baselines: dict[str, dict[str, Any]],
