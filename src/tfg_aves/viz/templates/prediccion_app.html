@@ -12,7 +12,9 @@
   :root{
     --ink:#18222a; --panel:#212e39; --panel2:#2a3a47;
     --parch:#f1ead9; --muted:#9fb0bd; --line:#3a4a58;
-    --p50:#3b6ea5; --pers:#2e8b57; --real:#e08a3c;
+    /* Colores de datos (deben coincidir con el objeto C del script) */
+    --p50:#4dabf7; --band-fill:rgba(77,171,247,.16); --real:#f59f00;
+    --markov:#9775fa; --err:#fa5252; --estac:#1b3a6b; --migr:#d6336c;
     --side-w:320px;
   }
   *{box-sizing:border-box}
@@ -70,8 +72,8 @@
   .daynow{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--parch);
     background:var(--ink);border:1px solid var(--line);border-radius:7px;
     padding:8px 9px;text-align:center;margin-top:10px}
-  .errnow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:#ff6b6b;
-    background:var(--ink);border:1px solid #5a2a2a;border-radius:7px;
+  .errnow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--err);
+    background:var(--ink);border:1px solid var(--err);border-radius:7px;
     padding:7px 9px;text-align:center;margin-top:7px}
   .legend{margin-top:auto;padding-top:15px;border-top:1px solid var(--line);
     font-size:12.5px;line-height:1.9}
@@ -79,12 +81,13 @@
   .sw{width:15px;height:13px;border-radius:3px;flex:0 0 15px}
   .dot{width:11px;height:11px;border-radius:50%;flex:0 0 11px}
   .ring{width:12px;height:12px;border-radius:50%;border:2px solid var(--pers);flex:0 0 12px;box-sizing:border-box}
-  .mkleg{width:10px;height:10px;background:#8e6fb3;transform:rotate(45deg);flex:0 0 10px;margin:0 3px}
-  .chk{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:12.5px;cursor:pointer}
-  .chk input{accent-color:#8e6fb3;cursor:pointer}
+  .mkleg{width:10px;height:10px;background:var(--markov);transform:rotate(45deg);flex:0 0 10px;margin:0 3px}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;cursor:pointer}
+  .chk input{accent-color:var(--p50);cursor:pointer}
   .mk-wrap{background:none;border:none}
-  .mk{width:10px;height:10px;background:#8e6fb3;border:1.5px solid #fff;transform:rotate(45deg)}
-  .errline{width:16px;height:0;border-top:2px dashed #d62728;flex:0 0 16px}
+  .mk{width:10px;height:10px;background:var(--markov);border:1.5px solid #fff;transform:rotate(45deg)}
+  .errline{width:16px;height:0;border-top:2px dashed var(--err);flex:0 0 16px}
+  .leglabel{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:2px 0 5px}
   .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
     margin-top:11px;line-height:1.5}
   .leaflet-container{background:#dfe6e3;font-family:"IBM Plex Sans",sans-serif}
@@ -135,25 +138,29 @@
 
     <div class="legend" id="legend">
       <div id="daylegend">
-        <div class="row"><span class="dot" style="background:var(--p50)"></span> p50 — predicción de mañana</div>
-        <div class="row"><span class="sw" style="border:1px dashed var(--p50);background:rgba(59,110,165,.18)"></span> banda [p10, p90]</div>
-        <div class="row"><span class="mkleg"></span> Markov — centroide de celda 0,5°</div>
-        <div class="row"><span class="dot" style="background:var(--real)"></span> posición real de mañana</div>
-        <div class="row"><span class="errline"></span> error (p50 → real)</div>
-        <div id="yearlegend" style="margin-top:6px"></div>
+        <div class="leglabel">Predicción del día</div>
+        <div class="row"><span class="dot" style="background:var(--p50)"></span> p50 — destino previsto (mañana)</div>
+        <div class="row"><span class="sw" style="border:1px dashed var(--p50);background:var(--band-fill)"></span> banda [p10, p90]</div>
+        <div class="row"><span class="errline"></span> error p50 → real</div>
+        <div class="row"><span class="dot" style="background:var(--real)"></span> posición real (mañana)</div>
+        <div class="row"><span class="mkleg"></span> Markov — centroide celda 0,5°</div>
+        <div class="leglabel" style="margin-top:9px">Ruta real del ave</div>
+        <div id="yearlegend"></div>
         <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
       </div>
       <div id="alllegend" style="display:none">
+        <div class="leglabel">Rutas reales (test)</div>
         <div class="row">
           <span class="sw" style="background:linear-gradient(90deg,#e6194B,#3cb44b,#4363d8,#911eb4)"></span>
-          ruta real de cada ave (un color por ave)
+          una por ave (un color por ave)
         </div>
         <div class="foot">Vista de conjunto: rutas reales de las aves del test, sin
           predicción. Pasa el ratón por una ruta para resaltarla y ver el id del ave.</div>
       </div>
-      <div id="statelegend" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
-        <div class="row"><span class="dot" style="background:#16317d"></span> estacionario (O3)</div>
-        <div class="row"><span class="dot" style="background:#d62728"></span> migración (O3)</div>
+      <div id="statelegend" style="display:none;margin-top:9px;padding-top:9px;border-top:1px solid var(--line)">
+        <div class="leglabel">Estado HMM (O3)</div>
+        <div class="row"><span class="dot" style="background:var(--estac)"></span> estacionario</div>
+        <div class="row"><span class="dot" style="background:var(--migr)"></span> migración</div>
       </div>
     </div>
   </aside>
@@ -163,13 +170,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const DATA = __PRED_DATA__;
-const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8"];
+// 1er año = ámbar (= color "real"); resto distintos y sin rojo puro (evita choque con el error).
+const YEAR_PALETTE = ["#f59f00","#9775fa","#0ca678","#e8590c","#e64980","#15aabf"];
 // Paleta categórica para distinguir las rutas en la vista "Todas".
 const ALL_PALETTE = ["#e6194B","#3cb44b","#f58231","#4363d8","#911eb4","#42d4f4",
   "#f032e6","#469990","#9A6324","#800000","#808000","#000075","#e6ab02","#1b9e77",
   "#d95f02","#7570b3"];
-const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3", err:"#d62728",
-           estac:"#16317d", migr:"#d62728"};  // estado O3: estacionario / migración
+const C = {p50:"#4dabf7", real:"#f59f00", markov:"#9775fa", err:"#fa5252",
+           estac:"#1b3a6b", migr:"#d6336c"};  // coincide con las vars CSS :root
 
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
@@ -203,8 +211,8 @@ function drawTrajectory(){
   }
   const keys = Object.keys(cm);
   el("yearlegend").innerHTML = (keys.length > 1)
-    ? keys.map(y => `<div class="row"><span class="sw" style="background:${cm[y]}"></span> ruta real ${y}</div>`).join("")
-    : `<div class="row"><span class="sw" style="background:${C.real}"></span> ruta real (ventana)</div>`;
+    ? keys.map(y => `<div class="row"><span class="sw" style="background:${cm[y]}"></span> ${y}</div>`).join("")
+    : `<div class="row"><span class="sw" style="background:${C.real}"></span> ventana de test</div>`;
 }
 
 function drawDay(){
