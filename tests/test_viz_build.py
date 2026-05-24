@@ -1,0 +1,80 @@
+"""Test de orquestación de build_o5 sobre fixtures sintéticos."""
+from __future__ import annotations
+
+import pandas as pd
+
+from tfg_aves.viz.build import build_o5_tables
+
+
+def test_build_o5_tables_curated_and_regime(tmp_path):
+    preds = pd.DataFrame({
+        "bird_id": ["91916A"] * 4,
+        "date_utc": pd.to_datetime(["2020-04-01", "2020-04-02", "2020-09-01", "2020-09-02"]),
+        "pred_lat": [40.3, 40.4, 41.0, 41.1], "pred_lon": [-2.7, -2.8, -2.7, -2.6],
+        "dlat_p50": [0.1, 0.1, 0.1, 0.1], "dlon_p50": [0.05, 0.05, 0.05, 0.05],
+        "dist_native_km": [10.0, 30.0, 200.0, 400.0],
+        "true_cell": ["80_-6", "80_-6", "82_-6", "82_-6"],
+        "pred_cell_top1": ["80_-6", "80_-7", "82_-6", "82_-7"],
+        "state_b_causal": [0, 0, 1, 1],
+        "in_interval_lat": [True, True, False, True],
+        "in_interval_lon": [True, False, True, False],
+    })
+    daily = pd.DataFrame({
+        "bird_id": ["91916A"] * 4,
+        "date_utc": pd.to_datetime(["2020-04-01", "2020-04-02", "2020-09-01", "2020-09-02"]),
+        "lat": [40.2, 40.3, 40.9, 41.0], "lon": [-2.75, -2.85, -2.75, -2.65],
+        "is_valid": [True, True, True, True],
+    })
+    features_o3 = pd.DataFrame({
+        "bird_id": ["91916A"] * 4, "state_b": [0, 0, 1, 1],
+    })
+    tables = build_o5_tables(preds, daily=daily, features_o3=features_o3, project_root=tmp_path)
+    assert set(tables) == {"aves_curadas", "por_regimen", "por_mes"}
+    assert (tmp_path / "reports" / "tables" / "o5_tab02_error-por-regimen.csv").exists()
+    assert len(tables["aves_curadas"]) == 4
+
+
+def test_build_o5_maps_writes_html(tmp_path):
+    from tfg_aves.viz.build import build_error_maps
+    preds = pd.DataFrame({
+        "bird_id": ["91916A"] * 3,
+        "date_utc": pd.to_datetime(["2020-04-01", "2020-04-02", "2020-09-01"]),
+        "pred_lat": [40.3, 40.4, 41.0], "pred_lon": [-2.7, -2.8, -2.7],
+        "dlat_p50": [0.1, 0.1, 0.1], "dlon_p50": [0.05, 0.05, 0.05],
+        "dist_native_km": [10.0, 30.0, 200.0],
+        "true_cell": ["80_-6", "80_-6", "82_-6"],
+        "pred_cell_top1": ["80_-6", "80_-7", "82_-6"],
+        "state_b_causal": [0, 0, 1],
+        "in_interval_lat": [True, True, False], "in_interval_lon": [True, False, True],
+    })
+    cells = pd.DataFrame({
+        "cell_id": ["80_-6", "80_-7", "82_-6"], "lat_c": [40.25, 40.25, 41.25],
+        "lon_c": [-2.75, -3.25, -2.75],
+    })
+    out = build_error_maps(preds, cells, out_dir=tmp_path)
+    assert (tmp_path / "o5_fig20_error-por-celda.html").exists()
+    assert (tmp_path / "o5_fig21_calibracion-por-celda.html").exists()
+
+
+def test_build_multistep_demo_with_injected_axes(tmp_path):
+    from tfg_aves.viz.build import build_multistep_demo
+
+    class _FakeAxis:
+        def predict_raw(self, X):
+            return [[0.0, 0.1, 0.2]] * len(X)
+
+    preds = pd.DataFrame({
+        "bird_id": ["91916A", "91916A"],
+        "date_utc": pd.to_datetime(["2020-09-01", "2020-09-02"]),
+        "state_b_causal": [1, 1],
+    })
+    daily = pd.DataFrame({
+        "bird_id": ["91916A"] * 4,
+        "date_utc": pd.to_datetime(["2020-08-30", "2020-08-31", "2020-09-01", "2020-09-02"]),
+        "lat": [40.0, 40.1, 40.2, 40.3], "lon": [-3.0, -3.0, -3.0, -3.0],
+        "is_valid": [True] * 4,
+    })
+    out = build_multistep_demo(preds, daily, out_dir=tmp_path,
+                               axes=(_FakeAxis(), _FakeAxis()), k=3)
+    assert out
+    assert (tmp_path / "o5_fig30_demo-multipaso-91916A.html").exists()
