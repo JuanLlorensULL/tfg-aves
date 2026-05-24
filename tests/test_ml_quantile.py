@@ -35,3 +35,27 @@ def test_fit_quantile_axis_shapes_and_order():
     assert p10.shape == (80,)
     # En media, el cuantil 90 está por encima del 10.
     assert float(np.mean(p90 >= p10)) > 0.9
+
+
+class _Const:
+    """Modelo de juguete que predice una constante (para tests de monotonía)."""
+    def __init__(self, v: float) -> None:
+        self.v = v
+    def predict(self, X) -> np.ndarray:
+        return np.full(len(X), self.v, dtype=float)
+
+
+def test_predict_quantiles_monotonic_and_crossings():
+    from tfg_aves.ml.quantile import predict_quantiles
+    X = pd.DataFrame({"a": [0.0, 0.0, 0.0]})
+    # lat: cuantiles DESORDENADOS (1.0, 0.0, 0.5) -> cruce en las 3 filas.
+    models_lat = {0.10: _Const(1.0), 0.50: _Const(0.0), 0.90: _Const(0.5)}
+    # lon: cuantiles ya ordenados (-0.5, 0.0, 0.5) -> sin cruces.
+    models_lon = {0.10: _Const(-0.5), 0.50: _Const(0.0), 0.90: _Const(0.5)}
+    preds, crossings = predict_quantiles(models_lat, models_lon, X)
+    assert (preds["dlat_p10"] <= preds["dlat_p50"]).all()
+    assert (preds["dlat_p50"] <= preds["dlat_p90"]).all()
+    assert (preds["dlon_p10"] <= preds["dlon_p50"]).all()
+    assert crossings["lat"] == 3
+    assert crossings["lon"] == 0
+    assert len(preds) == 3

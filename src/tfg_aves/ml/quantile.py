@@ -96,3 +96,33 @@ def fit_quantile_axis(
             X_val, np.asarray(y_val_axis, dtype=np.float64),
         )
     return models
+
+
+def _axis_quantiles_sorted(
+    models: dict[float, _XGBQuantileRegressor], X: pd.DataFrame,
+) -> tuple[np.ndarray, int]:
+    """Devuelve (matriz (n,3) ordenada por fila, nº de filas con cruce)."""
+    raw = np.column_stack([models[q].predict(X) for q in QUANTILES])
+    ordered = raw[:, 0] <= raw[:, 1]
+    ordered &= raw[:, 1] <= raw[:, 2]
+    n_crossings = int(np.sum(~ordered))
+    sorted_q = np.sort(raw, axis=1)
+    return sorted_q, n_crossings
+
+
+def predict_quantiles(
+    models_lat: dict[float, _XGBQuantileRegressor],
+    models_lon: dict[float, _XGBQuantileRegressor],
+    X: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Predice los 6 cuantiles, fuerza monotonía por eje (np.sort) y devuelve
+    (DataFrame con dlat_p10/50/90, dlon_p10/50/90, índice 0..n-1; dict de cruces
+    ANTES de ordenar, para el artefacto C5).
+    """
+    lat_q, n_cross_lat = _axis_quantiles_sorted(models_lat, X)
+    lon_q, n_cross_lon = _axis_quantiles_sorted(models_lon, X)
+    out = pd.DataFrame({
+        "dlat_p10": lat_q[:, 0], "dlat_p50": lat_q[:, 1], "dlat_p90": lat_q[:, 2],
+        "dlon_p10": lon_q[:, 0], "dlon_p50": lon_q[:, 1], "dlon_p90": lon_q[:, 2],
+    })
+    return out, {"lat": n_cross_lat, "lon": n_cross_lon}
