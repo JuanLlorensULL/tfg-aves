@@ -126,3 +126,41 @@ def predict_quantiles(
         "dlon_p10": lon_q[:, 0], "dlon_p50": lon_q[:, 1], "dlon_p90": lon_q[:, 2],
     })
     return out, {"lat": n_cross_lat, "lon": n_cross_lon}
+
+
+def point_to_cell(
+    lat_pred: np.ndarray, lon_pred: np.ndarray, cells: pd.DataFrame,
+    cell_deg: float = CELL_DEG,
+) -> pd.DataFrame:
+    """Mapea cada punto a su celda contenedora (discretización al grid 0,5°).
+
+    Devuelve un DataFrame con: cell_id (str del grid, activo o no), cent_lat,
+    cent_lon (centroide analítico de la celda contenedora) e is_active (bool,
+    si la celda está en ``cells``). El centroide es analítico para que la
+    distancia vía centroide quede definida también fuera del grid activo.
+    """
+    lat_pred = np.asarray(lat_pred, dtype=np.float64)
+    lon_pred = np.asarray(lon_pred, dtype=np.float64)
+    i = np.floor(lat_pred / cell_deg).astype(int)
+    j = np.floor(lon_pred / cell_deg).astype(int)
+    cell_ids = [_format_cell_id(int(a), int(b)) for a, b in zip(i, j, strict=True)]
+    cent_lat = (i + 0.5) * cell_deg
+    cent_lon = (j + 0.5) * cell_deg
+    active = set(cells["cell_id"].astype(str))
+    is_active = np.array([c in active for c in cell_ids])
+    return pd.DataFrame({
+        "cell_id": cell_ids, "cent_lat": cent_lat, "cent_lon": cent_lon,
+        "is_active": is_active,
+    })
+
+
+def nearest_cells(
+    lat_pred: float, lon_pred: float, cells: pd.DataFrame, k: int = 3,
+) -> list[str]:
+    """k celdas activas cuyo centroide está más cerca del punto (proximidad)."""
+    d = np.asarray(haversine_km(
+        cells["lat_c"].to_numpy(), cells["lon_c"].to_numpy(),
+        float(lat_pred), float(lon_pred),
+    ))
+    order = np.argsort(d)[:k]
+    return [str(c) for c in cells["cell_id"].to_numpy()[order]]

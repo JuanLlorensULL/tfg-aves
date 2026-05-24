@@ -59,3 +59,30 @@ def test_predict_quantiles_monotonic_and_crossings():
     assert crossings["lat"] == 3
     assert crossings["lon"] == 0
     assert len(preds) == 3
+
+
+def test_point_to_cell_known():
+    from tfg_aves.ml.quantile import point_to_cell
+    cells = pd.DataFrame({
+        "cell_id": ["80_-6"], "cell_lat_idx": [80], "cell_lon_idx": [-6],
+        "lat_c": [40.25], "lon_c": [-2.75],
+    })
+    # (40.3, -2.7): i=floor(40.3/0.5)=80, j=floor(-2.7/0.5)=-6 -> "80_-6".
+    # (10.0, 10.0): celda "20_20", no presente en cells -> is_active False.
+    out = point_to_cell(np.array([40.3, 10.0]), np.array([-2.7, 10.0]), cells)
+    assert out["cell_id"].iloc[0] == "80_-6"
+    assert bool(out["is_active"].iloc[0]) is True
+    assert np.isclose(out["cent_lat"].iloc[0], 40.25)
+    assert np.isclose(out["cent_lon"].iloc[0], -2.75)
+    assert bool(out["is_active"].iloc[1]) is False
+
+
+def test_nearest_cells_orders_by_distance():
+    from tfg_aves.ml.quantile import nearest_cells
+    cells = pd.DataFrame({
+        "cell_id": ["A", "B", "C"],
+        "lat_c": [40.0, 40.0, 50.0], "lon_c": [-3.0, -3.5, -3.0],
+    })
+    out = nearest_cells(40.0, -3.05, cells, k=2)
+    assert out[0] == "A"
+    assert set(out) == {"A", "B"}
