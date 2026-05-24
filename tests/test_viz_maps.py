@@ -81,3 +81,23 @@ def test_multistep_demo_map_renders():
     real = pd.DataFrame({"lat": [40.1, 40.15, 40.18], "lon": [-3.0, -2.98, -2.95]})
     m = multistep_demo_map(chain, real, start=(40.1, -3.0))
     assert m.get_root().render()
+
+
+def test_prediction_map_colors_trajectory_by_year_when_multiyear():
+    # Periodo de test que cruza dos años -> la leyenda lista ambos.
+    preds = pd.DataFrame({
+        "bird_id": ["A", "A"],
+        "date_utc": pd.to_datetime(["2020-12-30", "2021-01-02"]),
+        "pred_lat": [40.3, 40.5], "pred_lon": [-2.7, -2.6],
+        "dlat_p10": [0.05, 0.05], "dlat_p50": [0.1, 0.1], "dlat_p90": [0.15, 0.15],
+        "dlon_p10": [-0.05, -0.05], "dlon_p50": [0.0, 0.0], "dlon_p90": [0.05, 0.05],
+    })
+    daily = pd.DataFrame({
+        "bird_id": ["A"] * 4,
+        "date_utc": pd.to_datetime(["2020-12-30", "2020-12-31", "2021-01-01", "2021-01-02"]),
+        "lat": [40.2, 40.25, 40.3, 40.4], "lon": [-2.75, -2.72, -2.70, -2.65],
+        "is_valid": [True, True, True, True],
+    })
+    html = prediction_map(preds, daily, bird_id="A").get_root().render()
+    assert "trayectoria real 2020" in html
+    assert "trayectoria real 2021" in html

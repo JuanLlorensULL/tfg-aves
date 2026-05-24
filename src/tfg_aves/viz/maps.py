@@ -90,16 +90,41 @@ def prediction_map(
         pd.Timestamp(d): (float(la), float(lo))
         for d, la, lo in zip(day["date_utc"], day["lat"], day["lon"], strict=True)
     }
+    # year_colors queda vacío si el periodo de test cubre un solo año (línea
+    # naranja única); si cubre varios, mapea cada año a un color para la línea
+    # y para la leyenda.
+    year_colors: dict[int, str] = {}
     if len(sub):
         t_min = pd.Timestamp(sub["date_utc"].min())
         t_max = pd.Timestamp(sub["date_utc"].max()) + pd.Timedelta(days=1)
         day_test = day[(day["date_utc"] >= t_min) & (day["date_utc"] <= t_max)]
         traj = folium.FeatureGroup(name="Trayectoria real (test)")
-        folium.PolyLine(
-            list(zip(day_test["lat"], day_test["lon"], strict=True)),
-            color="#e08a3c", weight=2, opacity=0.5,
-            tooltip=f"Trayectoria real {bird_id} (test)",
-        ).add_to(traj)
+        years = sorted(int(y) for y in day_test["date_utc"].dt.year.unique())
+        if len(years) <= 1:
+            folium.PolyLine(
+                list(zip(day_test["lat"], day_test["lon"], strict=True)),
+                color="#e08a3c", weight=2, opacity=0.6,
+                tooltip=f"Trayectoria real {bird_id} (test)",
+            ).add_to(traj)
+        else:
+            # Más de un año en el periodo: una polilínea por año con color
+            # propio. Cada año arranca en el último punto del anterior para que
+            # la ruta quede continua (el tramo puente hereda el color del año
+            # nuevo). Paleta sin azul/verde (reservados a predicción y persistencia).
+            palette = ["#e08a3c", "#9467bd", "#8c564b", "#d62728", "#e377c2", "#17a2b8"]
+            year_colors = {y: palette[i % len(palette)] for i, y in enumerate(years)}
+            prev_tail = None
+            for y in years:
+                seg = day_test[day_test["date_utc"].dt.year == y]
+                pts = list(zip(seg["lat"], seg["lon"], strict=True))
+                if prev_tail is not None:
+                    pts = [prev_tail, *pts]
+                if pts:
+                    folium.PolyLine(
+                        pts, color=year_colors[y], weight=2, opacity=0.7,
+                        tooltip=f"Trayectoria real {bird_id} — {y}",
+                    ).add_to(traj)
+                    prev_tail = pts[-1]
         traj.add_to(m)
     features: list[dict] = []
     for _, r in sub.iterrows():
@@ -139,6 +164,14 @@ def prediction_map(
     ).add_to(m)
     folium.LayerControl().add_to(m)
 
+    if year_colors:
+        traj_legend = "<br>".join(
+            f'<span style="color:{c}">&#9472;</span> trayectoria real {y}'
+            for y, c in year_colors.items()
+        )
+    else:
+        traj_legend = ('<span style="color:#e08a3c">&#9472;</span> '
+                       "trayectoria real (periodo de test)")
     legend_html = f"""
     <div style="position: fixed; bottom: 38px; left: 8px; z-index: 9999;
                 background: white; padding: 8px 11px; border: 1px solid #999;
@@ -149,7 +182,7 @@ def prediction_map(
       <span style="color:#3b6ea5">&#9633;</span> banda [p10,p90]<br>
       <span style="color:#2e8b57">&#9711;</span> persistencia (=hoy) &nbsp;
       <span style="color:#e08a3c">&#9679;</span> real t+1<br>
-      <span style="color:#e08a3c">&#9472;</span> trayectoria real (periodo de test)<br>
+      {traj_legend}<br>
       <i>Usa el control de tiempo (abajo) para avanzar día a día.</i>
     </div>"""
     m.get_root().html.add_child(folium.Element(legend_html))
