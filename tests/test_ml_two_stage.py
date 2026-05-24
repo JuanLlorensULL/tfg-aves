@@ -55,3 +55,24 @@ def test_combine_soft_handles_p2b_cellt_near_one():
     out = ts.combine_soft(p_move, p_2b, cell_t_idx, n_classes=3)
     assert np.all(np.isfinite(out))
     assert np.isclose(out.sum(), 1.0, atol=1e-6)
+
+
+def test_combine_hard_threshold():
+    # fila 0: p_move<tau -> predice cell_t (idx 0)
+    # fila 1: p_move>=tau -> predice argmax(p_2b) (idx 2)
+    p_move = np.array([0.1, 0.9])
+    p_2b = np.array([[0.1, 0.3, 0.6], [0.1, 0.3, 0.6]])
+    cell_t_idx = np.array([0, 0])
+    out = ts.combine_hard(p_move, p_2b, cell_t_idx, tau=0.5)
+    assert out.argmax(axis=1).tolist() == [0, 2]
+
+
+def test_combine_hard_is_distribution():
+    rng = np.random.default_rng(1)
+    p_move = rng.random(20)
+    p_2b = rng.random((20, 5))
+    p_2b /= p_2b.sum(axis=1, keepdims=True)
+    cell_t_idx = rng.integers(0, 5, size=20)
+    out = ts.combine_hard(p_move, p_2b, cell_t_idx, tau=0.5)
+    assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6)
+    assert np.all(out > 0.0)  # clipping garantiza positividad estricta

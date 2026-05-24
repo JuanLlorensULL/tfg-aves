@@ -45,3 +45,24 @@ def combine_soft(
     row_sums = out.sum(axis=1, keepdims=True)
     row_sums = np.where(row_sums <= 0.0, 1.0, row_sums)
     return out / row_sums
+
+
+def combine_hard(
+    p_move: np.ndarray,
+    p_2b: np.ndarray,
+    cell_t_idx: np.ndarray,
+    tau: float,
+    eps: float = 1e-7,
+) -> np.ndarray:
+    """Regla hard: cell_t si p_move<tau, si no argmax(p_2b).
+
+    Devuelve (n, n_classes) con masa 1-eps en la celda predicha y
+    eps/(n_classes-1) repartida en el resto. El clipping existe sólo por
+    compatibilidad con sklearn.metrics.log_loss; el log-loss numérico de
+    hard NO es una métrica honesta (cada fallo de argmax suma ~22.86).
+    """
+    n, n_classes = p_2b.shape
+    pred_idx = np.where(p_move < tau, cell_t_idx, p_2b.argmax(axis=1))
+    out = np.full((n, n_classes), eps / (n_classes - 1), dtype=np.float64)
+    out[np.arange(n), pred_idx] = 1.0 - eps
+    return out
