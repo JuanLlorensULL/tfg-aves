@@ -109,18 +109,48 @@ Reorganizada en bloques con cabeceras (`.leglabel`):
 - **Rutas reales (test)** (solo vista "Todas").
 - **Estado HMM (O3)**: estacionario / migración (solo al activar el toggle).
 
-## Datos embebidos (`prediction_app_data`)
+## Datos embebidos (`prediction_app_data`) — estado actual
 
-`{"birds":[...], "all":[...], "curated":[...]}`:
-- `birds`: TODAS las aves del test, ordenadas por histórico desc; cada una
-  `{"id", "days":[...]}`. Cada día: `date`, `year`, `o` (origen=pred−p50),
-  `p` (p50), `band` [[sur,oeste],[norte,este]], `r` (real t+1 o null),
-  `m` (punto Markov o null), `e` (error km), `s` (estado O3 0/1).
-- `all`: rutas reales de las 82 aves para la vista "Todas" (`track` +
-  `st` estado por punto).
+`{"birds":[...], "curated":[...]}` (el antiguo `all` se eliminó; todo deriva
+de `birds`):
+- `birds`: TODAS las aves del test, ordenadas por **histórico desc**; cada
+  una `{"id", "days":[...], "hist":[...]}`.
+  - `days` (test): `date`, `year`, `o` (origen=pred−p50), `p` (p50),
+    `band` [[sur,oeste],[norte,este]], `r` (real t+1 o null), `m` (punto
+    Markov o null), `e` (error km p50→real), `s` (estado O3 0/1).
+  - `hist`: recorrido **completo train+test**, lista de `[lat, lon, año]`
+    por día válido (para "Todas" y el toggle de histórico, ambos por año).
 - `curated`: ids de las 4 aves de más histórico (referencia).
 - Markov: `markov_points_for_test(features_o3, cells)` calcula el punto para
-  TODO el test (reusa el baseline de O4).
+  TODO el test (reusa el baseline de O4). El error de Markov se computa en
+  JS (haversine punto Markov → real).
+
+## Extensiones posteriores (estado a HEAD `54c41bc`)
+
+Añadidas tras redactar este documento (todas presentes en la app actual):
+
+1. **82 aves** seleccionables, **ordenadas por histórico desc**; "Todas" la
+   primera. (Antes solo las 4 curadas.)
+2. **Vista "Todas" = recorridos completos train+test** (de `hist`), un color
+   por ave; **clic en una ruta abre la vista de esa ave**; hover resalta.
+3. **Toggle "Histórico completo (train+test)"** en la vista por ave: línea
+   fina **coloreada por año** (mismo mapa año→color que la ruta real, a
+   nivel de ave).
+4. **Estela de la predicción**: traza los p50 desde el inicio de la ventana
+   hasta el día actual, **coloreada por año**, que **crece al reproducir**.
+   Estilo: ruta real **gruesa** (3,5) y sólida; estela predicha **fina**
+   (1,8) y **semitransparente** (0,45); histórico el más fino (1,3).
+5. **Markov**: además del rombo, **línea discontinua violeta Markov→real** y
+   **caja violeta "Markov X km"** con su error, junto a la caja roja del
+   error de L3 (ambas solo cuando hay día real).
+6. **Botón ⏮ = retroceder UN día** (no resetea al inicio); ⏭ avanza uno.
+7. Color por año a nivel de ave (`birdYearColors`, sobre `hist`), compartido
+   por ruta real, estela e histórico → un año = un color en las tres capas.
+
+Capas Leaflet (de abajo a arriba): `histLayer`, `trajLayer` (real),
+`trailLayer` (estela), `dayLayer` (día actual), `allLayer` (Todas),
+`stateLayer` (estado O3). Validación tras cada cambio: `node --check` del
+`<script>` inline + JSON embebido parseable + `pytest tests/test_viz_build.py`.
 
 ## Decisiones descartadas
 
