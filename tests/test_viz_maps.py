@@ -4,7 +4,13 @@ from __future__ import annotations
 import folium
 import pandas as pd
 
-from tfg_aves.viz.maps import calibration_choropleth, error_choropleth
+from tfg_aves.viz.maps import (
+    calibration_choropleth,
+    error_choropleth,
+    failure_vectors_map,
+    multistep_demo_map,
+    prediction_map,
+)
 
 
 def _error_df():
@@ -35,7 +41,6 @@ def test_calibration_choropleth_returns_map():
 
 
 def test_prediction_map_one_bird_layers():
-    from tfg_aves.viz.maps import prediction_map
     preds = pd.DataFrame({
         "bird_id": ["A", "A"],
         "date_utc": pd.to_datetime(["2020-04-01", "2020-04-02"]),
@@ -54,7 +59,6 @@ def test_prediction_map_one_bird_layers():
 
 
 def test_failure_vectors_map_migration_only():
-    from tfg_aves.viz.maps import failure_vectors_map
     preds = pd.DataFrame({
         "bird_id": ["A", "B"], "date_utc": pd.to_datetime(["2020-04-01", "2020-09-01"]),
         "pred_lat": [42.0, 50.0], "pred_lon": [-2.0, 3.0],
@@ -70,7 +74,6 @@ def test_failure_vectors_map_migration_only():
 
 
 def test_multistep_demo_map_renders():
-    from tfg_aves.viz.maps import multistep_demo_map
     chain = pd.DataFrame({
         "step": [1, 2], "lat": [40.2, 40.3], "lon": [-3.0, -3.0],
         "cone_halfwidth_lat": [0.05, 0.10], "cone_halfwidth_lon": [0.05, 0.10],

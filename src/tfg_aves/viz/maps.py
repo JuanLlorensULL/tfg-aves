@@ -142,6 +142,9 @@ def failure_vectors_map(
     ``daily`` (posición real del día siguiente, mismo bird_id).
     """
     mig = preds[preds["state_b_causal"] == 1].nlargest(top_n, "dist_native_km")
+    if mig.empty:
+        # Sin días de migración no hay centroide; mapa base vacío.
+        return folium.Map(location=[40.0, -3.0], zoom_start=4, tiles="cartodbpositron")
     m = _map_centered(mig["pred_lat"], mig["pred_lon"], zoom=4)
     day = daily[daily["is_valid"]].copy()
     for _, r in mig.iterrows():
