@@ -70,28 +70,37 @@ def prediction_map(
 ) -> folium.Map:
     """Vista A (un día) para un ave, con slider temporal.
 
-    Capa estática: trayectoria real de contexto. Capa animada
-    (``TimestampedGeoJson``, un día por frame): por cada día de test, la banda
-    rectangular [p10,p90], la línea origen→p50, el punto p50, la persistencia
-    (=origen) y el real t+1. El origen del día t se recupera como
-    ``pred - dlat/dlon_p50``. La capa Markov(1) (apagada por defecto, V5) se
-    omite en esta versión por simplicidad: persistencia es la baseline
-    didáctica relevante.
+    Capa animada (``TimestampedGeoJson``, un día por frame): por cada día de
+    test, la banda rectangular [p10,p90], la línea origen→p50, el punto p50,
+    la persistencia (=origen) y el real t+1. El origen del día t se recupera
+    como ``pred - dlat/dlon_p50``. La trayectoria real se restringe al PERIODO
+    DE TEST y va en una capa conmutable (``LayerControl``) para no recargar.
+    Se añade una leyenda fija. La capa Markov(1) (apagada por defecto, V5) se
+    omite por simplicidad: persistencia es la baseline didáctica relevante.
     """
     sub = preds_bird[preds_bird["bird_id"] == bird_id].sort_values("date_utc")
     day = daily[(daily["bird_id"] == bird_id) & daily["is_valid"]].sort_values("date_utc")
+    day = day.copy()
+    day["date_utc"] = pd.to_datetime(day["date_utc"])
     m = _map_centered(day["lat"], day["lon"], zoom=5)
 
-    folium.PolyLine(
-        list(zip(day["lat"], day["lon"], strict=True)),
-        color="#e08a3c", weight=2, opacity=0.5,
-        tooltip=f"Trayectoria real {bird_id}",
-    ).add_to(m)
-
+    # Trayectoria real SOLO del periodo de test (días predichos t..t+1), en capa
+    # conmutable: la ruta de toda la vida del ave recargaba el mapa.
     real_by_date = {
         pd.Timestamp(d): (float(la), float(lo))
         for d, la, lo in zip(day["date_utc"], day["lat"], day["lon"], strict=True)
     }
+    if len(sub):
+        t_min = pd.Timestamp(sub["date_utc"].min())
+        t_max = pd.Timestamp(sub["date_utc"].max()) + pd.Timedelta(days=1)
+        day_test = day[(day["date_utc"] >= t_min) & (day["date_utc"] <= t_max)]
+        traj = folium.FeatureGroup(name="Trayectoria real (test)")
+        folium.PolyLine(
+            list(zip(day_test["lat"], day_test["lon"], strict=True)),
+            color="#e08a3c", weight=2, opacity=0.5,
+            tooltip=f"Trayectoria real {bird_id} (test)",
+        ).add_to(traj)
+        traj.add_to(m)
     features: list[dict] = []
     for _, r in sub.iterrows():
         d = pd.Timestamp(r["date_utc"])
@@ -129,6 +138,21 @@ def prediction_map(
         auto_play=False, loop=False, transition_time=200,
     ).add_to(m)
     folium.LayerControl().add_to(m)
+
+    legend_html = f"""
+    <div style="position: fixed; bottom: 38px; left: 8px; z-index: 9999;
+                background: white; padding: 8px 11px; border: 1px solid #999;
+                border-radius: 4px; font-size: 12px; line-height: 1.6;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.3);">
+      <b>{bird_id} — predicción del destino a 1 día</b><br>
+      <span style="color:#3b6ea5">&#9679;</span> p50 (predicción) &nbsp;
+      <span style="color:#3b6ea5">&#9633;</span> banda [p10,p90]<br>
+      <span style="color:#2e8b57">&#9711;</span> persistencia (=hoy) &nbsp;
+      <span style="color:#e08a3c">&#9679;</span> real t+1<br>
+      <span style="color:#e08a3c">&#9472;</span> trayectoria real (periodo de test)<br>
+      <i>Usa el control de tiempo (abajo) para avanzar día a día.</i>
+    </div>"""
+    m.get_root().html.add_child(folium.Element(legend_html))
     return m
 
 
