@@ -245,28 +245,15 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
         # válidos del ave, no solo los de test. Contexto opcional en la app.
         dh = dsub.sort_values("date_utc")
         hist = [
-            [round(float(la), 5), round(float(lo), 5)]
-            for la, lo in zip(dh["lat"], dh["lon"], strict=True)
+            [round(float(la), 5), round(float(lo), 5), int(pd.Timestamp(dt).year)]
+            for dt, la, lo in zip(dh["date_utc"], dh["lat"], dh["lon"], strict=True)
         ]
         birds_out.append({"id": str(bird), "days": days_out, "hist": hist})
 
-    # Rutas reales del test de TODAS las aves (no solo las curadas) para la
-    # vista "Todas": la secuencia de orígenes (pred - p50) por ave.
-    all_tracks: list[dict] = []
-    for bird_id, sub in preds.sort_values(["bird_id", "date_utc"]).groupby(
-        "bird_id", sort=False,
-    ):
-        track = [
-            [round(float(pl) - float(dl), 5), round(float(po) - float(do), 5)]
-            for pl, dl, po, do in zip(
-                sub["pred_lat"], sub["dlat_p50"],
-                sub["pred_lon"], sub["dlon_p50"], strict=True,
-            )
-        ]
-        if len(track) >= 2:
-            st = [int(s) for s in sub["state_b_causal"]]  # estado O3 por punto
-            all_tracks.append({"id": str(bird_id), "track": track, "st": st})
-    return {"birds": birds_out, "all": all_tracks, "curated": [str(b) for b in curated]}
+    # La vista "Todas" y el overlay de estado se derivan de birds_out
+    # (hist = recorrido completo con año por punto; days = estado por día);
+    # no hace falta un array aparte.
+    return {"birds": birds_out, "curated": [str(b) for b in curated]}
 
 
 def markov_points_for_test(features_o3: pd.DataFrame, cells: pd.DataFrame,

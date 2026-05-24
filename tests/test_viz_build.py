@@ -128,12 +128,11 @@ def test_prediction_app_data_shape_and_origin_recovery():
     assert d0["e"] == 12.0 and days[1]["e"] == 45.0
     # estado O3 por día (0 estacionario, 1 migración)
     assert d0["s"] == 0 and days[1]["s"] == 1
-    # recorrido histórico completo del ave (todos los días válidos del daily)
-    assert len(data["birds"][0]["hist"]) == 3
-    # vista "Todas": rutas reales + estado por punto
-    assert data["all"][0]["id"] == "91916A"
-    assert len(data["all"][0]["track"]) == 2
-    assert data["all"][0]["st"] == [0, 1]
+    # recorrido histórico completo: 3 días válidos, cada punto [lat, lon, año]
+    hist = data["birds"][0]["hist"]
+    assert len(hist) == 3
+    assert hist[0] == [40.2, -2.75, 2014]
+    assert hist[1][2] == 2015
 
 
 def test_build_prediction_app_writes_html_with_data(tmp_path):

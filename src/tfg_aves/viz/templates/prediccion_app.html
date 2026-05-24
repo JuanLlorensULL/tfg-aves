@@ -79,6 +79,9 @@
   .errnow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--err);
     background:var(--ink);border:1px solid var(--err);border-radius:7px;
     padding:7px 9px;text-align:center;margin-top:7px}
+  .mkerrnow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--markov);
+    background:var(--ink);border:1px solid var(--markov);border-radius:7px;
+    padding:7px 9px;text-align:center;margin-top:6px}
   .legend{margin-top:auto;padding-top:15px;border-top:1px solid var(--line);
     font-size:12.5px;line-height:1.9}
   .legend .row{display:flex;align-items:center;gap:9px}
@@ -91,7 +94,7 @@
   .mk-wrap{background:none;border:none}
   .mk{width:10px;height:10px;background:var(--markov);border:1.5px solid #fff;transform:rotate(45deg)}
   .errline{width:16px;height:0;border-top:2px dashed var(--err);flex:0 0 16px}
-  .histline{width:16px;height:0;border-top:2px solid #868e96;flex:0 0 16px}
+  .mkerrline{width:16px;height:0;border-top:2px dashed var(--markov);flex:0 0 16px}
   .leglabel{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:2px 0 5px}
   .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
     margin-top:11px;line-height:1.5}
@@ -137,6 +140,7 @@
       <div class="fps"><span>vel.</span><input type="range" id="fps" min="1" max="15" value="3"><span id="fpsv">3&nbsp;fps</span></div>
       <div class="daynow" id="daynow">&mdash;</div>
       <div class="errnow" id="errnow">error &mdash;</div>
+      <div class="mkerrnow" id="mkerrnow" style="display:none">Markov &mdash;</div>
       <label class="chk"><input type="checkbox" id="showMarkov" checked> Mostrar punto de Markov</label>
       <label class="chk"><input type="checkbox" id="showRoute" checked> Mostrar ruta real del ave</label>
       <label class="chk"><input type="checkbox" id="showHist"> Histórico completo (train+test)</label>
@@ -151,9 +155,10 @@
         <div class="row"><span class="errline"></span> error p50 → real</div>
         <div class="row"><span class="dot" style="background:var(--real)"></span> posición real (mañana)</div>
         <div class="row"><span class="mkleg"></span> Markov — centroide celda 0,5°</div>
+        <div class="row"><span class="mkerrline"></span> error Markov → real</div>
         <div class="leglabel" style="margin-top:9px">Ruta real del ave</div>
         <div id="yearlegend"></div>
-        <div class="row"><span class="histline"></span> histórico completo (train+test)</div>
+        <div class="row" style="color:var(--muted);font-size:11px">+ histórico completo: línea fina, por año (toggle)</div>
         <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
       </div>
       <div id="alllegend" style="display:none">
@@ -187,6 +192,13 @@ const ALL_PALETTE = ["#e6194B","#3cb44b","#f58231","#4363d8","#911eb4","#42d4f4"
 const C = {p50:"#4dabf7", real:"#f59f00", markov:"#9775fa", err:"#fa5252",
            estac:"#1b3a6b", migr:"#d6336c"};  // coincide con las vars CSS :root
 
+function haversineKm(a, b){
+  const R = 6371, rad = Math.PI / 180;
+  const dlat = (b[0]-a[0])*rad, dlon = (b[1]-a[1])*rad;
+  const s = Math.sin(dlat/2)**2 + Math.cos(a[0]*rad)*Math.cos(b[0]*rad)*Math.sin(dlon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   {subdomains:"abcd", maxZoom:19,
@@ -204,24 +216,27 @@ const birdObj = () => DATA.birds[S.bird];
 const days = () => birdObj().days;
 const fmt = i => (days()[i] ? days()[i].date : "—");
 
-function yearColorMap(){
-  const ys = [...new Set(days().slice(S.start, S.end+1).map(d => d.year))].sort();
+// Color por año a nivel de AVE (sobre todos los años de su histórico), para
+// que la ruta de test y el histórico completo compartan el mismo color/año.
+function birdYearColors(){
+  const h = birdObj().hist || [];
+  const ys = [...new Set(h.map(p => p[2]))].sort();
   const m = {};
-  ys.forEach((y,i) => m[y] = YEAR_PALETTE[i % YEAR_PALETTE.length]);
+  ys.forEach((y, i) => m[y] = YEAR_PALETTE[i % YEAR_PALETTE.length]);
   return m;
 }
 
 function drawTrajectory(){
   trajLayer.clearLayers();
-  const cm = yearColorMap(), arr = days();
+  const cm = birdYearColors(), arr = days();
   for(let i = S.start; i < S.end; i++){
     L.polyline([arr[i].o, arr[i+1].o],
-      {color:cm[arr[i].year], weight:2, opacity:.7}).addTo(trajLayer);
+      {color:cm[arr[i].year], weight:2, opacity:.75}).addTo(trajLayer);
   }
-  const keys = Object.keys(cm);
-  el("yearlegend").innerHTML = (keys.length > 1)
-    ? keys.map(y => `<div class="row"><span class="sw" style="background:${cm[y]}"></span> ${y}</div>`).join("")
-    : `<div class="row"><span class="sw" style="background:${C.real}"></span> ventana de test</div>`;
+  const ys = Object.keys(cm);
+  el("yearlegend").innerHTML = ys.length
+    ? ys.map(y => `<div class="row"><span class="sw" style="background:${cm[y]}"></span> ${y}</div>`).join("")
+    : `<div class="row"><span class="sw" style="background:${C.real}"></span> ruta</div>`;
 }
 
 function drawDay(){
@@ -234,7 +249,10 @@ function drawDay(){
   // Error del día: línea roja punteada p50 → real.
   if(d.r) L.polyline([d.p, d.r], {color:C.err, weight:2, dashArray:"4,4", opacity:.85}).addTo(dayLayer);
   L.circleMarker(d.p, {radius:6, color:C.p50, weight:2, fillColor:C.p50, fillOpacity:1}).addTo(dayLayer);
-  if(d.m && el("showMarkov").checked){
+  const mkOn = d.m && el("showMarkov").checked;
+  if(mkOn){
+    // Línea discontinua Markov → real (violeta), análoga al error del p50.
+    if(d.r) L.polyline([d.m, d.r], {color:C.markov, weight:2, dashArray:"4,4", opacity:.85}).addTo(dayLayer);
     L.marker(d.m, {icon: L.divIcon({className:"mk-wrap", iconSize:[14,14],
       iconAnchor:[7,7], html:'<div class="mk"></div>'})}).addTo(dayLayer);
   }
@@ -242,6 +260,12 @@ function drawDay(){
   el("daynow").textContent = d.date;
   el("errnow").style.display = "";
   el("errnow").innerHTML = (d.e != null) ? `error <b>${d.e} km</b>` : "sin dato t+1";
+  if(mkOn && d.r){
+    el("mkerrnow").style.display = "";
+    el("mkerrnow").innerHTML = `Markov <b>${haversineKm(d.m, d.r).toFixed(1)} km</b>`;
+  } else {
+    el("mkerrnow").style.display = "none";
+  }
 }
 
 // Capa de estado O3: punto por día coloreado (azul oscuro estacionario, rojo
@@ -252,7 +276,7 @@ function drawState(){
   const add = (lat, lon, s) => L.circleMarker([lat, lon],
     {radius:3, weight:0, fillColor:(s ? C.migr : C.estac), fillOpacity:.85}).addTo(stateLayer);
   if(S.mode === "all"){
-    DATA.all.forEach(b => b.track.forEach((pt, j) => add(pt[0], pt[1], b.st[j])));
+    DATA.birds.forEach(b => b.days.forEach(d => add(d.o[0], d.o[1], d.s)));
   } else {
     const arr = days();
     for(let i = S.start; i <= S.end; i++) add(arr[i].o[0], arr[i].o[1], arr[i].s);
@@ -310,9 +334,12 @@ function applyRouteVisibility(){
 function drawHist(){
   histLayer.clearLayers();
   if(S.mode !== "bird" || !el("showHist").checked) return;
-  const h = birdObj().hist;
-  if(h && h.length >= 2)
-    L.polyline(h, {color:"#868e96", weight:1.3, opacity:.6}).addTo(histLayer).bringToBack();
+  const h = birdObj().hist || [], cm = birdYearColors();
+  // Línea fina coloreada por año (mismo mapa que la ruta de test), debajo.
+  for(let i = 0; i < h.length - 1; i++){
+    L.polyline([[h[i][0], h[i][1]], [h[i+1][0], h[i+1][1]]],
+      {color:cm[h[i][2]], weight:1.3, opacity:.55}).addTo(histLayer).bringToBack();
+  }
 }
 
 function refresh(){ clamp(); syncInputs(); drawTrajectory(); applyRouteVisibility(); drawDay(); drawState(); }
@@ -349,25 +376,25 @@ function setControlsEnabled(on){
 
 function drawAll(){
   trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers(); histLayer.clearLayers();
-  DATA.all.forEach((b, i) => {
+  DATA.birds.forEach((b, i) => {
+    const track = b.hist.map(p => [p[0], p[1]]);  // recorrido completo (train+test)
+    if(track.length < 2) return;
     const col = ALL_PALETTE[i % ALL_PALETTE.length];
-    const pl = L.polyline(b.track, {color:col, weight:1.8, opacity:.8});
+    const pl = L.polyline(track, {color:col, weight:1.8, opacity:.8});
     pl.bindTooltip(`${b.id} — clic para ver`, {sticky:true});
     pl.on("mouseover", () => pl.setStyle({weight:4.5, opacity:1}).bringToFront());
     pl.on("mouseout",  () => pl.setStyle({weight:1.8, opacity:.8}));
-    // Clic en una ruta → pasar a la vista de esa ave (índice en DATA.birds).
-    pl.on("click", () => {
-      const j = DATA.birds.findIndex(x => x.id === b.id);
-      if(j >= 0){ el("bird").value = j; setBird(j); }
-    });
+    // Clic en una ruta → vista de esa ave (i es ya el índice en DATA.birds).
+    pl.on("click", () => { el("bird").value = i; setBird(i); });
     pl.addTo(allLayer);
   });
   if(!map.hasLayer(allLayer)) allLayer.addTo(map);
-  const pts = DATA.all.flatMap(b => b.track);
+  const pts = DATA.birds.flatMap(b => b.hist.map(p => [p[0], p[1]]));
   const bb = L.latLngBounds(pts);
   if(bb.isValid()) map.fitBounds(bb.pad(0.1));
-  el("daynow").innerHTML = `Todas las aves &middot; <b>${DATA.all.length}</b> rutas reales (test)`;
+  el("daynow").innerHTML = `Todas las aves &middot; <b>${DATA.birds.length}</b> recorridos (train+test)`;
   el("errnow").style.display = "none";
+  el("mkerrnow").style.display = "none";
   drawState();
 }
 
