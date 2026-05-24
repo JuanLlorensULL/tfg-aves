@@ -86,3 +86,19 @@ def test_nearest_cells_orders_by_distance():
     out = nearest_cells(40.0, -3.05, cells, k=2)
     assert out[0] == "A"
     assert set(out) == {"A", "B"}
+
+
+def test_pinball_loss_known():
+    from tfg_aves.ml.quantile import pinball_loss
+    y = np.array([1.0])
+    # Sub-predicción de 1: q=0.9 penaliza 0.9; q=0.1 penaliza 0.1.
+    assert np.isclose(pinball_loss(y, np.array([0.0]), 0.9), 0.9)
+    assert np.isclose(pinball_loss(y, np.array([0.0]), 0.1), 0.1)
+
+
+def test_interval_coverage():
+    from tfg_aves.ml.quantile import interval_coverage
+    y = np.arange(10).astype(float)          # 0..9
+    p10 = np.full(10, 1.0)
+    p90 = np.full(10, 8.0)                    # dentro de [1,8]: 1..8 = 8 valores
+    assert np.isclose(interval_coverage(y, p10, p90), 0.8)

@@ -164,3 +164,17 @@ def nearest_cells(
     ))
     order = np.argsort(d)[:k]
     return [str(c) for c in cells["cell_id"].to_numpy()[order]]
+
+
+def pinball_loss(y_true: np.ndarray, y_pred_q: np.ndarray, q: float) -> float:
+    """Pérdida de cuantil (pinball) media para el cuantil q."""
+    d = np.asarray(y_true, dtype=np.float64) - np.asarray(y_pred_q, dtype=np.float64)
+    return float(np.mean(np.maximum(q * d, (q - 1.0) * d)))
+
+
+def interval_coverage(
+    y_true: np.ndarray, y_p10: np.ndarray, y_p90: np.ndarray,
+) -> float:
+    """Fracción de y_true dentro de [p10, p90]. Ideal ≈ 0.80."""
+    y = np.asarray(y_true, dtype=np.float64)
+    return float(np.mean((y >= np.asarray(y_p10)) & (y <= np.asarray(y_p90))))
