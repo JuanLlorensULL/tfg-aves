@@ -147,8 +147,12 @@ def failure_vectors_map(
         return folium.Map(location=[40.0, -3.0], zoom_start=4, tiles="cartodbpositron")
     m = _map_centered(mig["pred_lat"], mig["pred_lon"], zoom=4)
     day = daily[daily["is_valid"]].copy()
+    day["date_utc"] = pd.to_datetime(day["date_utc"])
     for _, r in mig.iterrows():
-        nxt = day[(day["bird_id"] == r["bird_id"]) & (day["date_utc"] > r["date_utc"])].head(1)
+        # Verdad t+1 = día calendario siguiente exacto (gap-aware, como la
+        # vista A); si hay hueco no se dibuja el vector.
+        target = pd.Timestamp(r["date_utc"]) + pd.Timedelta(days=1)
+        nxt = day[(day["bird_id"] == r["bird_id"]) & (day["date_utc"] == target)]
         if nxt.empty:
             continue
         real_lat, real_lon = float(nxt["lat"].iloc[0]), float(nxt["lon"].iloc[0])
