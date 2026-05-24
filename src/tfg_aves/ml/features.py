@@ -21,11 +21,6 @@ HMM_EMISSION_COLS = [
     "step_in_km", "cos_turning_in", "veg_low", "veg_high", "daylight_hours",
 ]
 
-_FEATURES_WIND = [
-    "wind_u_850", "wind_v_850", "wind_speed_850",
-]
-
-
 def add_cyclic_doy(df: pd.DataFrame, date_col: str = "date_utc") -> pd.DataFrame:
     """Añade columnas ``sin_doy`` y ``cos_doy`` a partir de ``date_col``.
 
@@ -144,8 +139,6 @@ def build_feature_matrix(
     kin: pd.DataFrame,
     cells: pd.DataFrame,
     include_bird_id: bool,
-    *,
-    wind_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Construye la matriz de filas candidatas de O4 a partir de la cinemática causal.
 
@@ -153,8 +146,7 @@ def build_feature_matrix(
     cinemática entrante e ``is_hmm_obs_valid``). Pasos:
         1. Asigna ``cell_id_t`` y ``cell_id_t_next`` (target) vía ``cells``.
         2. Añade ``sin_doy``/``cos_doy``.
-        3. (Opcional) fusiona viento — rama L1, no ejercitada en el rework.
-        4. Filtra a filas candidatas: ``is_hmm_obs_valid`` y target válido
+        3. Filtra a filas candidatas: ``is_hmm_obs_valid`` y target válido
            (``cell_id_t_next`` no nulo ⟺ t+1 consecutivo y celda activa). Es la
            máscara de racha de 4 días (t-2, t-1, t, t+1).
 
@@ -165,20 +157,9 @@ def build_feature_matrix(
     df = assign_cells_to_features(kin, cells)
     df = add_cyclic_doy(df)
 
-    if wind_df is not None:
-        df = merge_wind_features(df, wind_df)
-
     df = df[df["is_hmm_obs_valid"] & df["cell_id_t_next"].notna()].copy()
 
-    # RandomForest no tolera NaN; XGBoost sí. Para coherencia entre familias
-    # descartamos las pocas filas con NaN en features de viento (20 fixes,
-    # 0,09 %, fuera del bbox del .nc: Bélgica/Países Bajos, otoño 2009).
-    if wind_df is not None:
-        df = df.dropna(subset=_FEATURES_WIND).copy()
-
     base = list(FEATURES_KINEMATIC)
-    if wind_df is not None:
-        base = [*base, *_FEATURES_WIND]
     feature_cols = ["bird_id", *base] if include_bird_id else list(base)
 
     keep_cols = list(dict.fromkeys([
@@ -227,42 +208,3 @@ def split_temporal_per_bird(
     for df in (train_df, val_df, test_df):
         df.attrs["_features"] = matrix.attrs.get("_features", [])
     return train_df, val_df, test_df
-
-
-def merge_wind_features(
-    matrix: pd.DataFrame,
-    wind_df: pd.DataFrame,
-) -> pd.DataFrame:
-    """Une matrix con las 3 features de viento por (bird_id, date_utc).
-
-    LEFT JOIN: el número de filas de matrix se preserva. Filas sin
-    contrapartida en wind_df reciben NaN en wind_u_850, wind_v_850,
-    wind_speed_850 (esperado raro, son fixes fuera del bbox del .nc).
-
-    Args:
-        matrix: salida parcial de build_feature_matrix antes del filtro
-            de cell_id_t_next, con columnas bird_id, date_utc.
-        wind_df: salida de build_wind (bird_id, date_utc + 3 features).
-
-    Returns:
-        DataFrame con todas las columnas de matrix + las 3 de viento.
-    """
-    if not {"bird_id", "date_utc"}.issubset(matrix.columns):
-        raise ValueError("matrix necesita columnas bird_id y date_utc.")
-    if not {"bird_id", "date_utc", *_FEATURES_WIND}.issubset(wind_df.columns):
-        raise ValueError(
-            "wind_df necesita bird_id, date_utc y las 3 features de viento.",
-        )
-
-    # Asegurar tipos compatibles para el join (date_utc como objeto Python date).
-    m = matrix.copy()
-    w = wind_df[["bird_id", "date_utc", *_FEATURES_WIND]].copy()
-
-    n_before = len(m)
-    out = m.merge(w, on=["bird_id", "date_utc"], how="left", validate="m:1")
-    if len(out) != n_before:
-        raise AssertionError(
-            f"merge cambió número de filas: {n_before} → {len(out)} "
-            "(¿wind_df tiene claves duplicadas?)",
-        )
-    return out
