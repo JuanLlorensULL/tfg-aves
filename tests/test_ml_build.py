@@ -50,50 +50,46 @@ def test_build_o4_end_to_end(tmp_path: Path) -> None:
     out_dir = tmp_path / "o4"
     result = build_o4(
         features_path=feat_path, cells_path=cells_path,
-        output_dir=out_dir, seed=0,
+        output_dir=out_dir, seed=0, individual_bird_id="A",
     )
     assert result.n_birds == 5
+    assert result.individual_bird_id == "A"
     assert result.n_rows_train > 0
     assert result.n_rows_test > 0
     assert set(result.model_paths.keys()) == {
-        "personalizado_rf", "personalizado_xgb", "personalizado_lgbm",
+        "individual_rf", "individual_xgb",
         "poblacional_rf", "poblacional_xgb", "poblacional_lgbm",
     }
     for p in result.model_paths.values():
         assert p.exists()
-    assert result.predictions_path.exists()
-    assert result.metrics_path.exists()
 
     preds = pd.read_parquet(result.predictions_path)
     assert {
         "bird_id", "date_utc", "true_cell", "pred_cell_top1", "modelo", "modo"
     } <= set(preds.columns)
+    ind = preds[preds["modo"] == "individual"]
+    assert len(ind) > 0
+    assert set(ind["bird_id"].unique()) == {"A"}
+
     metrics = pd.read_parquet(result.metrics_path)
     assert {
         "modelo", "modo", "top1", "top3", "log_loss", "dist_median_km", "split"
     } <= set(metrics.columns)
-
-
-def test_build_o4_with_wind_writes_l1v1_artifacts(tmp_path, monkeypatch):
-    """build_o4(with_wind=True) escribe a O4_L1V1_DIR sin pisar O4_OUT_DIR."""
-    # Este test es un placeholder de integración. La verificación real
-    # se hace ejecutando build_o4(with_wind=True) sobre los datos
-    # reales en el step 6.5 del plan. Aquí sólo verificamos la firma.
-    from inspect import signature
-
-    from tfg_aves.ml.build import build_o4
-
-    sig = signature(build_o4)
-    assert "with_wind" in sig.parameters
-    assert sig.parameters["with_wind"].default is False
+    modos = set(metrics["modo"].unique())
+    assert "individual" in modos
+    assert "poblacional" in modos
+    assert "poblacional@A" in modos
+    assert "persistencia@A" in set(metrics["modelo"].unique())
 
 
 def test_build_o4_idempotent(tmp_path: Path) -> None:
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "o4"
-    r1 = build_o4(features_path=feat_path, cells_path=cells_path, output_dir=out_dir, seed=0)
+    r1 = build_o4(features_path=feat_path, cells_path=cells_path,
+                  output_dir=out_dir, seed=0, individual_bird_id="A")
     m1 = pd.read_parquet(r1.metrics_path)
-    r2 = build_o4(features_path=feat_path, cells_path=cells_path, output_dir=out_dir, seed=0)
+    r2 = build_o4(features_path=feat_path, cells_path=cells_path,
+                  output_dir=out_dir, seed=0, individual_bird_id="A")
     m2 = pd.read_parquet(r2.metrics_path)
     pd.testing.assert_frame_equal(
         m1.sort_values(["modelo", "modo", "split"]).reset_index(drop=True),
@@ -106,27 +102,21 @@ def test_build_o4_columnas_causales(tmp_path: Path) -> None:
     out_dir = tmp_path / "o4"
     res = build_o4(
         features_path=feat_path, cells_path=cells_path,
-        output_dir=out_dir, seed=0,
+        output_dir=out_dir, seed=0, individual_bird_id="A",
     )
-    assert res.predictions_path.exists()
-    assert res.metrics_path.exists()
-    assert (out_dir / "model_personalizado_rf.pkl").exists()
-
     import joblib
-    blob = joblib.load(out_dir / "model_personalizado_rf.pkl")
-    cols = blob["feature_cols"]
-    # Exactamente las 10 causales + bird_id; nada de columnas con fuga.
-    assert "bird_id" in cols
-    for c in ["step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
-              "state_b_causal", "posterior_b_migracion_causal"]:
-        assert c in cols
-    for prohibida in ["step_length_km", "cos_turning_angle", "state_b",
-                      "posterior_b_migracion"]:
-        assert prohibida not in cols
+    for key in ("individual_rf", "poblacional_rf"):
+        blob = joblib.load(out_dir / f"model_{key}.pkl")
+        cols = blob["feature_cols"]
+        assert "bird_id" not in cols
+        for c in ["step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
+                  "state_b_causal", "posterior_b_migracion_causal"]:
+            assert c in cols
+        for prohibida in ["step_length_km", "cos_turning_angle", "state_b",
+                          "posterior_b_migracion"]:
+            assert prohibida not in cols
 
-    # Las predicciones llevan el estado causal (para el análisis por régimen).
     preds = pd.read_parquet(res.predictions_path)
     assert "state_b_causal" in preds.columns
     assert "state_b" not in preds.columns
-    modelos = preds[preds["modo"] == "personalizado"]
-    assert modelos["state_b_causal"].notna().any()
+    assert preds[preds["modo"] == "individual"]["state_b_causal"].notna().any()
