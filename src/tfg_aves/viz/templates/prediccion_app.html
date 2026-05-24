@@ -138,8 +138,13 @@
         <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
       </div>
       <div id="alllegend" style="display:none">
-        <div class="row"><span class="sw" style="background:var(--real);opacity:.5"></span> ruta real de cada ave (test)</div>
-        <div class="foot">Vista de conjunto: rutas reales de todas las aves del test, sin predicción.</div>
+        <button id="toggleRoutes" style="width:100%;margin-bottom:10px">Ocultar rutas reales</button>
+        <div class="row">
+          <span class="sw" style="background:linear-gradient(90deg,#e6194B,#3cb44b,#4363d8,#911eb4)"></span>
+          ruta real de cada ave (un color por ave)
+        </div>
+        <div class="foot">Vista de conjunto: rutas reales de las aves del test, sin
+          predicción. Pasa el ratón por una ruta para resaltarla y ver el id del ave.</div>
       </div>
     </div>
   </aside>
@@ -150,6 +155,10 @@
 <script>
 const DATA = __PRED_DATA__;
 const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8"];
+// Paleta categórica para distinguir las rutas en la vista "Todas".
+const ALL_PALETTE = ["#e6194B","#3cb44b","#f58231","#4363d8","#911eb4","#42d4f4",
+  "#f032e6","#469990","#9A6324","#800000","#808000","#000075","#e6ab02","#1b9e77",
+  "#d95f02","#7570b3"];
 const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3", err:"#d62728"};
 
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
@@ -274,10 +283,16 @@ function setControlsEnabled(on){
 
 function drawAll(){
   trajLayer.clearLayers(); dayLayer.clearLayers(); allLayer.clearLayers();
-  DATA.all.forEach(b => {
-    L.polyline(b.track, {color:C.real, weight:1, opacity:.28})
-      .bindTooltip(b.id).addTo(allLayer);
+  DATA.all.forEach((b, i) => {
+    const col = ALL_PALETTE[i % ALL_PALETTE.length];
+    const pl = L.polyline(b.track, {color:col, weight:1.8, opacity:.8});
+    pl.bindTooltip(b.id, {sticky:true});
+    pl.on("mouseover", () => pl.setStyle({weight:4.5, opacity:1}).bringToFront());
+    pl.on("mouseout",  () => pl.setStyle({weight:1.8, opacity:.8}));
+    pl.addTo(allLayer);
   });
+  if(!map.hasLayer(allLayer)) allLayer.addTo(map);
+  el("toggleRoutes").textContent = "Ocultar rutas reales";
   const pts = DATA.all.flatMap(b => b.track);
   const bb = L.latLngBounds(pts);
   if(bb.isValid()) map.fitBounds(bb.pad(0.1));
@@ -314,6 +329,13 @@ el("step").onclick   = () => { stop(); if(S.cur < S.end){ S.cur++; el("cur").val
 el("play").onclick   = play;
 el("fps").oninput    = e => { S.fps = +e.target.value; el("fpsv").innerHTML = S.fps + "&nbsp;fps"; if(S.playing){ stop(); play(); } };
 el("showMarkov").onchange = () => drawDay();
+el("toggleRoutes").onclick = () => {
+  if(map.hasLayer(allLayer)){
+    map.removeLayer(allLayer); el("toggleRoutes").textContent = "Mostrar rutas reales";
+  } else {
+    allLayer.addTo(map); el("toggleRoutes").textContent = "Ocultar rutas reales";
+  }
+};
 
 setBird(0);
 </script>
