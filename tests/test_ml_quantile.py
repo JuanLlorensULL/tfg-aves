@@ -33,13 +33,11 @@ def test_fit_quantile_axis_shapes_and_order():
     y = (X["a"].to_numpy() * 2.0) + rng.normal(0, 0.1, size=300)
     Xv = pd.DataFrame({"a": rng.normal(size=80), "b": rng.normal(size=80)})
     yv = (Xv["a"].to_numpy() * 2.0) + rng.normal(0, 0.1, size=80)
-    models = fit_quantile_axis(X, y, Xv, yv, seed=0)
-    assert set(models) == set(QUANTILES)
-    p10 = models[0.10].predict(Xv)
-    p90 = models[0.90].predict(Xv)
-    assert p10.shape == (80,)
-    # En media, el cuantil 90 está por encima del 10.
-    assert float(np.mean(p90 >= p10)) > 0.9
+    axis = fit_quantile_axis(X, y, Xv, yv, family="xgb", seed=0)
+    raw = axis.predict_raw(Xv)               # (n, 3) en orden QUANTILES
+    assert raw.shape == (80, len(QUANTILES))
+    # En media, el cuantil 90 (col 2) está por encima del 10 (col 0).
+    assert float(np.mean(raw[:, 2] >= raw[:, 0])) > 0.9
 
 
 class _Const:
@@ -51,13 +49,13 @@ class _Const:
 
 
 def test_predict_quantiles_monotonic_and_crossings():
-    from tfg_aves.ml.quantile import predict_quantiles
+    from tfg_aves.ml.quantile import _PerQuantileAxis, predict_quantiles
     X = pd.DataFrame({"a": [0.0, 0.0, 0.0]})
     # lat: cuantiles DESORDENADOS (1.0, 0.0, 0.5) -> cruce en las 3 filas.
-    models_lat = {0.10: _Const(1.0), 0.50: _Const(0.0), 0.90: _Const(0.5)}
+    axis_lat = _PerQuantileAxis({0.10: _Const(1.0), 0.50: _Const(0.0), 0.90: _Const(0.5)})
     # lon: cuantiles ya ordenados (-0.5, 0.0, 0.5) -> sin cruces.
-    models_lon = {0.10: _Const(-0.5), 0.50: _Const(0.0), 0.90: _Const(0.5)}
-    preds, crossings = predict_quantiles(models_lat, models_lon, X)
+    axis_lon = _PerQuantileAxis({0.10: _Const(-0.5), 0.50: _Const(0.0), 0.90: _Const(0.5)})
+    preds, crossings = predict_quantiles(axis_lat, axis_lon, X)
     assert (preds["dlat_p10"] <= preds["dlat_p50"]).all()
     assert (preds["dlat_p50"] <= preds["dlat_p90"]).all()
     assert (preds["dlon_p10"] <= preds["dlon_p50"]).all()
@@ -117,9 +115,9 @@ def test_fit_quantile_axis_handles_empty_val():
     y = X["a"].to_numpy() + rng.normal(0, 0.1, size=120)
     X_val = X.iloc[:0]                      # empty val
     y_val = np.empty(0, dtype=float)
-    models = fit_quantile_axis(X, y, X_val, y_val, seed=0)
-    preds = models[0.50].predict(X)
-    assert preds.shape == (120,)
+    axis = fit_quantile_axis(X, y, X_val, y_val, family="xgb", seed=0)
+    raw = axis.predict_raw(X)
+    assert raw.shape == (120, 3)
 
 
 def test_build_regression_predictions_schema():
