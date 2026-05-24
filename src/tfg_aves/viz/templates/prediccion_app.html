@@ -81,6 +81,7 @@
   .chk input{accent-color:#8e6fb3;cursor:pointer}
   .mk-wrap{background:none;border:none}
   .mk{width:10px;height:10px;background:#8e6fb3;border:1.5px solid #fff;transform:rotate(45deg)}
+  .errline{width:16px;height:0;border-top:2px dashed #d62728;flex:0 0 16px}
   .foot{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);
     margin-top:11px;line-height:1.5}
   .leaflet-container{background:#dfe6e3;font-family:"IBM Plex Sans",sans-serif}
@@ -131,6 +132,7 @@
       <div class="row"><span class="sw" style="border:1px dashed var(--p50);background:rgba(59,110,165,.18)"></span> banda [p10, p90]</div>
       <div class="row"><span class="mkleg"></span> Markov — centroide de celda 0,5°</div>
       <div class="row"><span class="dot" style="background:var(--real)"></span> posición real de mañana</div>
+      <div class="row"><span class="errline"></span> error (p50 → real)</div>
       <div id="yearlegend" style="margin-top:6px"></div>
       <div class="foot">Acota la ventana con los dos topes. Play/Pausa anima día a día dentro de ella.</div>
     </div>
@@ -142,7 +144,7 @@
 <script>
 const DATA = __PRED_DATA__;
 const YEAR_PALETTE = ["#e08a3c","#9467bd","#8c564b","#d62728","#e377c2","#17a2b8"];
-const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3"};
+const C = {p50:"#3b6ea5", real:"#e08a3c", markov:"#8e6fb3", err:"#d62728"};
 
 const map = L.map("map", {zoomControl:true}).setView([30,10], 3);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
@@ -185,6 +187,8 @@ function drawDay(){
   L.rectangle(d.band, {color:C.p50, weight:1, dashArray:"5,3",
     fillColor:C.p50, fillOpacity:.14}).addTo(dayLayer);
   L.polyline([d.o, d.p], {color:C.p50, weight:2}).addTo(dayLayer);
+  // Error del día: línea roja punteada p50 → real.
+  if(d.r) L.polyline([d.p, d.r], {color:C.err, weight:2, dashArray:"4,4", opacity:.85}).addTo(dayLayer);
   L.circleMarker(d.p, {radius:6, color:C.p50, weight:2, fillColor:C.p50, fillOpacity:1}).addTo(dayLayer);
   if(d.m && el("showMarkov").checked){
     L.marker(d.m, {icon: L.divIcon({className:"mk-wrap", iconSize:[14,14],
