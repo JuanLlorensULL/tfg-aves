@@ -102,3 +102,38 @@ def test_interval_coverage():
     p10 = np.full(10, 1.0)
     p90 = np.full(10, 8.0)                    # dentro de [1,8]: 1..8 = 8 valores
     assert np.isclose(interval_coverage(y, p10, p90), 0.8)
+
+
+def test_build_regression_predictions_schema():
+    from tfg_aves.ml.evaluate import evaluate_by_state, evaluate_moves_only
+    from tfg_aves.ml.quantile import build_regression_predictions
+    cells = pd.DataFrame({
+        "cell_id": ["80_-6", "81_-6"], "cell_lat_idx": [80, 81],
+        "cell_lon_idx": [-6, -6], "lat_c": [40.25, 40.75], "lon_c": [-2.75, -2.75],
+    })
+    meta = pd.DataFrame({
+        "bird_id": ["A", "A"],
+        "date_utc": pd.to_datetime(["2020-01-01", "2020-01-02"]),
+        "lat": [40.3, 40.3], "lon": [-2.7, -2.7],
+        "lat_t_next": [40.8, 40.3], "lon_t_next": [-2.7, -2.7],
+        "cell_id_t": ["80_-6", "80_-6"], "cell_id_t_next": ["81_-6", "80_-6"],
+        "state_b_causal": [1, 0],
+    })
+    qp = pd.DataFrame({
+        "dlat_p10": [0.1, -0.1], "dlat_p50": [0.5, 0.0], "dlat_p90": [0.9, 0.1],
+        "dlon_p10": [-0.1, -0.1], "dlon_p50": [0.0, 0.0], "dlon_p90": [0.1, 0.1],
+    })
+    preds = build_regression_predictions(qp, meta, cells)
+    for c in [
+        "true_cell", "pred_cell_top1", "pred_cell_topk", "pred_prob_top1",
+        "pred_dist_km", "state_b_causal", "pred_lat", "pred_lon",
+        "dist_native_km", "in_interval_lat", "in_interval_lon",
+    ]:
+        assert c in preds.columns, f"falta columna {c}"
+    # Fila 0: p50 desplaza +0.5 lat -> punto (40.8,-2.7) -> celda 81_-6 == verdad.
+    assert preds["pred_cell_top1"].iloc[0] == "81_-6"
+    # evaluate.py opera sin cambios sobre este esquema:
+    tbl = evaluate_by_state(preds)
+    assert {"state", "top1", "dist_median_km"}.issubset(tbl.columns)
+    mo = evaluate_moves_only(preds, np.array([1, 0]))
+    assert {"top1", "dist_median_km", "n_obs"}.issubset(mo)

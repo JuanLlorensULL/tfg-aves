@@ -12,7 +12,7 @@ import pandas as pd
 import xgboost as xgb
 from sklearn.base import BaseEstimator, RegressorMixin
 
-from tfg_aves.markov.discretize import _format_cell_id, assign_cell, haversine_km
+from tfg_aves.markov.discretize import _format_cell_id, haversine_km
 
 QUANTILES: tuple[float, float, float] = (0.10, 0.50, 0.90)
 INDIVIDUAL_BIRD_ID: str = "91916A"   # ave con más histórico (rank 1, 2025 filas)
@@ -50,7 +50,7 @@ class _XGBQuantileRegressor(BaseEstimator, RegressorMixin):
         y: np.ndarray,
         X_val: pd.DataFrame | None = None,
         y_val: np.ndarray | None = None,
-    ) -> "_XGBQuantileRegressor":
+    ) -> _XGBQuantileRegressor:
         self._reg = xgb.XGBRegressor(
             objective="reg:quantileerror",
             quantile_alpha=self.quantile,
@@ -178,3 +178,77 @@ def interval_coverage(
     """Fracción de y_true dentro de [p10, p90]. Ideal ≈ 0.80."""
     y = np.asarray(y_true, dtype=np.float64)
     return float(np.mean((y >= np.asarray(y_p10)) & (y <= np.asarray(y_p90))))
+
+
+def build_regression_predictions(
+    quantile_preds: pd.DataFrame,
+    meta: pd.DataFrame,
+    cells: pd.DataFrame,
+    *,
+    k_top: int = 3,
+) -> pd.DataFrame:
+    """Ensambla predicciones con el MISMO esquema que la clasificación
+    (true_cell, pred_cell_top1, pred_cell_topk, pred_prob_top1, pred_dist_km,
+    state_b_causal) MÁS columnas de regresión (pred_lat, pred_lon,
+    dist_native_km, dlat_p*/dlon_p*, in_interval_lat, in_interval_lon).
+
+    - pred_cell_top1 = celda contenedora del punto p50 (discretización).
+    - pred_cell_topk = k celdas activas más cercanas (proximidad).
+    - pred_dist_km   = haversine(centroide de la celda contenedora, verdad t+1)
+                       → comparable con dist_median_km de L1/L2.
+    - dist_native_km = haversine(punto p50, verdad t+1) → métrica nativa.
+    - in_interval_*  = el desplazamiento verdadero cae en [p10, p90] (por eje).
+    """
+    meta = meta.reset_index(drop=True)
+    qp = quantile_preds.reset_index(drop=True)
+
+    lat_t = meta["lat"].to_numpy(dtype=np.float64)
+    lon_t = meta["lon"].to_numpy(dtype=np.float64)
+    lat_next = meta["lat_t_next"].to_numpy(dtype=np.float64)
+    lon_next = meta["lon_t_next"].to_numpy(dtype=np.float64)
+
+    pred_lat = lat_t + qp["dlat_p50"].to_numpy()
+    pred_lon = lon_t + qp["dlon_p50"].to_numpy()
+
+    mapped = point_to_cell(pred_lat, pred_lon, cells)
+    pred_dist_km = np.asarray(haversine_km(
+        mapped["cent_lat"].to_numpy(), mapped["cent_lon"].to_numpy(),
+        lat_next, lon_next,
+    ))
+    dist_native_km = np.asarray(haversine_km(pred_lat, pred_lon, lat_next, lon_next))
+
+    topk = [
+        nearest_cells(pl, pn, cells, k=k_top)
+        for pl, pn in zip(pred_lat, pred_lon, strict=True)
+    ]
+
+    y_dlat_true = lat_next - lat_t
+    y_dlon_true = lon_next - lon_t
+    in_lat = (y_dlat_true >= qp["dlat_p10"].to_numpy()) & (
+        y_dlat_true <= qp["dlat_p90"].to_numpy())
+    in_lon = (y_dlon_true >= qp["dlon_p10"].to_numpy()) & (
+        y_dlon_true <= qp["dlon_p90"].to_numpy())
+
+    out = pd.DataFrame({
+        "bird_id": meta["bird_id"].to_numpy(),
+        "date_utc": meta["date_utc"].to_numpy(),
+        "true_cell": meta["cell_id_t_next"].to_numpy(),
+        "pred_cell_top1": mapped["cell_id"].to_numpy(),
+        "pred_cell_topk": topk,
+        "pred_prob_top1": np.nan,
+        "pred_dist_km": pred_dist_km,
+        "state_b_causal": meta["state_b_causal"].to_numpy(),
+        "pred_lat": pred_lat,
+        "pred_lon": pred_lon,
+        "dist_native_km": dist_native_km,
+        "dlat_p10": qp["dlat_p10"].to_numpy(),
+        "dlat_p50": qp["dlat_p50"].to_numpy(),
+        "dlat_p90": qp["dlat_p90"].to_numpy(),
+        "dlon_p10": qp["dlon_p10"].to_numpy(),
+        "dlon_p50": qp["dlon_p50"].to_numpy(),
+        "dlon_p90": qp["dlon_p90"].to_numpy(),
+        "in_interval_lat": in_lat,
+        "in_interval_lon": in_lon,
+        "pred_cell_in_active_grid": mapped["is_active"].to_numpy(),
+    })
+    return out
