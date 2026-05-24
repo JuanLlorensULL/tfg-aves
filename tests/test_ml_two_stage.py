@@ -98,3 +98,16 @@ def test_sweep_tau_returns_best():
     assert tau_star == 0.5
     assert set(table.columns) == {"tau", "top1"}
     assert len(table) == 3
+
+
+def test_expand_proba_to_full():
+    # clf_dest sólo conoce clases ["B", "C"]; el espacio completo es
+    # ["A", "B", "C"]. La columna "A" debe quedar a 0.
+    proba = np.array([[0.7, 0.3], [0.4, 0.6]])
+    classes_str = np.array(["B", "C"])
+    classes_full = np.array(["A", "B", "C"])
+    out = ts.expand_proba_to_full(proba, classes_str, classes_full)
+    assert out.shape == (2, 3)
+    assert np.allclose(out[:, 0], 0.0)          # "A" ausente -> 0
+    assert np.allclose(out[:, 1], [0.7, 0.4])   # "B"
+    assert np.allclose(out[:, 2], [0.3, 0.6])   # "C"

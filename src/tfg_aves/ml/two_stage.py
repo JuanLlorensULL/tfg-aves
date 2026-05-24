@@ -89,3 +89,22 @@ def sweep_tau(
     table = pd.DataFrame(records)
     tau_star = float(table.loc[table["top1"].idxmax(), "tau"])
     return tau_star, table
+
+
+def expand_proba_to_full(
+    proba: np.ndarray,
+    classes_str: np.ndarray,
+    classes_full: np.ndarray,
+) -> np.ndarray:
+    """Proyecta proba (n, k) al espacio completo (n, m) de classes_full.
+
+    Las columnas de classes_full ausentes en classes_str quedan a 0.
+    classes_full debe ser un superconjunto ordenado de classes_str.
+    """
+    n = proba.shape[0]
+    m = len(classes_full)
+    out = np.zeros((n, m), dtype=np.float64)
+    full_index = {c: j for j, c in enumerate(classes_full)}
+    for src_col, c in enumerate(classes_str):
+        out[:, full_index[c]] = proba[:, src_col]
+    return out
