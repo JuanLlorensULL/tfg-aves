@@ -104,8 +104,9 @@ def test_build_o4_l3_no_leakage(tmp_path):
     """Ningún modelo entrena con columnas del futuro: feature_cols == las 10
     causales, sin lat_t_next/lon_t_next/cell_id_t_next/y_dlat/y_dlon."""
     import joblib
-    from tfg_aves.ml.build_l3 import build_o4_l3
-    from tfg_aves.ml.features import FEATURES_HMM, FEATURES_KINEMATIC
+
+    from tfg_aves.ml.build_l3 import build_o4_l3  # noqa: PLC0415
+    from tfg_aves.ml.features import FEATURES_HMM, FEATURES_KINEMATIC  # noqa: PLC0415
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "l3_v1"
     build_o4_l3(
@@ -128,6 +129,14 @@ def test_build_o4_l3_idempotent(tmp_path):
                 seed=0, individual_bird_id="A")
     build_o4_l3(features_path=feat_path, cells_path=cells_path, out_dir=out_b,
                 seed=0, individual_bird_id="A")
-    ma = pd.read_parquet(out_a / "metrics.parquet").sort_values(["modo", "scope"]).reset_index(drop=True)
-    mb = pd.read_parquet(out_b / "metrics.parquet").sort_values(["modo", "scope"]).reset_index(drop=True)
+    ma = (pd.read_parquet(out_a / "metrics.parquet")
+          .sort_values(["modo", "scope"]).reset_index(drop=True))
+    mb = (pd.read_parquet(out_b / "metrics.parquet")
+          .sort_values(["modo", "scope"]).reset_index(drop=True))
     pd.testing.assert_frame_equal(ma, mb)
+
+
+def test_build_o4_l3_exported():
+    import tfg_aves.ml as ml
+    assert hasattr(ml, "build_o4_l3")
+    assert hasattr(ml, "BuildO4L3Result")

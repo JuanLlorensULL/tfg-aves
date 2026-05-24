@@ -11,6 +11,7 @@ Pipeline:
 """
 
 from tfg_aves.ml.build import BuildO4Result, build_o4
+from tfg_aves.ml.build_l3 import BuildO4L3Result, build_o4_l3
 from tfg_aves.ml.evaluate import (
     compare_models,
     compute_markov_baseline,
@@ -37,12 +38,14 @@ from tfg_aves.ml.train import (
 )
 
 __all__ = [
+    "BuildO4L3Result",
     "BuildO4Result",
     "FEATURES_O4_CAUSAL",
     "add_cyclic_doy",
     "assign_cells_to_features",
     "build_feature_matrix",
     "build_o4",
+    "build_o4_l3",
     "compare_models",
     "compute_causal_kinematics",
     "compute_markov_baseline",
