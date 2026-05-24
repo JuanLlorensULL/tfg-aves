@@ -160,6 +160,8 @@ def build_o4_l2(
             base_move = train_move_xgb(X_train_move, y_move_train, seed=seed)
         clf_move = calibrate_prefit(base_move, X_val_move, y_move_val)
 
+        # clf_move es siempre poblacional (F3): p_move_test/val se calculan una
+        # vez por familia y se comparten entre ambos modos del bucle interior.
         pos_col = list(clf_move.classes_).index(1)
         p_move_test = clf_move.predict_proba(X_test_move)[:, pos_col]
         p_move_val = clf_move.predict_proba(X_val_move)[:, pos_col]
@@ -249,6 +251,8 @@ def build_o4_l2(
                     "dist_median_km": dist_median_km(preds),
                 }
                 if rule == "soft":
+                    # evaluate_moves_only lee preds.attrs["_proba"] para el
+                    # log_loss del subset; debe ir ANTES de limpiar attrs abajo.
                     mo = evaluate_moves_only(preds, y_move_test)
                     row["top1_moves"] = mo["top1"]
                     row["dist_median_km_moves"] = mo["dist_median_km"]
