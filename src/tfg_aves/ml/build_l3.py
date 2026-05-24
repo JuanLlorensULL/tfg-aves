@@ -34,7 +34,6 @@ from .quantile import (
 )
 
 _FEATURES = [*FEATURES_KINEMATIC, *FEATURES_HMM]
-_MODES = ("poblacional", "individual")
 _FAMILIES_DEFAULT = ("xgb", "lgbm", "rf")
 
 
@@ -266,16 +265,17 @@ def build_o4_l3(
                 xgb_pob_full = preds.copy()
 
     # --- Corte xgb poblacional@individual: mismas filas del individual ---
-    assert xgb_pob_full is not None
-    pob_at_ind = xgb_pob_full[
-        xgb_pob_full["bird_id"] == individual_bird_id
-    ].reset_index(drop=True)
-    if len(pob_at_ind) > 0:
-        test_ind = splits_by_mode["individual"][2]
-        metric_rows.extend(_metric_rows(
-            pob_at_ind, _y_move(test_ind), f"poblacional@{individual_bird_id}", "xgb",
-            pinball_lat=np.nan, pinball_lon=np.nan, cov_lat=np.nan, cov_lon=np.nan,
-        ))
+    # Solo si xgb se entrenó (xgb_pob_full queda None si 'xgb' no está en families).
+    if xgb_pob_full is not None:
+        pob_at_ind = xgb_pob_full[
+            xgb_pob_full["bird_id"] == individual_bird_id
+        ].reset_index(drop=True)
+        if len(pob_at_ind) > 0:
+            test_ind = splits_by_mode["individual"][2]
+            metric_rows.extend(_metric_rows(
+                pob_at_ind, _y_move(test_ind), f"poblacional@{individual_bird_id}", "xgb",
+                pinball_lat=np.nan, pinball_lon=np.nan, cov_lat=np.nan, cov_lon=np.nan,
+            ))
 
     # --- Baselines de persistencia (test completo + corte individual) ---
     persistence = compute_persistence_baseline(test_pob, cells=cells)
