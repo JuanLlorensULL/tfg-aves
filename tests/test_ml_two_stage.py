@@ -76,3 +76,25 @@ def test_combine_hard_is_distribution():
     out = ts.combine_hard(p_move, p_2b, cell_t_idx, tau=0.5)
     assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6)
     assert np.all(out > 0.0)  # clipping garantiza positividad estricta
+
+
+def test_sweep_tau_returns_best():
+    # Construimos un val donde tau=0.5 maximiza top-1.
+    # 4 filas: 2 estáticas (y=cell_t) con p_move bajo, 2 que se mueven
+    # (y=argmax p_2b) con p_move alto.
+    p_move = np.array([0.2, 0.2, 0.8, 0.8])
+    p_2b = np.array([
+        [0.1, 0.8, 0.1],   # argmax idx 1
+        [0.1, 0.8, 0.1],   # argmax idx 1
+        [0.1, 0.1, 0.8],   # argmax idx 2
+        [0.1, 0.1, 0.8],   # argmax idx 2
+    ])
+    cell_t_idx = np.array([0, 0, 0, 0])
+    y_true_idx = np.array([0, 0, 2, 2])  # estáticas->cell_t(0), móviles->idx2
+    tau_star, table = ts.sweep_tau(
+        p_move, p_2b, cell_t_idx, y_true_idx, n_classes=3,
+        taus=(0.1, 0.5, 0.7),
+    )
+    assert tau_star == 0.5
+    assert set(table.columns) == {"tau", "top1"}
+    assert len(table) == 3

@@ -66,3 +66,26 @@ def combine_hard(
     out = np.full((n, n_classes), eps / (n_classes - 1), dtype=np.float64)
     out[np.arange(n), pred_idx] = 1.0 - eps
     return out
+
+
+def sweep_tau(
+    p_move_val: np.ndarray,
+    p_2b_val: np.ndarray,
+    cell_t_idx_val: np.ndarray,
+    y_true_idx_val: np.ndarray,
+    n_classes: int,
+    taus: tuple[float, ...] = (0.3, 0.5, 0.7),
+) -> tuple[float, pd.DataFrame]:
+    """Barre tau y devuelve (tau*, tabla) maximizando top-1 sobre val.
+
+    Se usa top-1 (NO log-loss) porque hard devuelve one-hot y su log-loss
+    quedaría dominado por el clipping. Empates: gana el tau menor (primero).
+    """
+    records = []
+    for tau in taus:
+        out = combine_hard(p_move_val, p_2b_val, cell_t_idx_val, tau)
+        top1 = float((out.argmax(axis=1) == y_true_idx_val).mean())
+        records.append({"tau": tau, "top1": top1})
+    table = pd.DataFrame(records)
+    tau_star = float(table.loc[table["top1"].idxmax(), "tau"])
+    return tau_star, table
