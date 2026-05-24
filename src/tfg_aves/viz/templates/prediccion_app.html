@@ -365,7 +365,8 @@ function setBird(i){
 const optAll = document.createElement("option");
 optAll.value = "all"; optAll.textContent = "Todas (rutas reales)";
 el("bird").appendChild(optAll);
-DATA.birds.forEach((b,i) => {
+// DATA.birds viene ordenado por histórico (desc): las de más días, arriba.
+DATA.birds.forEach((b, i) => {
   const o = document.createElement("option");
   o.value = i; o.textContent = b.id; el("bird").appendChild(o);
 });

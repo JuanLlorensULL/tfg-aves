@@ -109,6 +109,7 @@ def test_prediction_app_data_shape_and_origin_recovery():
     markov = {("91916A", "2014-12-31"): [40.55, -2.55]}
     data = prediction_app_data(preds, daily, markov_points=markov)
     assert [b["id"] for b in data["birds"]] == ["91916A"]
+    assert data["curated"] == ["91916A"]  # curadas presentes van primero
     days = data["birds"][0]["days"]
     assert len(days) == 2
     d0 = days[0]

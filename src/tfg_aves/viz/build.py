@@ -189,7 +189,8 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                         markov_points: dict | None = None) -> dict:
     """Datos por ave/día para la app Leaflet a medida (función pura).
 
-    Por cada ave curada con predicciones, una lista de días con: fecha, año,
+    Por cada ave del test con predicciones (las curadas, de más histórico,
+    primero; el resto detrás), una lista de días con: fecha, año,
     origen ``o`` (posición del día t, recuperado como ``pred - p50``; centro de
     la banda y de la línea origen→p50), punto ``p`` (p50), rectángulo de banda
     ``band`` [[sur,oeste],[norte,este]], posición real ``r`` del día siguiente
@@ -203,8 +204,14 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
     has_dist = "dist_native_km" in preds.columns
     d_valid = daily[daily["is_valid"]].copy()
     d_valid["date_utc"] = pd.to_datetime(d_valid["date_utc"])
+    # Detalle por día para TODAS las aves del test, ORDENADAS por histórico
+    # (días válidos en daily) descendente: las de más histórico, arriba.
+    present = set(preds["bird_id"].unique())
+    hist = d_valid[d_valid["bird_id"].isin(present)].groupby("bird_id").size()
+    order = sorted(present, key=lambda b: (-int(hist.get(b, 0)), str(b)))
+    curated = [b for b in P.CURATED_BIRDS if b in present]
     birds_out: list[dict] = []
-    for bird in P.CURATED_BIRDS:
+    for bird in order:
         sub = preds[preds["bird_id"] == bird].sort_values("date_utc")
         if sub.empty:
             continue
@@ -234,7 +241,7 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                 "e": round(float(r["dist_native_km"]), 1) if has_dist else None,
                 "s": int(r["state_b_causal"]),  # 0 estacionario, 1 migración (O3)
             })
-        birds_out.append({"id": bird, "days": days_out})
+        birds_out.append({"id": str(bird), "days": days_out})
 
     # Rutas reales del test de TODAS las aves (no solo las curadas) para la
     # vista "Todas": la secuencia de orígenes (pred - p50) por ave.
@@ -252,7 +259,7 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
         if len(track) >= 2:
             st = [int(s) for s in sub["state_b_causal"]]  # estado O3 por punto
             all_tracks.append({"id": str(bird_id), "track": track, "st": st})
-    return {"birds": birds_out, "all": all_tracks}
+    return {"birds": birds_out, "all": all_tracks, "curated": [str(b) for b in curated]}
 
 
 def markov_points_for_test(features_o3: pd.DataFrame, cells: pd.DataFrame,
