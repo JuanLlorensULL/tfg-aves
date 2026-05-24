@@ -1,1 +1,1 @@
-"""O5 — Visualización en mapas interactivos y análisis del error de predicción."""
+"""O5 — visualización folium y análisis del error."""
