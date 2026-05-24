@@ -35,7 +35,9 @@ def error_by_cell(preds: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
     """Distancia mediana p50→real (``dist_native_km``) por celda de origen.
 
     Devuelve DataFrame [cell_id, lat_c, lon_c, n, median_error_km], solo
-    celdas activas con al menos una observación de origen en ellas.
+    celdas activas con al menos una observación de origen en ellas. Las filas
+    cuyo origen cae fuera del grid activo se omiten (inner merge), por lo que
+    la suma de ``n`` puede ser menor que el total de predicciones.
     """
     df = _attach_origin_cell(preds, cells)
     agg = (
@@ -57,7 +59,8 @@ def coverage_by_cell(preds: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
     Por fila, cobertura marginal = media de ``in_interval_lat`` e
     ``in_interval_lon`` (los dos intervalos [p10,p90] por eje, nominal ≈0,80).
     Se promedia por celda. Devuelve [cell_id, lat_c, lon_c, n,
-    coverage_marginal].
+    coverage_marginal]. Como en ``error_by_cell``, los orígenes fuera del grid
+    activo se omiten (inner merge).
     """
     df = _attach_origin_cell(preds, cells)
     df["_cov_marginal"] = 0.5 * (

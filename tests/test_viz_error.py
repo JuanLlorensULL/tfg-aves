@@ -4,7 +4,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from tfg_aves.viz.error import error_by_cell, recover_origin
+from tfg_aves.viz.error import (
+    coverage_by_cell,
+    error_by_cell,
+    metrics_by_month,
+    metrics_by_regime,
+    recover_origin,
+)
 
 
 def _cells():
@@ -50,7 +56,6 @@ def test_error_by_cell_groups_by_origin_cell_median():
 
 
 def test_coverage_by_cell_marginal_mean():
-    from tfg_aves.viz.error import coverage_by_cell
     out = coverage_by_cell(_preds(), _cells())
     row_80 = out[out["cell_id"] == "80_-6"].iloc[0]
     assert row_80["coverage_marginal"] == 0.75
@@ -59,12 +64,13 @@ def test_coverage_by_cell_marginal_mean():
 
 
 def test_metrics_by_regime_top1_and_coverage():
-    from tfg_aves.viz.error import metrics_by_regime
     out = metrics_by_regime(_preds())
     estac = out[out["regimen"] == "estacionario"].iloc[0]
     assert estac["n"] == 2
     assert estac["top1"] == 0.5
     assert estac["dist_median_km"] == 20.0
+    # marginal = media((T,T)->1, (T,F)->0.5) = 0.75 ; conjunta = media(1, 0) = 0.5
+    assert estac["coverage_marginal"] == 0.75
     assert estac["coverage_joint"] == 0.5
     migr = out[out["regimen"] == "migración"].iloc[0]
     assert migr["n"] == 1
@@ -72,7 +78,6 @@ def test_metrics_by_regime_top1_and_coverage():
 
 
 def test_metrics_by_month_groups_by_calendar_month():
-    from tfg_aves.viz.error import metrics_by_month
     out = metrics_by_month(_preds())
     ene = out[out["mes"] == 1].iloc[0]
     assert ene["n"] == 2
