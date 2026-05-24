@@ -234,7 +234,23 @@ def prediction_app_data(preds: pd.DataFrame, daily: pd.DataFrame, *,
                 "e": round(float(r["dist_native_km"]), 1) if has_dist else None,
             })
         birds_out.append({"id": bird, "days": days_out})
-    return {"birds": birds_out}
+
+    # Rutas reales del test de TODAS las aves (no solo las curadas) para la
+    # vista "Todas": la secuencia de orígenes (pred - p50) por ave.
+    all_tracks: list[dict] = []
+    for bird_id, sub in preds.sort_values(["bird_id", "date_utc"]).groupby(
+        "bird_id", sort=False,
+    ):
+        track = [
+            [round(float(pl) - float(dl), 5), round(float(po) - float(do), 5)]
+            for pl, dl, po, do in zip(
+                sub["pred_lat"], sub["dlat_p50"],
+                sub["pred_lon"], sub["dlon_p50"], strict=True,
+            )
+        ]
+        if len(track) >= 2:
+            all_tracks.append({"id": str(bird_id), "track": track})
+    return {"birds": birds_out, "all": all_tracks}
 
 
 def markov_points_for_test(features_o3: pd.DataFrame, cells: pd.DataFrame,

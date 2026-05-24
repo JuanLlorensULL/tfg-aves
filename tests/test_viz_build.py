@@ -124,6 +124,9 @@ def test_prediction_app_data_shape_and_origin_recovery():
     assert days[1]["m"] is None
     # error p50→real en km (de dist_native_km)
     assert d0["e"] == 12.0 and days[1]["e"] == 45.0
+    # vista "Todas": rutas reales de todas las aves del test
+    assert data["all"][0]["id"] == "91916A"
+    assert len(data["all"][0]["track"]) == 2
 
 
 def test_build_prediction_app_writes_html_with_data(tmp_path):
