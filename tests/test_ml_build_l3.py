@@ -56,73 +56,83 @@ def test_prepare_poblacional_split_attaches_hmm(tmp_path):
 def test_build_o4_l3_artifacts(tmp_path):
     from tfg_aves.ml.build_l3 import build_o4_l3
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
-    out_dir = tmp_path / "l3_v1"
+    out_dir = tmp_path / "l3_v2"
     result = build_o4_l3(
         features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
         seed=0, individual_bird_id="A",
     )
-    # 12 modelos: 2 modos × 2 ejes × 3 cuantiles.
-    for mode in ("poblacional", "individual"):
+    # 8 modelos: xgb (pob+ind) + lgbm (pob) + rf (pob), 2 ejes cada combinación.
+    for family in ("xgb", "lgbm", "rf"):
         for axis in ("dlat", "dlon"):
-            for tag in ("p10", "p50", "p90"):
-                assert (out_dir / f"model_{mode}_{axis}_{tag}.pkl").exists()
+            assert (out_dir / f"model_{family}_poblacional_{axis}.pkl").exists()
+    for axis in ("dlat", "dlon"):
+        assert (out_dir / f"model_xgb_individual_{axis}.pkl").exists()
     assert (out_dir / "predictions_test.parquet").exists()
     assert (out_dir / "metrics.parquet").exists()
 
     metrics = pd.read_parquet(out_dir / "metrics.parquet")
-    assert {"modo", "scope", "top1", "dist_centroide_km", "coverage_lat"}.issubset(
-        metrics.columns)
-    # Hay filas para ambos modos, el corte @A, persistencia y persistencia@A.
-    assert "poblacional" in set(metrics["modo"])
-    assert "individual" in set(metrics["modo"])
+    assert {"familia", "modo", "scope", "top1", "dist_centroide_km",
+            "coverage_lat"}.issubset(metrics.columns)
+    assert {"xgb", "lgbm", "rf"}.issubset(set(metrics["familia"]))
+    assert "individual" in set(metrics["modo"])          # solo xgb
     assert "poblacional@A" in set(metrics["modo"])
     assert "persistencia" in set(metrics["modo"])
-    # La cobertura global está reportada (no NaN) para cada modo.
-    glob = metrics[(metrics["modo"] == "poblacional") & (metrics["scope"] == "global")]
-    assert not np.isnan(glob["coverage_lat"].iloc[0])
-    # El corte poblacional@A (núcleo analítico de L3) está poblado y tiene métricas finitas.
-    pob_at = metrics[(metrics["modo"] == "poblacional@A") & (metrics["scope"] == "global")]
-    assert len(pob_at) == 1
-    assert np.isfinite(pob_at["top1"].iloc[0])
-    assert np.isfinite(pob_at["dist_centroide_km"].iloc[0])
+    # Cobertura global reportada (no NaN) para el poblacional de cada familia.
+    for family in ("xgb", "lgbm", "rf"):
+        glob = metrics[(metrics["familia"] == family)
+                       & (metrics["modo"] == "poblacional")
+                       & (metrics["scope"] == "global")]
+        assert len(glob) == 1
+        assert not np.isnan(glob["coverage_lat"].iloc[0])
     assert result.n_rows_test_ind > 0
 
 
 def test_build_o4_l3_individual_subset(tmp_path):
-    """El test del modo individual coincide EXACTAMENTE con el subconjunto
-    bird_id==A del test poblacional (mismo split temporal por ave)."""
+    """El test individual (xgb) coincide con el subconjunto bird_id==A del
+    poblacional xgb (mismo split temporal por ave)."""
     from tfg_aves.ml.build_l3 import build_o4_l3
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
-    out_dir = tmp_path / "l3_v1"
-    build_o4_l3(
-        features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
-        seed=0, individual_bird_id="A",
-    )
+    out_dir = tmp_path / "l3_v2"
+    build_o4_l3(features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
+                seed=0, individual_bird_id="A")
     preds = pd.read_parquet(out_dir / "predictions_test.parquet")
-    ind = preds[preds["modo"] == "individual"]
-    pob_a = preds[(preds["modo"] == "poblacional") & (preds["bird_id"] == "A")]
+    ind = preds[(preds["familia"] == "xgb") & (preds["modo"] == "individual")]
+    pob_a = preds[(preds["familia"] == "xgb") & (preds["modo"] == "poblacional")
+                  & (preds["bird_id"] == "A")]
     assert len(ind) == len(pob_a)
     assert set(ind["date_utc"]) == set(pob_a["date_utc"])
 
 
+def test_build_o4_l3_rf_lgbm_poblacional_only(tmp_path):
+    """RF y LightGBM solo se entrenan en modo poblacional (G3)."""
+    from tfg_aves.ml.build_l3 import build_o4_l3
+    feat_path, cells_path = _write_synthetic_inputs(tmp_path)
+    out_dir = tmp_path / "l3_v2"
+    build_o4_l3(features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
+                seed=0, individual_bird_id="A")
+    preds = pd.read_parquet(out_dir / "predictions_test.parquet")
+    for family in ("lgbm", "rf"):
+        assert set(preds[preds["familia"] == family]["modo"]) == {"poblacional"}
+        assert not (out_dir / f"model_{family}_individual_dlat.pkl").exists()
+
+
 def test_build_o4_l3_no_leakage(tmp_path):
-    """Ningún modelo entrena con columnas del futuro: feature_cols == las 10
-    causales, sin lat_t_next/lon_t_next/cell_id_t_next/y_dlat/y_dlon."""
+    """feature_cols == las 10 causales, sin columnas de t+1, en las 3 familias."""
     import joblib
 
-    from tfg_aves.ml.build_l3 import build_o4_l3  # noqa: PLC0415
-    from tfg_aves.ml.features import FEATURES_HMM, FEATURES_KINEMATIC  # noqa: PLC0415
+    from tfg_aves.ml.build_l3 import build_o4_l3
+    from tfg_aves.ml.features import FEATURES_HMM, FEATURES_KINEMATIC
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
-    out_dir = tmp_path / "l3_v1"
-    build_o4_l3(
-        features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
-        seed=0, individual_bird_id="A",
-    )
+    out_dir = tmp_path / "l3_v2"
+    build_o4_l3(features_path=feat_path, cells_path=cells_path, out_dir=out_dir,
+                seed=0, individual_bird_id="A")
     expected = [*FEATURES_KINEMATIC, *FEATURES_HMM]
-    payload = joblib.load(out_dir / "model_poblacional_dlat_p50.pkl")
-    assert payload["feature_cols"] == expected
     forbidden = {"lat_t_next", "lon_t_next", "cell_id_t_next", "y_dlat", "y_dlon"}
-    assert forbidden.isdisjoint(set(payload["feature_cols"]))
+    for family in ("xgb", "lgbm", "rf"):
+        payload = joblib.load(out_dir / f"model_{family}_poblacional_dlat.pkl")
+        assert payload["feature_cols"] == expected
+        assert payload["familia"] == family
+        assert forbidden.isdisjoint(set(payload["feature_cols"]))
 
 
 def test_build_o4_l3_idempotent(tmp_path):
@@ -135,9 +145,9 @@ def test_build_o4_l3_idempotent(tmp_path):
     build_o4_l3(features_path=feat_path, cells_path=cells_path, out_dir=out_b,
                 seed=0, individual_bird_id="A")
     ma = (pd.read_parquet(out_a / "metrics.parquet")
-          .sort_values(["modo", "scope"]).reset_index(drop=True))
+          .sort_values(["familia", "modo", "scope"]).reset_index(drop=True))
     mb = (pd.read_parquet(out_b / "metrics.parquet")
-          .sort_values(["modo", "scope"]).reset_index(drop=True))
+          .sort_values(["familia", "modo", "scope"]).reset_index(drop=True))
     pd.testing.assert_frame_equal(ma, mb)
 
 

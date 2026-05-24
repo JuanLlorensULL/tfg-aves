@@ -8,7 +8,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from ._paths import CELLS_PARQUET, FEATURES_O3_PARQUET, O4_L3V1_DIR
+from ._paths import CELLS_PARQUET, FEATURES_O3_PARQUET, O4_L3V2_DIR
 from .evaluate import (
     compute_persistence_baseline,
     evaluate_by_state,
@@ -35,6 +35,12 @@ from .quantile import (
 
 _FEATURES = [*FEATURES_KINEMATIC, *FEATURES_HMM]
 _MODES = ("poblacional", "individual")
+_FAMILIES_DEFAULT = ("xgb", "lgbm", "rf")
+
+
+def _modes_for(family: str) -> tuple[str, ...]:
+    """XGBoost conserva poblacional + individual; RF/LGBM solo poblacional (G3)."""
+    return ("poblacional", "individual") if family == "xgb" else ("poblacional",)
 
 
 @dataclass
@@ -90,7 +96,7 @@ def _y_move(df: pd.DataFrame) -> np.ndarray:
 
 
 def _metric_rows(
-    preds: pd.DataFrame, y_move: np.ndarray, modo_label: str,
+    preds: pd.DataFrame, y_move: np.ndarray, modo_label: str, familia: str,
     *, pinball_lat: float, pinball_lon: float, cov_lat: float, cov_lon: float,
 ) -> list[dict]:
     """Filas de métrica por estado (global/estacionario/migración) + moves."""
@@ -107,7 +113,8 @@ def _metric_rows(
         native = float(np.median(sub["dist_native_km"])) if len(sub) else np.nan
         is_global = scope == "global"
         rows.append({
-            "modo": modo_label, "scope": scope, "n_obs": int(r["n_obs"]),
+            "familia": familia, "modo": modo_label, "scope": scope,
+            "n_obs": int(r["n_obs"]),
             "top1": r["top1"], "top3": r["top3"],
             "dist_centroide_km": r["dist_median_km"], "dist_nativa_km": native,
             "pinball_lat": pinball_lat if is_global else np.nan,
@@ -121,7 +128,8 @@ def _metric_rows(
         float(np.median(preds[mask]["dist_native_km"])) if mask.any() else np.nan
     )
     rows.append({
-        "modo": modo_label, "scope": "moves", "n_obs": mo["n_obs"],
+        "familia": familia, "modo": modo_label, "scope": "moves",
+        "n_obs": mo["n_obs"],
         "top1": mo["top1"], "top3": mo["top3"],
         "dist_centroide_km": mo["dist_median_km"], "dist_nativa_km": native_moves,
         "pinball_lat": np.nan, "pinball_lon": np.nan,
@@ -130,14 +138,15 @@ def _metric_rows(
     return rows
 
 
-def _baseline_rows(preds: pd.DataFrame, modo_label: str) -> list[dict]:
+def _baseline_rows(preds: pd.DataFrame, modo_label: str, familia: str) -> list[dict]:
     # Sin fila "moves": la persistencia no necesita el corte y_move (su
     # asimetría con _metric_rows, que sí lo tiene, es intencional).
     by = evaluate_by_state(preds)
     rows = []
     for _, r in by.iterrows():
         rows.append({
-            "modo": modo_label, "scope": r["state"], "n_obs": int(r["n_obs"]),
+            "familia": familia, "modo": modo_label, "scope": r["state"],
+            "n_obs": int(r["n_obs"]),
             "top1": r["top1"], "top3": r["top3"],
             "dist_centroide_km": r["dist_median_km"], "dist_nativa_km": np.nan,
             "pinball_lat": np.nan, "pinball_lon": np.nan,
@@ -149,15 +158,17 @@ def _baseline_rows(preds: pd.DataFrame, modo_label: str) -> list[dict]:
 def build_o4_l3(
     features_path: Path = FEATURES_O3_PARQUET,
     cells_path: Path = CELLS_PARQUET,
-    out_dir: Path = O4_L3V1_DIR,
+    out_dir: Path = O4_L3V2_DIR,
     seed: int = 0,
     *,
+    families: tuple[str, ...] = _FAMILIES_DEFAULT,
     individual_bird_id: str | None = None,
 ) -> BuildO4L3Result:
-    """Pipeline L3-v1: regresor de cuantiles en modo poblacional + individual.
+    """Pipeline L3-v2: regresor de cuantiles multi-familia (xgb/lgbm/rf).
 
-    individual_bird_id: ave del modo individual. Por defecto INDIVIDUAL_BIRD_ID
-    (91916A). Se expone como parámetro para los tests con fixtures sintéticos.
+    individual_bird_id: ave del modo individual (solo para xgb). Por defecto
+    INDIVIDUAL_BIRD_ID (91916A). Se expone como parámetro para los tests con
+    fixtures sintéticos. families: tuple de familias a entrenar.
     """
     if individual_bird_id is None:
         individual_bird_id = INDIVIDUAL_BIRD_ID
@@ -175,8 +186,6 @@ def build_o4_l3(
     coverage: dict[str, dict[str, float]] = {}
     metric_rows: list[dict] = []
     preds_frames: list[pd.DataFrame] = []
-    # Guardamos las preds poblacionales para el corte @individual.
-    preds_pob_full: pd.DataFrame | None = None
 
     splits_by_mode = {
         "poblacional": (train_pob, val_pob, test_pob),
@@ -186,95 +195,95 @@ def build_o4_l3(
         ),
     }
 
-    for mode in _MODES:
-        train_m, val_m, test_m = splits_by_mode[mode]
-        tgt_tr = derive_displacement_target(train_m)
-        tgt_va = derive_displacement_target(val_m)
+    xgb_pob_full: pd.DataFrame | None = None
 
-        models_lat = fit_quantile_axis(
-            train_m[_FEATURES], tgt_tr["y_dlat"].to_numpy(),
-            val_m[_FEATURES], tgt_va["y_dlat"].to_numpy(), seed=seed,
-        )
-        models_lon = fit_quantile_axis(
-            train_m[_FEATURES], tgt_tr["y_dlon"].to_numpy(),
-            val_m[_FEATURES], tgt_va["y_dlon"].to_numpy(), seed=seed,
-        )
+    for family in families:
+        for mode in _modes_for(family):
+            train_m, val_m, test_m = splits_by_mode[mode]
+            tgt_tr = derive_displacement_target(train_m)
+            tgt_va = derive_displacement_target(val_m)
 
-        qp_test, crossings = predict_quantiles(models_lat, models_lon, test_m[_FEATURES])
-        n_crossings[mode] = crossings
-        preds = build_regression_predictions(qp_test, test_m, cells)
+            axis_lat = fit_quantile_axis(
+                train_m[_FEATURES], tgt_tr["y_dlat"].to_numpy(),
+                val_m[_FEATURES], tgt_va["y_dlat"].to_numpy(),
+                family=family, seed=seed,
+            )
+            axis_lon = fit_quantile_axis(
+                train_m[_FEATURES], tgt_tr["y_dlon"].to_numpy(),
+                val_m[_FEATURES], tgt_va["y_dlon"].to_numpy(),
+                family=family, seed=seed,
+            )
 
-        # Pinball (media sobre los 3 cuantiles) y cobertura por eje.
-        tgt_te = derive_displacement_target(test_m)
-        pin_lat = float(np.mean([
-            pinball_loss(
+            qp_test, crossings = predict_quantiles(axis_lat, axis_lon, test_m[_FEATURES])
+            key = f"{family}_{mode}"
+            n_crossings[key] = crossings
+            preds = build_regression_predictions(qp_test, test_m, cells)
+
+            tgt_te = derive_displacement_target(test_m)
+            pin_lat = float(np.mean([
+                pinball_loss(tgt_te["y_dlat"].to_numpy(),
+                             qp_test[f"dlat_p{int(q*100):02d}"].to_numpy(), q)
+                for q in QUANTILES
+            ]))
+            pin_lon = float(np.mean([
+                pinball_loss(tgt_te["y_dlon"].to_numpy(),
+                             qp_test[f"dlon_p{int(q*100):02d}"].to_numpy(), q)
+                for q in QUANTILES
+            ]))
+            cov_lat = interval_coverage(
                 tgt_te["y_dlat"].to_numpy(),
-                qp_test[f"dlat_p{int(q*100):02d}"].to_numpy(), q,
+                qp_test["dlat_p10"].to_numpy(), qp_test["dlat_p90"].to_numpy(),
             )
-            for q in QUANTILES
-        ]))
-        pin_lon = float(np.mean([
-            pinball_loss(
+            cov_lon = interval_coverage(
                 tgt_te["y_dlon"].to_numpy(),
-                qp_test[f"dlon_p{int(q*100):02d}"].to_numpy(), q,
+                qp_test["dlon_p10"].to_numpy(), qp_test["dlon_p90"].to_numpy(),
             )
-            for q in QUANTILES
-        ]))
-        cov_lat = interval_coverage(
-            tgt_te["y_dlat"].to_numpy(),
-            qp_test["dlat_p10"].to_numpy(), qp_test["dlat_p90"].to_numpy(),
-        )
-        cov_lon = interval_coverage(
-            tgt_te["y_dlon"].to_numpy(),
-            qp_test["dlon_p10"].to_numpy(), qp_test["dlon_p90"].to_numpy(),
-        )
-        coverage[mode] = {"lat": cov_lat, "lon": cov_lon}
+            coverage[key] = {"lat": cov_lat, "lon": cov_lon}
 
-        y_move_m = _y_move(test_m)
-        metric_rows.extend(_metric_rows(
-            preds, y_move_m, mode,
-            pinball_lat=pin_lat, pinball_lon=pin_lon, cov_lat=cov_lat, cov_lon=cov_lon,
-        ))
+            metric_rows.extend(_metric_rows(
+                preds, _y_move(test_m), mode, family,
+                pinball_lat=pin_lat, pinball_lon=pin_lon,
+                cov_lat=cov_lat, cov_lon=cov_lon,
+            ))
 
-        for q in QUANTILES:
-            tag = f"p{int(q * 100):02d}"
-            for axis, models in (("dlat", models_lat), ("dlon", models_lon)):
-                mp = out_dir / f"model_{mode}_{axis}_{tag}.pkl"
+            for axis_name, axis_model in (("dlat", axis_lat), ("dlon", axis_lon)):
+                mp = out_dir / f"model_{family}_{mode}_{axis_name}.pkl"
                 joblib.dump({
-                    "model": models[q], "feature_cols": _FEATURES,
-                    "mode": mode, "axis": axis, "quantile": q,
+                    "model": axis_model, "feature_cols": _FEATURES,
+                    "familia": family, "mode": mode, "axis": axis_name,
                     "individual_bird_id": (
                         individual_bird_id if mode == "individual" else None
                     ),
                 }, mp)
-                model_paths[f"{mode}_{axis}_{tag}"] = mp
+                model_paths[f"{family}_{mode}_{axis_name}"] = mp
 
-        preds_out = preds.copy()
-        preds_out["modo"] = mode
-        preds_out["pred_cell_topk"] = preds_out["pred_cell_topk"].apply(list)
-        preds_frames.append(preds_out)
-        if mode == "poblacional":
-            preds_pob_full = preds.copy()
+            preds_out = preds.copy()
+            preds_out["familia"] = family
+            preds_out["modo"] = mode
+            preds_out["pred_cell_topk"] = preds_out["pred_cell_topk"].apply(list)
+            preds_frames.append(preds_out)
+            if family == "xgb" and mode == "poblacional":
+                xgb_pob_full = preds.copy()
 
-    # --- Corte poblacional@individual: mismas filas del individual ---
-    assert preds_pob_full is not None
-    pob_at_ind = preds_pob_full[
-        preds_pob_full["bird_id"] == individual_bird_id
+    # --- Corte xgb poblacional@individual: mismas filas del individual ---
+    assert xgb_pob_full is not None
+    pob_at_ind = xgb_pob_full[
+        xgb_pob_full["bird_id"] == individual_bird_id
     ].reset_index(drop=True)
     if len(pob_at_ind) > 0:
         test_ind = splits_by_mode["individual"][2]
         metric_rows.extend(_metric_rows(
-            pob_at_ind, _y_move(test_ind), f"poblacional@{individual_bird_id}",
+            pob_at_ind, _y_move(test_ind), f"poblacional@{individual_bird_id}", "xgb",
             pinball_lat=np.nan, pinball_lon=np.nan, cov_lat=np.nan, cov_lon=np.nan,
         ))
 
     # --- Baselines de persistencia (test completo + corte individual) ---
     persistence = compute_persistence_baseline(test_pob, cells=cells)
-    metric_rows.extend(_baseline_rows(persistence, "persistencia"))
+    metric_rows.extend(_baseline_rows(persistence, "persistencia", "—"))
     pers_ind = persistence[persistence["bird_id"] == individual_bird_id]
     if len(pers_ind) > 0:
         metric_rows.extend(_baseline_rows(
-            pers_ind.reset_index(drop=True), f"persistencia@{individual_bird_id}"))
+            pers_ind.reset_index(drop=True), f"persistencia@{individual_bird_id}", "—"))
 
     # --- Guardar artefactos ---
     metrics = pd.DataFrame(metric_rows)
