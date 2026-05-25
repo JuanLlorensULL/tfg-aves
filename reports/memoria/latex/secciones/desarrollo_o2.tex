@@ -1,0 +1,53 @@
+\chapter{Predicción con cadenas de Markov visibles}
+\label{ch:o2}
+
+Este capítulo construye el primer modelo predictivo del trabajo: una cadena de
+Markov de primer orden que, a partir de la celda en la que un individuo se
+encuentra hoy, estima en cuál estará mañana. Se llama \emph{visible} porque su
+estado (la celda ocupada) es una variable observada directamente, a diferencia de
+los estados ocultos que introducirá el capítulo siguiente. Más allá de su interés
+propio, el modelo cumple un papel transversal: es la referencia interpretable y
+cuantificada que los modelos posteriores (capítulos \ref{ch:o3} y \ref{ch:o4})
+deberán superar.
+
+\section{Introducción y objetivo}
+\label{sec:o2-intro}
+
+La entrada de este objetivo es la tabla diaria producida en el capítulo
+\ref{ch:o1}: una posición por individuo y día natural (UTC), con los huecos
+representados de forma explícita y la posición anclada a las 08:00, próxima al
+lugar de descanso nocturno (\textit{roost}). Sobre esa secuencia regular se
+plantea la pregunta de predicción más simple posible: dado dónde está hoy el ave,
+¿dónde estará mañana? El modelo que la responde con menos supuestos, respetando la
+estructura temporal de la serie, es una cadena de Markov de primer orden sobre el
+espacio discretizado.
+
+La discretización convierte cada posición diaria en un estado: el dominio
+geográfico se divide en una rejilla de celdas y la posición del día $t$ se
+identifica con la celda que la contiene, $X_t$, dentro de un espacio finito de $N$
+celdas. La hipótesis de Markov de primer orden establece que la celda del día
+siguiente depende solo de la celda actual, no de toda la trayectoria previa:
+
+\begin{equation}
+  P(X_{t+1} = j \mid X_t = i,\, X_{t-1}, \dots, X_0)
+  = P(X_{t+1} = j \mid X_t = i) = p_{ij},
+  \label{eq:o2-markov}
+\end{equation}
+
+donde $p_{ij}$ es la probabilidad de transitar de la celda $i$ a la $j$. El
+conjunto de estas probabilidades forma la matriz de transición $P$, con
+$\sum_j p_{ij} = 1$ para toda celda de origen. Para captar la estacionalidad del
+ciclo migratorio, el modelo no usa una única matriz sino una por mes natural,
+$P^{(m)}$ con $m = 1, \dots, 12$. La teoría general de las cadenas de Markov
+finitas se trata en el capítulo \ref{ch:preliminares}; aquí se emplea en su forma
+aplicada al problema.
+
+La cuestión concreta del capítulo es si una cadena de Markov de primer orden,
+global (una sola familia de matrices compartida por todos los individuos) y con
+estacionalidad mensual, mejora a la predicción trivial de \emph{persistencia}
+(suponer que mañana el ave seguirá en la misma celda que hoy). Esta baseline no es
+un rival ingenuo: como se verá, la marcada tendencia de la especie a permanecer en
+el mismo lugar la hace sorprendentemente difícil de batir, y esa dificultad es,
+por sí misma, un resultado. El modelo de Markov aporta además el criterio de
+comparación cuantificado que reutilizan los objetivos siguientes: sus predicciones
+se almacenan para el análisis comparativo del error del capítulo \ref{ch:o5}.
