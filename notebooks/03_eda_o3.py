@@ -17,7 +17,8 @@
 # # 03 — EDA de O3 (HMM comportamiento)
 #
 # Notebook que justifica `n_components=2` (D1) mediante AIC/BIC sweep, ejecuta
-# build_o3 con cell_deg final y materializa los artefactos C1–C5.
+# build_o3 con la configuración final y materializa los artefactos C1–C9 y un
+# artefacto adicional de documentación del decodificado causal.
 
 # %%
 from __future__ import annotations
@@ -31,13 +32,13 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from tfg_aves.hmm import (  # noqa: E402
-    ab_agreement,
+    ab_agreement_causal,
     build_o3,
-    build_sequences,
+    build_hmm_sequences,
+    compute_causal_kinematics,
     compute_observation_features,
-    fit_hmm_with_restarts,
+    HMM_EMISSION_COLS_A,
     load_vegetation_from_raw,
-    stratified_holdout_split,
 )
 from tfg_aves.hmm._paths import DAILY_PARQUET, RAW_CSV  # noqa: E402
 from tfg_aves.reporting import save_artifact  # noqa: E402
@@ -51,20 +52,44 @@ print(f"válidas: {df_daily['is_valid'].sum()}")
 
 # %% [markdown]
 # ## Fase A — D1: AIC/BIC sweep para justificar n_components=2
+#
+# El sweep se realiza sobre el Modelo A (cinemática entrante) usando el split
+# temporal de entrenamiento. El decodificado es causal (filtrado forward-only),
+# por lo que las secuencias de entrenamiento se construyen con build_hmm_sequences.
 
 # %%
 veg = load_vegetation_from_raw(RAW_CSV, df_daily["source_event_id"])
-df_features = compute_observation_features(df_daily, df_raw=veg)
+df_features_raw = compute_observation_features(df_daily, df_raw=veg)
+df_kin = compute_causal_kinematics(df_features_raw)
 print(
-    f"features.parquet (in-memory): {len(df_features)} filas, "
-    f"{df_features['is_observation_valid'].sum()} con triplete válido"
+    f"features cinemáticas (in-memory): {len(df_kin)} filas, "
+    f"{df_kin['is_hmm_obs_valid'].sum()} con triplete HMM válido"
 )
 
 # %%
-train_ids, _ = stratified_holdout_split(df_features, holdout_frac=0.20, random_state=0)
-FEATURE_COLS_A = ["step_length_km", "cos_turning_angle"]
-X_train, lengths_train = build_sequences(df_features, train_ids, FEATURE_COLS_A)
-print(f"Train: {len(X_train)} observaciones, {len(lengths_train)} secuencias")
+# Para el sweep usamos el 80% de aves como referencia (split de aves estratificado).
+# El split temporal real lo calcula build_o3; aquí usamos un split de aves
+# solo para el sweep exploratorio D1.
+from tfg_aves.hmm.fit import fit_hmm_with_restarts  # noqa: E402
+from sklearn.model_selection import train_test_split  # noqa: E402
+
+# Calcular IDs de entrenamiento directamente sobre is_hmm_obs_valid.
+valid_counts = (
+    df_kin[df_kin["is_hmm_obs_valid"]]
+    .groupby("bird_id").size().sort_index()
+)
+all_bird_ids = valid_counts.index.tolist()
+n_bins = min(5, max(2, len(all_bird_ids) // 3))
+strata = pd.qcut(valid_counts.values, q=n_bins, labels=False, duplicates="drop")
+train_idx, _ = train_test_split(
+    list(range(len(all_bird_ids))), test_size=0.20, random_state=0, stratify=strata,
+)
+train_ids = [all_bird_ids[i] for i in train_idx]
+kin_train = df_kin[df_kin["bird_id"].isin(train_ids)]
+X_train, lengths_train, _ = build_hmm_sequences(
+    kin_train, cutoff_by_bird=None, emission_cols=HMM_EMISSION_COLS_A,
+)
+print(f"Train (sweep): {len(X_train)} observaciones, {len(lengths_train)} secuencias")
 
 
 # %%
@@ -122,14 +147,14 @@ save_artifact(
     num=1,
     decision="n_components fijado en 2 (estacionario + migración) respaldado por AIC/BIC sweep",
     caption_es=(
-        "AIC y BIC para HMMs Modelo A con n_components ∈ {2, 3, 4} entrenados sobre el "
-        "conjunto de entrenamiento (80 % de aves) con 5 restarts. La feature step_length_km "
+        "AIC y BIC para HMMs Modelo A con n_components en {2, 3, 4} entrenados sobre el "
+        "conjunto de entrenamiento (80 por ciento de aves) con 5 restarts. La feature step_in_km "
         "se usa en escala cruda (km), por lo que los valores absolutos de LL/AIC/BIC son "
         "distintos a los de versiones previas con log-escala. Se mantiene n=2 por "
-        "alineación con el proposal del TFG (estacionario vs migración) y por "
+        "alineación con el objetivo del TFG (estacionario vs migración) y por "
         "interpretabilidad biológica de los estados. Si AIC/BIC muestran preferencia "
         "marcada por n>2, los estados adicionales no admiten etiquetado biológico claro "
-        "y se documenta como follow-up en lugar de adoptarse."
+        "y se documenta como seguimiento en lugar de adoptarse."
     ),
     fig=fig,
     table=df_sweep,
@@ -141,11 +166,9 @@ print("Decisión D1: n_components = 2")
 # ## Fase B — Ejecutar build_o3 con configuración final y materializar artefactos
 
 # %%
-result = build_o3(holdout_frac=0.20, n_restarts=10, random_state=0)
+result = build_o3(n_restarts=10, random_state=0)
 print(result)
 print()
-print(f"  n_birds_train: {result.n_birds_train}")
-print(f"  n_birds_holdout: {result.n_birds_holdout}")
 print(f"  n_observations: {result.n_observations}")
 print(f"  ll_per_obs_a: {result.ll_per_obs_a:.4f}")
 print(f"  ll_per_obs_b: {result.ll_per_obs_b:.4f}")
@@ -153,7 +176,7 @@ print(f"  pct_agreement_ab: {result.pct_agreement_ab:.2f}%")
 
 # %%
 features = pd.read_parquet(result.features_path)
-valid = features[features["is_observation_valid"]].copy()
+valid = features[features["is_hmm_obs_valid"]].copy()
 valid["month"] = pd.to_datetime(valid["date_utc"]).dt.month
 print(f"Filas válidas: {len(valid)}")
 
@@ -163,11 +186,11 @@ print(f"Filas válidas: {len(valid)}")
 # %%
 fig_c1, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, col, title, log_x in [
-    (axes[0], "step_length_km", "step_length (km)", True),
-    (axes[1], "cos_turning_angle", "cos(cambio de rumbo)", False),
+    (axes[0], "step_in_km", "step_in_km (km)", True),
+    (axes[1], "cos_turning_in", "cos(cambio de rumbo)", False),
 ]:
     for state, label, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
-        sub = valid[valid["state_a"] == state]
+        sub = valid[valid["state_a_causal"] == state]
         if log_x:
             data = sub[col].clip(lower=0.1)
             ax.hist(data, bins=np.logspace(-1, 3.5, 40), alpha=0.5, label=label, color=color)
@@ -179,7 +202,7 @@ for ax, col, title, log_x in [
     ax.set_ylabel("Frecuencia")
     ax.set_title(title)
     ax.legend()
-fig_c1.suptitle("Modelo A — features por estado")
+fig_c1.suptitle("Modelo A — features por estado (decodificado causal)")
 fig_c1.tight_layout()
 
 save_artifact(
@@ -187,18 +210,19 @@ save_artifact(
     objective="o3",
     num=2,
     decision=(
-        "Modelo A separa estacionario/migración por cinemática: bajo desplazamiento+rumbo "
-        "errático vs alto desplazamiento+rumbo sostenido"
+        "Modelo A separa estacionario/migración por cinemática entrante: bajo desplazamiento "
+        "entrante y rumbo errático vs alto desplazamiento y rumbo sostenido"
     ),
     caption_es=(
-        "Distribución de las dos features cinemáticas del Modelo A condicionada al estado "
-        "Viterbi (estacionario en azul, migración en rojo). La feature step_length_km se muestra "
-        "en escala logarítmica para hacer visible la bimodalidad entre pocos km (estado "
-        "estacionario) y decenas-cientos de km (estado migración). El estado estacionario "
-        "concentra masa en step_length_km bajo y cos_turning_angle cercano a 0 o negativo "
-        "(giros erráticos, sin rumbo sostenido). El estado migración presenta el patrón "
-        "contrario: step_length_km alto y cos_turning_angle cercano a +1 (vuelo rectilíneo). "
-        "La separación visual confirma que el HMM A descubre estados con semántica biológica clara."
+        "Distribución de las dos features cinemáticas entrantes del Modelo A condicionada al "
+        "estado detectado mediante filtrado forward-only (estacionario en azul, migración en rojo). "
+        "La feature step_in_km (desplazamiento del tramo t-1 a t) se muestra en escala "
+        "logarítmica para hacer visible la bimodalidad entre pocos km (estado estacionario) y "
+        "decenas-cientos de km (estado migración). El estado estacionario concentra masa en "
+        "step_in_km bajo y cos_turning_in cercano a 0 o negativo (giros erráticos, sin rumbo "
+        "sostenido). El estado migración presenta el patrón contrario: step_in_km alto y "
+        "cos_turning_in cercano a +1 (vuelo rectilíneo). La separación visual confirma que "
+        "el HMM A descubre estados con semántica biológica clara."
     ),
     fig=fig_c1,
     overwrite=True,
@@ -210,24 +234,24 @@ save_artifact(
 # %%
 fig_c2, axes = plt.subplots(2, 3, figsize=(15, 8))
 cols_b = [
-    "step_length_km", "cos_turning_angle", "daylight_hours",
+    "step_in_km", "cos_turning_in", "daylight_hours",
     "veg_low", "veg_high",
 ]
 for ax, col in zip(axes.flat, cols_b, strict=False):
     for state, label, color in [(0, "estacionario", "#1f77b4"), (1, "migración", "#d62728")]:
-        sub = valid[valid["state_b"] == state]
-        if col == "step_length_km":
+        sub = valid[valid["state_b_causal"] == state]
+        if col == "step_in_km":
             data = sub[col].clip(lower=0.1)
             ax.hist(data, bins=np.logspace(-1, 3.5, 40), alpha=0.5, label=label, color=color)
         else:
             ax.hist(sub[col], bins=40, alpha=0.5, label=label, color=color)
-    if col == "step_length_km":
+    if col == "step_in_km":
         ax.set_xscale("log")
     ax.set_xlabel(col)
     ax.set_title(col)
     ax.legend()
 axes.flat[-1].axis("off")  # 6º hueco
-fig_c2.suptitle("Modelo B — features por estado")
+fig_c2.suptitle("Modelo B — features por estado (decodificado causal)")
 fig_c2.tight_layout()
 
 save_artifact(
@@ -235,20 +259,21 @@ save_artifact(
     objective="o3",
     num=3,
     decision=(
-        "Modelo B añade contexto ambiental (vegetación, fotoperiodo) a la cinemática; "
+        "Modelo B añade contexto ambiental (vegetación, fotoperiodo) a la cinemática entrante; "
         "comparación con C1 detecta posible circularidad"
     ),
     caption_es=(
-        "Distribución de las cinco features del Modelo B condicionada al estado Viterbi. "
-        "La primera feature (step_length_km) se muestra en escala logarítmica. "
-        "Las dos primeras (step_length_km, cos_turning_angle) replican el patrón "
-        "del Modelo A: bimodalidad en step_length entre pocos km (estacionario) y "
-        "decenas-cientos km (migración); cos_turning_angle bimodal entre ~+1 "
-        "(vuelo rectilíneo, migración) y ~0/negativo (giros erráticos, estacionario). "
-        "Las tres adicionales (daylight_hours, veg_low, veg_high) muestran si "
-        "los estados resultantes están condicionados también por contexto temporal y "
-        "ambiental: comparar con C1 permite ver si el contexto refina la separación o si la "
-        "domina (alarma de circularidad si los estados se reducen a 'verano vs invierno')."
+        "Distribución de las cinco features del Modelo B condicionada al estado detectado "
+        "mediante filtrado forward-only (estacionario en azul, migración en rojo). "
+        "La primera feature (step_in_km) se muestra en escala logarítmica. "
+        "Las dos primeras (step_in_km, cos_turning_in) replican el patrón del Modelo A: "
+        "bimodalidad en step_in_km entre pocos km (estacionario) y decenas-cientos km "
+        "(migración); cos_turning_in bimodal entre cercano a +1 (vuelo rectilíneo, migración) "
+        "y cercano a 0/negativo (giros erráticos, estacionario). "
+        "Las tres adicionales (daylight_hours, veg_low, veg_high) muestran si los estados "
+        "resultantes están condicionados también por contexto temporal y ambiental: comparar "
+        "con C1 permite ver si el contexto refina la separación o si la domina (alarma de "
+        "circularidad si los estados se reducen a verano vs invierno)."
     ),
     fig=fig_c2,
     overwrite=True,
@@ -272,7 +297,7 @@ MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
                 "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 fig_c3, axes = plt.subplots(2, 2, figsize=(14, 8))
-for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
+for row_idx, (model_suffix, model_label) in enumerate([("a_causal", "Modelo A"), ("b_causal", "Modelo B")]):
     state_col = f"state_{model_suffix}"
     by_month = (
         valid.groupby(["month", state_col]).size().unstack(fill_value=0)
@@ -285,7 +310,6 @@ for row_idx, (model_suffix, model_label) in enumerate([("a", "Modelo A"), ("b", 
     axes[row_idx, 0].set_xlabel("Mes")
     axes[row_idx, 0].set_ylabel("% en migración")
     axes[row_idx, 0].set_title(f"{model_label}: % migración por mes")
-    # Anotar porcentajes encima de cada barra (offset = 1-based al ser meses).
     if pct_values_month.size > 0:
         offset_m = max(pct_values_month) * 0.02 + 0.3
         for i, v in enumerate(pct_values_month, start=1):
@@ -317,7 +341,7 @@ fig_c3.tight_layout()
 
 # Tabla con los porcentajes para INDEX.
 coherence_rows = []
-for ms in ["a", "b"]:
+for ms in ["a_causal", "b_causal"]:
     sc = f"state_{ms}"
     g = valid.groupby(["month", sc]).size().unstack(fill_value=0)
     for m in g.index:
@@ -337,7 +361,7 @@ save_artifact(
     caption_es=(
         "Coherencia biológica de los estados detectados. Por modelo (A arriba, B abajo): "
         "porcentaje de observaciones asignadas a estado migración por mes (izquierda) y por "
-        "bin de latitud (derecha). Se espera que migración se concentre en marzo-mayo y "
+        "bin de latitud (derecha). Se espera que la migración se concentre en marzo-mayo y "
         "agosto-octubre y en latitudes intermedias (zonas de paso). Es el artefacto que "
         "permite decidir entre Modelo A y Modelo B en términos de coherencia con la fenología "
         "conocida de Larus fuscus."
@@ -351,11 +375,25 @@ save_artifact(
 # ## C4 — Acuerdo A vs B y análisis de desacuerdos
 
 # %%
-ag = ab_agreement(valid)
-confusion = ag["confusion"]
-print(f"% acuerdo: {ag['pct_agreement']:.2f}%")
-print(f"% B añade migración (sobre días A=estac): {ag['pct_b_adds_migration']:.2f}%")
-print(f"% B añade estacionario (sobre días A=migr): {ag['pct_b_adds_stationary']:.2f}%")
+ag = ab_agreement_causal(valid)
+pct_agreement = ag["pct_agreement"]
+print(f"% acuerdo (causal): {pct_agreement:.2f}%")
+
+# Para la matriz de confusión y desacuerdos calculamos manualmente.
+v_ab = valid.dropna(subset=["state_a_causal", "state_b_causal"]).copy()
+v_ab["state_a_int"] = v_ab["state_a_causal"].astype(int)
+v_ab["state_b_int"] = v_ab["state_b_causal"].astype(int)
+confusion = pd.crosstab(v_ab["state_a_int"], v_ab["state_b_int"],
+                        rownames=["state_a_causal"], colnames=["state_b_causal"])
+disagreements = v_ab[v_ab["state_a_int"] != v_ab["state_b_int"]]
+n_a_estac = int((v_ab["state_a_int"] == 0).sum())
+n_a_migr = int((v_ab["state_a_int"] == 1).sum())
+n_b_adds_migr = int(((v_ab["state_a_int"] == 0) & (v_ab["state_b_int"] == 1)).sum())
+n_b_adds_stat = int(((v_ab["state_a_int"] == 1) & (v_ab["state_b_int"] == 0)).sum())
+pct_b_adds_migr = (100.0 * n_b_adds_migr / n_a_estac) if n_a_estac > 0 else 0.0
+pct_b_adds_stat = (100.0 * n_b_adds_stat / n_a_migr) if n_a_migr > 0 else 0.0
+print(f"% B añade migración (sobre días A=estac): {pct_b_adds_migr:.2f}%")
+print(f"% B añade estacionario (sobre días A=migr): {pct_b_adds_stat:.2f}%")
 print("Matriz de confusión:")
 print(confusion)
 
@@ -366,22 +404,21 @@ for i in range(2):
         axes[0].text(j, i, str(int(confusion.values[i, j])), ha="center", va="center", fontsize=14)
 axes[0].set_xticks([0, 1], labels=["estac (B)", "migr (B)"])
 axes[0].set_yticks([0, 1], labels=["estac (A)", "migr (A)"])
-axes[0].set_title(f"Matriz de confusión A vs B (acuerdo {ag['pct_agreement']:.1f}%)")
+axes[0].set_title(f"Matriz de confusión A vs B (acuerdo {pct_agreement:.1f}%)")
 
-disagreements = ag["disagreements"]
 if len(disagreements) > 0:
     axes[1].hist(
-        disagreements[disagreements["state_a"] == 0]["step_length_km"].clip(lower=0.1),
+        disagreements[disagreements["state_a_int"] == 0]["step_in_km"].clip(lower=0.1),
         bins=30, alpha=0.5, label="A=estac, B=migr", color="#ff7f0e",
     )
     axes[1].hist(
-        disagreements[disagreements["state_a"] == 1]["step_length_km"].clip(lower=0.1),
+        disagreements[disagreements["state_a_int"] == 1]["step_in_km"].clip(lower=0.1),
         bins=30, alpha=0.5, label="A=migr, B=estac", color="#2ca02c",
     )
     axes[1].set_xscale("log")
-    axes[1].set_xlabel("step_length_km")
+    axes[1].set_xlabel("step_in_km")
     axes[1].set_ylabel("Frecuencia")
-    axes[1].set_title("Desacuerdos por step_length (km)")
+    axes[1].set_title("Desacuerdos por step_in_km (km)")
     axes[1].legend()
 else:
     axes[1].axis("off")
@@ -393,22 +430,23 @@ save_artifact(
     objective="o3",
     num=5,
     decision=(
-        "Acuerdo cuantificado entre Modelo A y B: permite decidir si el contexto refina "
-        "o desplaza la señal cinemática"
+        "Acuerdo cuantificado entre Modelo A y B (causal): permite decidir si el contexto "
+        "refina o desplaza la señal cinemática"
     ),
     caption_es=(
-        "Acuerdo entre el Modelo A (cinemático) y el Modelo B (cinemático + contexto). "
-        "Izquierda: matriz de confusión 2×2 sobre todas las (ave, día) válidas. Derecha: "
-        "histograma de step_length_km (escala logarítmica, km) para los desacuerdos, "
+        "Acuerdo entre el Modelo A (cinemático) y el Modelo B (cinemático más contexto), "
+        "ambos con decodificado por filtrado forward-only. "
+        "Izquierda: matriz de confusión 2x2 sobre todas las observaciones (ave, dia) válidas. "
+        "Derecha: histograma de step_in_km (escala logarítmica, km) para los desacuerdos, "
         "separando 'A=estac/B=migr' y 'A=migr/B=estac'. Los desacuerdos típicamente se "
         "concentran en valores intermedios de desplazamiento (zona ambigua donde el "
         "contexto en B mueve la inferencia)."
     ),
     fig=fig_c4,
     table=pd.DataFrame([
-        {"metric": "pct_agreement", "value": float(ag["pct_agreement"])},
-        {"metric": "pct_b_adds_migration", "value": float(ag["pct_b_adds_migration"])},
-        {"metric": "pct_b_adds_stationary", "value": float(ag["pct_b_adds_stationary"])},
+        {"metric": "pct_agreement", "value": float(pct_agreement)},
+        {"metric": "pct_b_adds_migration", "value": float(pct_b_adds_migr)},
+        {"metric": "pct_b_adds_stationary", "value": float(pct_b_adds_stat)},
     ]),
     overwrite=True,
 )
@@ -418,11 +456,11 @@ save_artifact(
 
 # %%
 per_bird = (
-    valid.groupby(["bird_id", "state_a"]).size().unstack(fill_value=0)
+    valid.groupby(["bird_id", "state_a_causal"]).size().unstack(fill_value=0)
 )
 per_bird["pct_migration_a"] = per_bird[1] / per_bird.sum(axis=1) * 100
 per_bird_b = (
-    valid.groupby(["bird_id", "state_b"]).size().unstack(fill_value=0)
+    valid.groupby(["bird_id", "state_b_causal"]).size().unstack(fill_value=0)
 )
 per_bird["pct_migration_b"] = per_bird_b[1] / per_bird_b.sum(axis=1) * 100
 
@@ -431,7 +469,7 @@ ax.scatter(per_bird["pct_migration_a"], per_bird["pct_migration_b"], alpha=0.6)
 ax.plot([0, 100], [0, 100], "k--", linewidth=0.5)
 ax.set_xlabel("% migración (Modelo A)")
 ax.set_ylabel("% migración (Modelo B)")
-ax.set_title("Proporción de días en migración por ave: A vs B")
+ax.set_title("Proporción de días en migración por ave: A vs B (causal)")
 fig_c5.tight_layout()
 
 save_artifact(
@@ -440,15 +478,16 @@ save_artifact(
     num=6,
     decision=(
         "Heterogeneidad inter-individual confirmada: cada ave tiene proporción distinta "
-        "de días en migración, motivando análisis por ave en O5"
+        "de días en migración, motivando análisis por ave en la visualización final"
     ),
     caption_es=(
-        "Proporción de días asignados a estado migración por ave, comparando Modelo A y B. "
-        "Cada punto es un ave; la línea diagonal y=x marca acuerdo perfecto entre modelos. "
-        "Aves cerca del origen son residentes puras; aves cerca de la esquina superior "
-        "derecha son migratorias intensas; dispersión vertical indica desacuerdos sistemáticos "
-        "entre A y B. Esta vista conecta con el hallazgo de O2 sobre heterogeneidad poblacional "
-        "y prepara el terreno para el análisis del error por ave en O5."
+        "Proporción de días asignados a estado migración por ave, comparando Modelo A y B "
+        "(decodificado causal). Cada punto es un ave; la línea diagonal y=x marca acuerdo "
+        "perfecto entre modelos. Aves cerca del origen son residentes puras; aves cerca de "
+        "la esquina superior derecha son migratorias intensas; dispersión vertical indica "
+        "desacuerdos sistemáticos entre A y B. Esta vista confirma la heterogeneidad "
+        "poblacional observada en la preparación de datos y prepara el terreno para el "
+        "análisis del error por ave en la fase de visualización."
     ),
     fig=fig_c5,
     table=per_bird.reset_index()[["bird_id", "pct_migration_a", "pct_migration_b"]],
@@ -460,8 +499,8 @@ save_artifact(
 
 # %%
 feature_cols_b = [
-    ("step_length_km", "step_length (km)"),
-    ("cos_turning_angle", "cos(turn. angle)"),
+    ("step_in_km", "step_in_km (km)"),
+    ("cos_turning_in", "cos(turn. angle)"),
     ("daylight_hours", "horas_luz (h)"),
     ("veg_low", "veg_low"),
     ("veg_high", "veg_high"),
@@ -469,8 +508,8 @@ feature_cols_b = [
 
 rows_d = []
 for col, label in feature_cols_b:
-    mig_v = valid.loc[valid["state_b"] == 1, col].dropna()
-    est_v = valid.loc[valid["state_b"] == 0, col].dropna()
+    mig_v = valid.loc[valid["state_b_causal"] == 1, col].dropna()
+    est_v = valid.loc[valid["state_b_causal"] == 0, col].dropna()
     pooled_std = float(np.sqrt((mig_v.std() ** 2 + est_v.std() ** 2) / 2))
     d = float((mig_v.mean() - est_v.mean()) / pooled_std) if pooled_std > 0 else 0.0
     rows_d.append({"feature": label, "cohens_d": d})
@@ -482,7 +521,7 @@ colors_d = ["tab:red" if d > 0 else "tab:blue" for d in df_cohens["cohens_d"]]
 bars = ax.barh(df_cohens["feature"], df_cohens["cohens_d"], color=colors_d,
                alpha=0.85, edgecolor="white")
 ax.axvline(0, color="black", linewidth=0.8)
-ax.set_xlabel("Cohen's d (migración − estacionario) / desv. agrupada")
+ax.set_xlabel("Cohen's d (migración menos estacionario) / desv. agrupada")
 ax.set_title("Modelo B — Influencia de cada feature en la clasificación del estado")
 
 for bar, d in zip(bars, df_cohens["cohens_d"], strict=False):
@@ -508,21 +547,20 @@ save_artifact(
     objective="o3",
     num=7,
     decision=(
-        "step_length domina la separación de estados (|d|≫1); cos_turning aporta señal "
-        "secundaria; daylight y veg apenas discriminan (|d|<0,5) — confirma cuantitativamente "
-        "el 93 % de acuerdo A-B"
+        "step_in_km domina la separación de estados (|d|>>1); cos_turning_in aporta señal "
+        "secundaria; daylight y veg apenas discriminan (|d|<0,5), confirma el alto acuerdo A-B"
     ),
     caption_es=(
         "Cohen's d para cada feature del Modelo B, comparando observaciones del estado "
-        "migración (state_b=1) contra estacionario (state_b=0), agrupado por la desviación "
-        "típica conjunta. La magnitud absoluta indica la fuerza discriminativa de cada "
-        "feature; el signo, el sentido (rojo = mayor en migración, azul = mayor en "
-        "estacionario). El step_length domina por dos órdenes de magnitud relativos al "
-        "contexto, lo que justifica cuantitativamente la decisión §9.2 (sin StandardScaler) "
-        "y explica el 93 % de acuerdo entre Modelo A (sólo cinemática) y Modelo B "
-        "(cinemática + contexto): las features contextuales aportan refinamiento marginal "
-        "pero no son el motor de la clasificación. Escala interpretativa de Cohen: "
-        "|d|<0,2 mínimo, 0,2-0,5 pequeño, 0,5-0,8 medio, >0,8 grande."
+        "migración (state_b_causal=1) contra estacionario (state_b_causal=0), normalizado "
+        "por la desviación típica conjunta. La magnitud absoluta indica la fuerza "
+        "discriminativa de cada feature; el signo, el sentido (rojo = mayor en migración, "
+        "azul = mayor en estacionario). El desplazamiento entrante step_in_km domina por "
+        "dos órdenes de magnitud relativos al contexto, lo que justifica el uso de la "
+        "cinemática cruda sin estandarización y explica el alto acuerdo entre Modelo A "
+        "(solo cinemática) y Modelo B (cinemática más contexto): las features contextuales "
+        "aportan refinamiento marginal pero no son el motor de la clasificación. Escala "
+        "interpretativa de Cohen: |d|<0,2 minimo, 0,2-0,5 pequeno, 0,5-0,8 medio, >0,8 grande."
     ),
     fig=fig_c6,
     table=df_cohens.reset_index(drop=True),
@@ -567,7 +605,7 @@ bird_extent = [
 ]
 
 fig_c7 = plt.figure(figsize=(14, 7))
-for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
+for idx, (suffix, label) in enumerate([("a_causal", "Modelo A"), ("b_causal", "Modelo B")]):
     ax = fig_c7.add_subplot(1, 2, idx + 1, projection=ccrs.PlateCarree())
     ax.set_extent(bird_extent, crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND, facecolor="#f5f3e7")
@@ -586,7 +624,7 @@ for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
                    transform=ccrs.PlateCarree(), zorder=2)
     ax.set_title(f"{label} — {example_bird} ({len(sub)} días)")
     ax.legend(loc="lower right", fontsize=8)
-fig_c7.suptitle(f"Trayectoria de {example_bird} coloreada por estado HMM")
+fig_c7.suptitle(f"Trayectoria de {example_bird} coloreada por estado HMM (causal)")
 fig_c7.tight_layout()
 
 save_artifact(
@@ -600,14 +638,14 @@ save_artifact(
     ),
     caption_es=(
         f"Trayectoria del ave {example_bird} (la de mayor cobertura temporal del dataset, "
-        f"{len(sub)} días válidos) sobre mapa de Europa/África con coastlines y fronteras "
+        f"{len(sub)} días válidos) sobre mapa de Europa y Africa con coastlines y fronteras "
         "nacionales. La línea gris conecta días consecutivos; cada punto se colorea según "
-        "el estado Viterbi del HMM (azul estacionario, rojo migración). Comparando Modelo A "
-        "(cinemática pura) y Modelo B (cinemática + contexto), se aprecia visualmente que "
-        "ambos modelos identifican como estado migración los tramos de mayor desplazamiento "
-        "diario entre zonas geográficamente distantes, mientras que los puntos estacionarios "
-        "se agrupan en zonas de roost o de cría. La concordancia visual entre A y B confirma "
-        "el 93 % de acuerdo cuantitativo (C4)."
+        "el estado detectado por filtrado forward-only (azul estacionario, rojo migración). "
+        "Comparando Modelo A (cinemática entrante pura) y Modelo B (cinemática entrante más "
+        "contexto), se aprecia visualmente que ambos modelos identifican como estado "
+        "migración los tramos de mayor desplazamiento diario entre zonas geográficamente "
+        "distantes, mientras que los puntos estacionarios se agrupan en zonas de roost o "
+        "de cría. La concordancia visual entre A y B confirma el alto acuerdo cuantitativo (C4)."
     ),
     fig=fig_c7,
     overwrite=True,
@@ -623,7 +661,7 @@ all_extent = [
 ]
 
 fig_c8 = plt.figure(figsize=(14, 8))
-for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
+for idx, (suffix, label) in enumerate([("a_causal", "Modelo A"), ("b_causal", "Modelo B")]):
     ax = fig_c8.add_subplot(1, 2, idx + 1, projection=ccrs.PlateCarree())
     ax.set_extent(all_extent, crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND, facecolor="#f5f3e7")
@@ -651,7 +689,7 @@ for idx, (suffix, label) in enumerate([("a", "Modelo A"), ("b", "Modelo B")]):
     )
     ax.set_title(f"{label} — {valid['bird_id'].nunique()} aves, {len(valid):,} observaciones")
     ax.legend(loc="lower left", fontsize=8, framealpha=0.9)
-fig_c8.suptitle("Distribución espacial de las observaciones por estado HMM")
+fig_c8.suptitle("Distribución espacial de las observaciones por estado HMM (causal)")
 fig_c8.tight_layout()
 
 save_artifact(
@@ -664,14 +702,14 @@ save_artifact(
         "migración a lo largo de corredores intermedios"
     ),
     caption_es=(
-        "Distribución espacial de las 20 672 observaciones válidas de las 82 aves del "
-        "dataset, coloreadas por el estado Viterbi del HMM (azul estacionario, rojo "
-        "migración). Modelo A (izquierda) y Modelo B (derecha). El estado estacionario "
-        "se agrupa visiblemente en las colonias de cría del norte de Europa (~55-65° N) "
-        "y en las zonas de invernada africanas (~0-30° N); el estado migración rellena el "
-        "corredor intermedio (~30-55° N), coincidente con la ruta migratoria conocida de "
-        "Larus fuscus. La similitud entre los dos paneles ilustra el 93 % de acuerdo entre "
-        "modelos."
+        "Distribución espacial de las observaciones válidas de las 82 aves del dataset, "
+        "coloreadas por el estado detectado mediante filtrado forward-only (azul estacionario, "
+        "rojo migración). Modelo A (izquierda) y Modelo B (derecha). El estado estacionario "
+        "se agrupa visiblemente en las colonias de cría del norte de Europa (aproximadamente "
+        "55-65 grados N) y en las zonas de invernada africanas (aproximadamente 0-30 grados N); "
+        "el estado migración rellena el corredor intermedio (aproximadamente 30-55 grados N), "
+        "coincidente con la ruta migratoria conocida de Larus fuscus. La similitud entre los "
+        "dos paneles ilustra el alto acuerdo entre modelos."
     ),
     fig=fig_c8,
     overwrite=True,
@@ -683,7 +721,7 @@ save_artifact(
 # %%
 fig_c9, axes_c9 = plt.subplots(1, 2, figsize=(11, 5))
 pie_rows = []
-for ax, suffix, label in [(axes_c9[0], "a", "Modelo A"), (axes_c9[1], "b", "Modelo B")]:
+for ax, suffix, label in [(axes_c9[0], "a_causal", "Modelo A"), (axes_c9[1], "b_causal", "Modelo B")]:
     state_col = f"state_{suffix}"
     n_est = int((valid[state_col] == 0).sum())
     n_mig = int((valid[state_col] == 1).sum())
@@ -706,7 +744,7 @@ for ax, suffix, label in [(axes_c9[0], "a", "Modelo A"), (axes_c9[1], "b", "Mode
                      "pct": 100 * n_est / total})
     pie_rows.append({"model": suffix, "state": "migración", "n": n_mig,
                      "pct": 100 * n_mig / total})
-fig_c9.suptitle("Proporción global de observaciones clasificadas por estado HMM")
+fig_c9.suptitle("Proporción global de observaciones clasificadas por estado HMM (causal)")
 fig_c9.tight_layout()
 df_pie = pd.DataFrame(pie_rows)
 
@@ -715,18 +753,16 @@ save_artifact(
     objective="o3",
     num=10,
     decision=(
-        "Proporción global ~80/20 (estacionario/migración) en Modelo A y ~85/15 en Modelo B, "
-        "consistente con la fenología de Larus fuscus (período de cría + invernada cubre la "
-        "mayor parte del año)"
+        "Proporción global estacionario/migración en Modelo A y B, consistente con la "
+        "fenología de Larus fuscus (período de cría más invernada cubre la mayor parte del año)"
     ),
     caption_es=(
-        "Proporción global de observaciones (ave, día) clasificadas como estacionario "
-        "(azul) vs migración (rojo) por cada uno de los dos modelos HMM. Modelo A asigna "
-        "el 21,2 % de los días a migración; Modelo B, el 15,3 %. Ambas cifras son "
-        "biológicamente plausibles para Larus fuscus: la migración activa ocupa "
-        "aproximadamente 2-3 meses al año (paso primaveral abril-mayo + paso otoñal "
-        "septiembre-octubre), lo que corresponde al ~17-25 % de los días anuales. El "
-        "ligero exceso del Modelo A se concentra en la zona ambigua de step 10-50 km/día "
+        "Proporción global de observaciones (ave, dia) clasificadas como estacionario (azul) "
+        "vs migración (rojo) por cada uno de los dos modelos HMM con decodificado causal. "
+        "Los porcentajes son coherentes con la biología de Larus fuscus: la migración activa "
+        "ocupa aproximadamente 2-3 meses al año (paso primaveral abril-mayo y paso otoñal "
+        "septiembre-octubre), lo que corresponde a un 17-25 por ciento de los días anuales. "
+        "El ligero exceso del Modelo A se concentra en la zona ambigua de step 10-50 km/dia "
         "(forrajeo o migración corta) que el Modelo B, gracias al contexto, reclasifica "
         "como estacionario."
     ),
@@ -737,3 +773,76 @@ save_artifact(
 
 print("\nProporciones globales:")
 print(df_pie.pivot(index="state", columns="model", values="pct").round(2))
+
+# %% [markdown]
+# ## Artefacto adicional — Resumen del decodificado causal (Modelo B canónico)
+#
+# Documenta que el estado B ahora se produce con filtrado forward-only, sin
+# look-ahead, lo que lo hace apto como feature predictiva para los modelos
+# supervisados de la siguiente fase.
+
+# %%
+# Cálculo del resumen a partir de los datos ya cargados.
+n_valid = int(len(valid))
+n_mig_b = int((valid["state_b_causal"] == 1).sum())
+pct_mig_b = 100.0 * n_mig_b / n_valid
+
+mu_step_est = float(valid.loc[valid["state_b_causal"] == 0, "step_in_km"].mean())
+mu_step_mig = float(valid.loc[valid["state_b_causal"] == 1, "step_in_km"].mean())
+
+# Mes con mínimo y máximo % migración (Modelo B).
+pct_by_month_b = (
+    valid.groupby(["month", "state_b_causal"]).size().unstack(fill_value=0)
+)
+pct_by_month_b_pct = pct_by_month_b[1] / pct_by_month_b.sum(axis=1) * 100
+min_month = int(pct_by_month_b_pct.idxmin())
+max_month = int(pct_by_month_b_pct.idxmax())
+
+agreement_causal = result.pct_agreement_ab
+
+print(f"Resumen decodificado causal (Modelo B):")
+print(f"  n_valid: {n_valid}")
+print(f"  % migración: {pct_mig_b:.1f}%")
+print(f"  mu[step] estacionario: {mu_step_est:.2f} km")
+print(f"  mu[step] migración: {mu_step_mig:.2f} km")
+print(f"  Mes mínimo migración: {min_month} ({MONTH_LABELS[min_month-1]})")
+print(f"  Mes máximo migración: {max_month} ({MONTH_LABELS[max_month-1]})")
+print(f"  Acuerdo A-B: {agreement_causal:.2f}%")
+
+df_causal_summary = pd.DataFrame([
+    {"metric": "n_observaciones_validas", "value": float(n_valid)},
+    {"metric": "pct_migracion_b", "value": round(pct_mig_b, 2)},
+    {"metric": "mu_step_estacionario_km", "value": round(mu_step_est, 2)},
+    {"metric": "mu_step_migracion_km", "value": round(mu_step_mig, 2)},
+    {"metric": "mes_minimo_migracion", "value": float(min_month)},
+    {"metric": "mes_maximo_migracion", "value": float(max_month)},
+    {"metric": "pct_acuerdo_ab", "value": round(agreement_causal, 2)},
+])
+
+save_artifact(
+    slug="causal-decode-summary",
+    objective="o3",
+    num=11,
+    decision=(
+        "Decodificado causal (filtrado forward-only) produce estados biológicamente "
+        "coherentes y sin look-ahead, aptos como features de los modelos supervisados"
+    ),
+    caption_es=(
+        "Resumen de caracterización del decodificado causal para el Modelo B canónico. "
+        "El estado se obtiene por filtrado forward-only, usando solo la emision en t y "
+        "las observaciones anteriores, sin acceder al futuro. Sobre las observaciones "
+        f"validas, el porcentaje global de dias en migracion es {pct_mig_b:.1f} por ciento, "
+        f"con desplazamiento medio de {mu_step_mig:.1f} km en migracion frente a "
+        f"{mu_step_est:.1f} km en estacionario. El minimo estacional de migracion se "
+        f"produce en el mes {min_month} ({MONTH_LABELS[min_month-1]}) y el maximo en el mes "
+        f"{max_month} ({MONTH_LABELS[max_month-1]}), en coherencia con la fenologia de "
+        "Larus fuscus (reproduccion en verano, pasos en primavera y otono). El acuerdo "
+        f"entre Modelo A y Modelo B es del {agreement_causal:.1f} por ciento. Estos valores "
+        "confirman que el cambio de suavizado Viterbi a filtrado forward-only preserva la "
+        "interpretabilidad biologica mientras elimina la dependencia temporal del futuro."
+    ),
+    table=df_causal_summary,
+    overwrite=True,
+)
+
+print("\nArtefacto causal-decode-summary guardado.")

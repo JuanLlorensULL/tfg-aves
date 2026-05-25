@@ -14,6 +14,7 @@ from .causal import (
 )
 from .evaluate import (
     ab_agreement,
+    ab_agreement_causal,
     biological_coherence_table,
     log_likelihood_per_obs,
     viterbi_per_bird,
@@ -40,6 +41,7 @@ __all__ = [
     "ROOT",
     "BuildO3Result",
     "ab_agreement",
+    "ab_agreement_causal",
     "bearing_rad",
     "biological_coherence_table",
     "build_hmm_sequences",

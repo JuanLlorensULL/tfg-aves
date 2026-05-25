@@ -7,4 +7,4 @@
 
 ## Caption (memoria)
 
-Coherencia biológica de los estados detectados. Por modelo (A arriba, B abajo): porcentaje de observaciones asignadas a estado migración por mes (izquierda) y por bin de latitud (derecha). Se espera que migración se concentre en marzo-mayo y agosto-octubre y en latitudes intermedias (zonas de paso). Es el artefacto que permite decidir entre Modelo A y Modelo B en términos de coherencia con la fenología conocida de Larus fuscus.
+Coherencia biológica de los estados detectados. Por modelo (A arriba, B abajo): porcentaje de observaciones asignadas a estado migración por mes (izquierda) y por bin de latitud (derecha). Se espera que la migración se concentre en marzo-mayo y agosto-octubre y en latitudes intermedias (zonas de paso). Es el artefacto que permite decidir entre Modelo A y Modelo B en términos de coherencia con la fenología conocida de Larus fuscus.
