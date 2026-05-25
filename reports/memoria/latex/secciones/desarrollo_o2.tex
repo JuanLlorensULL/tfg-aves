@@ -161,9 +161,7 @@ siguiente.
   \caption[Transiciones observadas en un mes]{Transiciones observadas en septiembre
   (el mes de mayor volumen, 2\,928 transiciones): cada punto es un par (celda de
   origen, celda de destino) observado al menos una vez, coloreado por
-  $\log(1 + \text{recuento})$. Los puntos se alinean sobre la diagonal (self-loops y
-  desplazamientos a celdas vecinas) y solo unos pocos se alejan de ella, que son los
-  saltos largos.}
+  $\log(1 + \text{recuento})$. La diagonal corresponde a los self-loops.}
   \label{fig:o2-matrix}
 \end{figure}
 
@@ -172,12 +170,9 @@ siguiente.
   \includegraphics[width=\linewidth]{o2_fig03_monthly-matrices-overview.png}
   \caption[Transiciones observadas por mes]{Transiciones observadas en cada mes
   (índice de celda de origen frente a destino; la línea discontinua marca la diagonal
-  de self-loops). Los meses sedentarios (junio, julio) concentran los puntos en un
-  tramo corto de la diagonal, mientras que los de migración (abril-mayo y
-  septiembre-octubre) los reparten a lo largo de toda la diagonal y fuera de ella. El
-  volumen por mes ($n$ en el título) va de 1\,149 en mayo a 2\,928 en septiembre,
-  reflejo del sesgo estacional del seguimiento descrito en el capítulo de preparación
-  de los datos.}
+  de self-loops). El número de transiciones por mes ($n$ en el título) va de 1\,149 en
+  mayo a 2\,928 en septiembre, reflejo del sesgo estacional del seguimiento descrito en
+  el capítulo de preparación de los datos.}
   \label{fig:o2-monthly}
 \end{figure}
 
@@ -228,7 +223,8 @@ poblacional generaliza a un ave que no ha visto nunca. El protocolo que la respo
 \emph{leave-one-bird-out} (LOBO): para cada una de las 82 aves, las doce matrices se
 reestiman con las otras 81 y se usan para predecir las transiciones del ave excluida.
 Hay así 82 particiones y cada individuo se evalúa exactamente una vez, siempre con un
-modelo que no ha visto ninguno de sus días.
+modelo que no ha visto ninguno de sus días. Como cada ave se predice una sola vez, el
+conjunto de prueba agregado coincide con el total de transiciones (21\,214).
 
 La alternativa de separar entrenamiento y prueba por tiempo se descarta por dos
 razones. Una partición dentro de cada ave (sus primeros días para entrenar, los
@@ -316,8 +312,9 @@ mejor calibrado. Las dos subsecciones siguientes explican esta aparente contradi
 \label{sec:o2-estructural}
 
 Dos rasgos estructurales del conjunto explican la ventaja de la persistencia en
-predicción puntual. El primero es la residencialidad ya cuantificada: el 73,0\,\% de
-las transiciones son self-loops, de modo que la regla trivial de quedarse en la celda
+predicción puntual. El primero es la residencialidad ya cuantificada en la sección
+\ref{sec:o2-discretizacion}: el 73,0\,\% de las transiciones son self-loops, de modo
+que la regla trivial de quedarse en la celda
 actual acierta por construcción casi tres de cada cuatro días, y su top-1 (0,730)
 coincide en la práctica con la tasa de self-loops.
 
