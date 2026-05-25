@@ -15,12 +15,14 @@ from .daily import (
     pick_reference_hour,
 )
 from .load import load_raw
+from .split import assign_temporal_split, split_temporal_per_bird
 
 __all__ = [
     "INTERIM",
     "PROCESSED",
     "RAW_CSV",
     "ROOT",
+    "assign_temporal_split",
     "build_daily",
     "build_o1",
     "coverage_by_hour",
@@ -30,4 +32,5 @@ __all__ = [
     "filter_birds_by_validity",
     "load_raw",
     "pick_reference_hour",
+    "split_temporal_per_bird",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from tfg_aves.data.split import split_temporal_per_bird  # noqa: F401  # reexport (movido a data)
 from tfg_aves.hmm.features import bearing_rad
 from tfg_aves.markov.discretize import _format_cell_id, assign_cell, haversine_km
 
@@ -173,38 +174,3 @@ def build_feature_matrix(
     return out
 
 
-def split_temporal_per_bird(
-    matrix: pd.DataFrame,
-    train_frac: float = 0.8,
-    val_frac_of_train: float = 0.1,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split temporal por ave (§F4, F5 del spec).
-
-    Por cada ``bird_id`` ordenado cronológicamente:
-        - Primeros ``train_frac`` → bloque (train + val).
-        - Últimos ``1 - train_frac`` → test.
-        - Dentro de (train + val), los últimos ``val_frac_of_train``
-          (proporción del bloque, no del total) → val.
-
-    Defaults: 72 % / 8 % / 20 %.
-    """
-    train_parts, val_parts, test_parts = [], [], []
-    for _bird, sub in matrix.sort_values(["bird_id", "date_utc"]).groupby(
-        "bird_id", sort=False,
-    ):
-        n = len(sub)
-        n_train_val = int(round(n * train_frac))
-        train_val = sub.iloc[:n_train_val]
-        test = sub.iloc[n_train_val:]
-        n_val = int(round(len(train_val) * val_frac_of_train))
-        train = train_val.iloc[: len(train_val) - n_val]
-        val = train_val.iloc[len(train_val) - n_val :]
-        train_parts.append(train)
-        val_parts.append(val)
-        test_parts.append(test)
-    train_df = pd.concat(train_parts).reset_index(drop=True)
-    val_df = pd.concat(val_parts).reset_index(drop=True)
-    test_df = pd.concat(test_parts).reset_index(drop=True)
-    for df in (train_df, val_df, test_df):
-        df.attrs["_features"] = matrix.attrs.get("_features", [])
-    return train_df, val_df, test_df
