@@ -5,9 +5,8 @@ import datetime as dt
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from tfg_aves.hmm.evaluate import ab_agreement, biological_coherence_table, log_likelihood_per_obs
+from tfg_aves.hmm.evaluate import log_likelihood_per_obs
 from tfg_aves.hmm.fit import build_sequences, fit_hmm_with_restarts
 
 
@@ -53,70 +52,3 @@ def test_log_likelihood_per_obs_finito() -> None:
     assert ll < 50.0
 
 
-def test_ab_agreement_total() -> None:
-    """Si state_a == state_b siempre, acuerdo = 100%."""
-    df = pd.DataFrame({
-        "bird_id": ["A"] * 10 + ["B"] * 10,
-        "date_utc": [dt.date(2010, 1, 1) + dt.timedelta(days=i) for i in range(10)] * 2,
-        "state_a": [0, 0, 1, 1, 0, 1, 0, 1, 0, 1] * 2,
-        "state_b": [0, 0, 1, 1, 0, 1, 0, 1, 0, 1] * 2,
-        "is_observation_valid": [True] * 20,
-    })
-    out = ab_agreement(df)
-    assert out["pct_agreement"] == pytest.approx(100.0)
-
-
-def test_ab_agreement_mitad() -> None:
-    """Si A y B difieren en la mitad de las observaciones, acuerdo = 50%."""
-    df = pd.DataFrame({
-        "bird_id": ["A"] * 10,
-        "date_utc": [dt.date(2010, 1, 1) + dt.timedelta(days=i) for i in range(10)],
-        "state_a": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        "state_b": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "is_observation_valid": [True] * 10,
-    })
-    out = ab_agreement(df)
-    assert out["pct_agreement"] == pytest.approx(50.0)
-
-
-def test_biological_coherence_table_concentracion_mes() -> None:
-    """Estado migración concentrado en mar y oct → la tabla lo refleja."""
-    rows: list[dict] = []
-    # 100 días en marzo, 100 en octubre, todos estado=1; 100 en junio, todos estado=0.
-    for i in range(100):
-        rows.append({
-            "bird_id": "A",
-            "date_utc": dt.date(2010, 3, 1) + dt.timedelta(days=i % 30),
-            "state_a": 1,
-            "lat": 45.0,
-            "is_observation_valid": True,
-        })
-    for i in range(100):
-        rows.append({
-            "bird_id": "A",
-            "date_utc": dt.date(2010, 10, 1) + dt.timedelta(days=i % 30),
-            "state_a": 1,
-            "lat": 45.0,
-            "is_observation_valid": True,
-        })
-    for i in range(100):
-        rows.append({
-            "bird_id": "A",
-            "date_utc": dt.date(2010, 6, 1) + dt.timedelta(days=i % 30),
-            "state_a": 0,
-            "lat": 50.0,
-            "is_observation_valid": True,
-        })
-    df = pd.DataFrame(rows)
-    tbl = biological_coherence_table(df, state_col="state_a")
-    # La tabla debe tener una fila por (mes, estado) con conteo.
-    assert "month" in tbl.columns
-    assert "state" in tbl.columns
-    assert "count" in tbl.columns
-    # Mes 3 y mes 10 deben tener estado=1 con conteo alto (~100).
-    march_migr = tbl[(tbl["month"] == 3) & (tbl["state"] == 1)]["count"].sum()
-    oct_migr = tbl[(tbl["month"] == 10) & (tbl["state"] == 1)]["count"].sum()
-    june_stat = tbl[(tbl["month"] == 6) & (tbl["state"] == 0)]["count"].sum()
-    assert march_migr >= 80
-    assert oct_migr >= 80
-    assert june_stat >= 80

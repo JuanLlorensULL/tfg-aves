@@ -5,42 +5,6 @@ import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.cluster import KMeans
-from sklearn.model_selection import train_test_split
-
-
-def stratified_holdout_split(
-    df_features: pd.DataFrame,
-    holdout_frac: float = 0.20,
-    random_state: int = 0,
-) -> tuple[list[str], list[str]]:
-    """Reparte aves en train/holdout estratificando por nº de días válidos.
-
-    Estratifica por quintiles del número de observaciones válidas por ave.
-    """
-    valid_days = (
-        df_features[df_features["is_observation_valid"]]
-        .groupby("bird_id").size().sort_index()
-    )
-    bird_ids = valid_days.index.tolist()
-    # Quintiles (5 niveles); si hay pocas aves, cuantiles automáticos.
-    n_bins = min(5, max(2, len(bird_ids) // 3))
-    try:
-        strata = pd.qcut(valid_days.values, q=n_bins, labels=False, duplicates="drop")
-        # qcut con duplicates='drop' puede devolver todo NaN si los valores son iguales.
-        if np.isnan(strata.astype(float)).any():
-            raise ValueError("strata all-NaN")
-    except ValueError:
-        strata = np.zeros(len(bird_ids), dtype=int)
-    train_idx, holdout_idx = train_test_split(
-        np.arange(len(bird_ids)),
-        test_size=holdout_frac,
-        random_state=random_state,
-        stratify=strata,
-    )
-    return (
-        [bird_ids[i] for i in train_idx],
-        [bird_ids[i] for i in holdout_idx],
-    )
 
 
 def build_sequences(
@@ -132,19 +96,3 @@ def fit_hmm_with_restarts(
     return best_model, best_ll, all_lls
 
 
-def relabel_states(
-    hmm: GaussianHMM,
-    feature_cols: list[str],
-) -> dict[int, str]:
-    """Re-etiqueta: el estado con menor μ[step_length_km] = 'estacionario'.
-
-    Las medias de ``hmm.means_`` ya están en km crudos (sin estandarización),
-    por lo que se usan directamente sin ninguna transformación inversa.
-    """
-    step_idx = feature_cols.index("step_length_km")
-    step_means = hmm.means_[:, step_idx]
-    estacionario_idx = int(np.argmin(step_means))
-    return {
-        i: ("estacionario" if i == estacionario_idx else "migración")
-        for i in range(hmm.n_components)
-    }

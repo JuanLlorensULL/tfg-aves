@@ -13,11 +13,8 @@ from .causal import (
     forward_filtered_posteriors,
 )
 from .evaluate import (
-    ab_agreement,
     ab_agreement_causal,
-    biological_coherence_table,
     log_likelihood_per_obs,
-    viterbi_per_bird,
 )
 from .features import (
     bearing_rad,
@@ -28,8 +25,6 @@ from .features import (
 from .fit import (
     build_sequences,
     fit_hmm_with_restarts,
-    relabel_states,
-    stratified_holdout_split,
 )
 
 __all__ = [
@@ -40,10 +35,8 @@ __all__ = [
     "RAW_CSV",
     "ROOT",
     "BuildO3Result",
-    "ab_agreement",
     "ab_agreement_causal",
     "bearing_rad",
-    "biological_coherence_table",
     "build_hmm_sequences",
     "build_o3",
     "build_sequences",
@@ -56,7 +49,4 @@ __all__ = [
     "forward_filtered_posteriors",
     "load_vegetation_from_raw",
     "log_likelihood_per_obs",
-    "relabel_states",
-    "stratified_holdout_split",
-    "viterbi_per_bird",
 ]

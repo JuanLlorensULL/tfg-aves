@@ -11,7 +11,7 @@ FEATURES_KINEMATIC = [
     "lat", "lon", "sin_doy", "cos_doy",
     "step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
 ]
-# Features derivadas del HMM causal, añadidas por build_o4 tras el filtrado.
+# Features del HMM causal de O3, pegadas por attach_o3_state_and_split (no se recalculan).
 FEATURES_HMM = ["state_b_causal", "posterior_b_migracion_causal"]
 # Conjunto supervisado completo de O4 (10 features) + bird_id en personalizado.
 FEATURES_O4_CAUSAL = [*FEATURES_KINEMATIC, *FEATURES_HMM]
