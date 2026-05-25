@@ -1,4 +1,4 @@
-"""Tests del HMM causal de O4: filtrado forward-only y propiedad leak-free."""
+"""Tests del HMM causal: filtrado forward-only y propiedad leak-free."""
 from __future__ import annotations
 
 import numpy as np
@@ -6,9 +6,10 @@ import pandas as pd
 import pytest
 from hmmlearn.hmm import GaussianHMM
 
-from tfg_aves.ml.features import HMM_EMISSION_COLS, compute_causal_kinematics
-from tfg_aves.ml.hmm_causal import (
+from tfg_aves.hmm.causal import (
+    HMM_EMISSION_COLS_B,
     build_hmm_sequences,
+    compute_causal_kinematics,
     decode_causal_states,
     fit_causal_hmm,
     forward_filtered_posteriors,
@@ -137,9 +138,11 @@ def test_build_hmm_sequences_solo_dias_validos():
 
 def test_fit_causal_hmm_relabel_por_step():
     kin = compute_causal_kinematics(_two_regime_bird(n=60))
-    model, label_map = fit_causal_hmm(kin, cutoff_by_bird=None, n_restarts=4, seed=0)
+    model, label_map = fit_causal_hmm(
+        kin, cutoff_by_bird=None, emission_cols=HMM_EMISSION_COLS_B, n_restarts=4, seed=0,
+    )
     # El estado con mayor μ[step_in_km] debe ser 'migración'.
-    step_idx = HMM_EMISSION_COLS.index("step_in_km")
+    step_idx = HMM_EMISSION_COLS_B.index("step_in_km")
     migr_state = int(np.argmax(model.means_[:, step_idx]))
     assert label_map[migr_state] == "migración"
 
@@ -147,13 +150,16 @@ def test_fit_causal_hmm_relabel_por_step():
 def test_decode_causal_states_columnas_y_rango():
     kin = compute_causal_kinematics(_two_regime_bird(n=60))
     model, label_map = fit_causal_hmm(kin, cutoff_by_bird=None, n_restarts=4, seed=0)
-    states = decode_causal_states(model, label_map, kin)
+    states = decode_causal_states(
+        model, label_map, kin, emission_cols=HMM_EMISSION_COLS_B, suffix="b",
+    )
     assert set(states.columns) == {
-        "bird_id", "date_utc", "state_b_causal", "posterior_b_migracion_causal",
+        "bird_id", "date_utc", "state_b_causal",
+        "posterior_b_estacionario", "posterior_b_migracion",
     }
     assert states["state_b_causal"].isin([0, 1]).all()
-    assert (states["posterior_b_migracion_causal"] >= 0).all()
-    assert (states["posterior_b_migracion_causal"] <= 1).all()
+    assert (states["posterior_b_migracion"] >= 0).all()
+    assert (states["posterior_b_migracion"] <= 1).all()
     # Una fila por día HMM-válido.
     assert len(states) == int(kin["is_hmm_obs_valid"].sum())
 
@@ -174,3 +180,16 @@ def test_build_hmm_sequences_respeta_cutoff():
     assert (fechas <= pd.Timestamp("2020-01-15")).all()  # respeta el cutoff de A
     assert len(X) == sum(lengths) == len(idx)
     assert len(X) > 0  # debe quedar al menos un día válido de A antes del cutoff
+
+
+def test_decode_acepta_suffix_a():
+    kin = compute_causal_kinematics(_two_regime_bird(n=60))
+    emission_a = ["step_in_km", "cos_turning_in"]
+    model, label_map = fit_causal_hmm(
+        kin, cutoff_by_bird=None, emission_cols=emission_a, n_restarts=4, seed=0,
+    )
+    states = decode_causal_states(model, label_map, kin, emission_cols=emission_a, suffix="a")
+    assert "state_a_causal" in states.columns
+    assert "posterior_a_migracion" in states.columns
+    assert "posterior_a_estacionario" in states.columns
+    assert states["state_a_causal"].isin([0, 1]).all()
