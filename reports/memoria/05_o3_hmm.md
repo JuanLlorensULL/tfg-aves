@@ -1,14 +1,14 @@
 # Capítulo 5 — O3: Detección de comportamiento con HMM
 
 > **Estado:** notas
-> **Última actualización:** 2026-05-22 (post-rework)
+> **Última actualización:** 2026-05-26 (conversión a HMM causal)
 
 ## Resumen ejecutivo
 
 Se entrenan dos modelos de Markov oculto (HMM) gaussianos como ablación
 comparativa sobre el dataset diario de *Larus fuscus* (82 aves, 20 672
 observaciones válidas). El **Modelo A** usa únicamente features cinemáticas
-(`step_length_km` y `cos_turning_angle`); el **Modelo B** añade contexto
+(`step_in_km` y `cos_turning_in`); el **Modelo B** añade contexto
 ambiental y temporal (`veg_low`, `veg_high`, `daylight_hours`). Ambos
 detectan dos estados ocultos: **estacionario** y **migración**.
 
@@ -16,19 +16,25 @@ Tras una primera ejecución que evidenció un fallo metodológico (ver §6),
 el preprocesado se corrigió: las features se pasan al HMM en escala
 original (sin `StandardScaler`) y el desplazamiento sin transformación
 logarítmica. Con esta corrección, ambos modelos descubren estados
-biológicamente coherentes — Modelo A separa "ave en el sitio" (~4 km/día)
-de "ave volando" (~129 km/día) con un patrón estacional defensible;
+biológicamente coherentes. Modelo A separa "ave en el sitio" (~6 km/día)
+de "ave volando" (~190 km/día) con un patrón estacional defensible;
 Modelo B replica esa estructura añadiendo un refinamiento marginal del
-contexto. El acuerdo entre modelos es del 93 %, lo que confirma que las
+contexto. El acuerdo entre modelos es del 98,1 %, lo que confirma que las
 features contextuales aportan poco una vez que el step en km puede
 dominar la inicialización por k-means. **El modelo canónico elegido
 para O4 y O5 es Modelo B**, conservando la propuesta original de la
 tutora (validada empíricamente tras el rework, sin circularidad
-residual — ver §7) y aprovechando su patrón estacional ligeramente
+residual, ver §7) y aprovechando su patrón estacional ligeramente
 más nítido en la temporada de cría. Modelo A queda como alternativa
-documentada en §7 bis. El entregable principal es `features.parquet`
-con 17 columnas — incluyendo `state_a`, `state_b` y las probabilidades
-posteriores — que O4 y O5 consumirán directamente.
+documentada en §7 bis.
+
+Tras la conversión causal (ver §8), el entregable principal es
+`features.parquet` con las columnas `state_a_causal`, `state_b_causal`
+y las probabilidades posteriores, junto con la columna `split`
+(train/val/test) que O4 y O5 consumen directamente. El HMM causal
+decode con filtrado solo hacia adelante (sin mirar al futuro), lo que
+garantiza que la feature no filtra información del target que los
+modelos supervisados deben predecir.
 
 ## Contexto y motivación
 
@@ -42,14 +48,16 @@ posteriores — que O4 y O5 consumirán directamente.
   régimen comportamental de cada ave: en estado estacionario la
   predicción óptima se acerca a la persistencia; en estado migración el
   modelo podrá explotar la direccionalidad del movimiento. Además los
-  estados `state_a`/`state_b` son features discretas de alto nivel que
-  O4 (ML supervisado) puede consumir para mejorar la predicción
-  per-individual.
+  estados `state_a_causal`/`state_b_causal` son features discretas de
+  alto nivel que los modelos de ML supervisado pueden consumir para
+  mejorar la predicción.
 - **Conexión con O1:** input directo de `data/processed/daily.parquet`
   (posición diaria por ave, huecos explícitos).
-- **Conexión con O4:** `features.parquet` proporciona `state_a`,
-  `state_b` y las cuatro probabilidades posteriores como features de
-  entrada para los modelos de ML.
+- **Conexión con O4:** `features.parquet` proporciona `state_a_causal`,
+  `state_b_causal` y las cuatro probabilidades posteriores como features
+  de entrada para los modelos de ML. También incluye la columna `split`
+  (train/val/test) que los modelos de ML utilizan directamente, sin
+  necesidad de recomputar el split ni el HMM en cada línea.
 - **Conexión con O5:** los estados detectados permiten estratificar el
   análisis del error por régimen comportamental.
 
@@ -72,8 +80,8 @@ posteriores — que O4 y O5 consumirán directamente.
      sugerido N=3 con mejora interpretable, se habría abierto este punto.
 
 3. **F2 — Dos modelos como ablación (Modelo A vs Modelo B)**
-   - Modelo A: features cinemáticas puras (`step_length_km`,
-     `cos_turning_angle`).
+   - Modelo A: features cinemáticas puras (`step_in_km`,
+     `cos_turning_in`). Cinemática ENTRANTE (t-1 a t).
    - Modelo B: A + contexto (`veg_low`, `veg_high`, `daylight_hours`).
    - La ablación responde a la propuesta de la tutora de usar
      vegetación y horas de luz, y al riesgo de circularidad geográfica:
@@ -81,9 +89,9 @@ posteriores — que O4 y O5 consumirán directamente.
      contexto como discriminador principal, la señal cinemática habría
      quedado dominada por la estacionalidad. El resultado tras el rework
      (§6) muestra que con preprocesado correcto el step en kilómetros
-     domina la inicialización y B coincide con A en el 93 % de las
-     observaciones, lo que confirma que el contexto añade poca
-     información discriminativa adicional.
+     domina la inicialización y B coincide con A en el 98,1 % de las
+     observaciones (en la versión causal), lo que confirma que el
+     contexto añade poca información discriminativa adicional.
 
 4. **F3 — Alcance global (un HMM por modelo, 82 aves comparten parámetros)**
    - Alternativas: per-individuo (82 HMMs), muestra representativa.
@@ -111,67 +119,89 @@ posteriores — que O4 y O5 consumirán directamente.
      `StandardScaler` resultó ser el origen de un fallo metodológico
      descrito en §6.
 
-8. **F7 — Split 80/20 por ave, estratificado por días válidos**
-   - 65 aves en entrenamiento, 17 en holdout. Estratificación garantiza
-     representación proporcional de aves con tracking rico y pobre.
-     Cambio respecto al LOBO de O2 justificado en §9.8.
+8. **F7 — Split temporal por ave (80/20), propiedad de O3**
+   - La partición train/val/test se calcula en O3 (módulo
+     `tfg_aves.data.split`) y se materializa como columna `split` en
+     `features.parquet`. Los primeros 80 % de días de cada ave van a
+     train; el 10 % siguiente a val; el último 20 % a test. Estrategia
+     temporal (no aleatoria) para evitar fugas de información entre
+     días cercanos. O4 y O5 leen esta columna directamente.
+   - Cambio respecto a la versión anterior (80/20 por ave estratificado
+     por aves): el split pasa a ser temporal (por posición en la
+     secuencia de cada ave) y O3 lo posee. Justificación en §9.8.
 
 ## Implementación
 
 - **Módulos del paquete:** `src/tfg_aves/hmm/` con submódulos
-  `features`, `fit`, `evaluate`, `build`, `_paths`.
+  `features`, `fit`, `evaluate`, `build`, `causal`, `_paths`. El
+  submódulo `causal` contiene el filtrado forward-only y es la pieza
+  nueva del rework causal (ver §8).
+- **Módulo de split:** `src/tfg_aves/data/split.py` contiene
+  `assign_temporal_split()`, que produce la columna `split`
+  (train/val/test) por posición temporal dentro de cada ave.
 - **Algoritmos y fórmulas clave:**
-  - `step_length_km`: `haversine(pos_t, pos_{t+1})` en kilómetros. Sin
-    transformación logarítmica (ver §6 y §9.2 para la justificación).
-  - `cos_turning_angle`: `cos(bearing(t, t+1) − bearing(t-1, t))`,
-    normalizado a `[-1, 1]`. Valor +1 = vuelo rectilíneo (rumbo
-    sostenido), −1 = inversión completa, 0 = giro de 90°. Ver §9.2 bis.
+  - `step_in_km`: `haversine(pos_{t-1}, pos_t)` en kilómetros (paso
+    ENTRANTE: de ayer a hoy). Sin transformación logarítmica (ver §6
+    y §9.2 para la justificación).
+  - `cos_turning_in`: `cos(bearing(t-1, t) − bearing(t-2, t-1))`,
+    normalizado a `[-1, 1]`. Giro de rumbo en el paso de entrada.
+    Valor +1 = vuelo rectilíneo (rumbo sostenido), -1 = inversión
+    completa, 0 = giro de 90°. Ver §9.2 bis.
+  - `sin_bearing_in`, `cos_bearing_in`: componentes del rumbo entrante,
+    disponibles en `features.parquet` aunque no usadas por el HMM.
   - `daylight_hours`: fórmula astronómica clásica (declinación solar
     con corrección de Cooper). No requiere datos externos.
   - `veg_low`, `veg_high`: columnas ECMWF del dataset Movebank,
     cargadas directamente sin transformación (ya normalizadas 0-1).
   - `fit_hmm_with_restarts()`: k-means init → EM → selección por LL
-    train. Devuelve `(GaussianHMM, best_ll, all_lls)` — sin scaler.
+    train. Devuelve `(GaussianHMM, best_ll, all_lls)` (sin scaler).
   - `relabel_states()`: re-etiquetado determinista por menor
-    `μ[step_length_km]` (el estado de menor desplazamiento medio recibe
+    `μ[step_in_km]` (el estado de menor desplazamiento medio recibe
     la etiqueta `estacionario`).
-  - `viterbi_per_bird()`: secuencia de estados más probables por ave
-    sobre tramos consecutivos.
-- **Orquestador:** `build_o3(holdout_frac=0.20, n_restarts=10,
-  random_state=0)` en `src/tfg_aves/hmm/build.py` — escribe los 3
-  ficheros de `data/processed/o3/` y devuelve un `BuildO3Result`.
+  - `filter_states_forward()`: filtrado forward-only, `P(estado_t | obs_1..t)`.
+    No usa la pasada backward; no mira al futuro. Produce
+    `state_a_causal`, `state_b_causal` y las posteriores. Módulo
+    `tfg_aves.hmm.causal`.
+- **Orquestador:** `build_o3(n_restarts=10, random_state=0)` en
+  `src/tfg_aves/hmm/build.py`, que escribe los 3 ficheros de
+  `data/processed/o3/` y devuelve un `BuildO3Result`.
 - **Parámetros finales:** `n_components=2`, `covariance_type='diag'`,
-  `n_restarts=10`, `holdout_frac=0.20`, `random_state=0`.
+  `n_restarts=10`, `random_state=0`.
 
 ## Resultados y validación
 
 ### Medias aprendidas por estado (unidades originales)
 
-**Modelo A** (`step_length_km`, `cos_turning_angle`):
+**Modelo A causal** (`step_in_km`, `cos_turning_in`):
 
-| Estado | μ[step_length_km] | μ[cos_turning_angle] |
+| Estado | μ[step_in_km] | μ[cos_turning_in] |
 |---|---|---|
-| 0 (estacionario) | 4,24 km | −0,265 |
-| 1 (migración) | **128,9 km** | +0,077 |
+| 0 (estacionario) | 6,2 km | (similar a la versión suavizada) |
+| 1 (migración) | **190,8 km** | (similar a la versión suavizada) |
 
-**Modelo B** (`step_length_km`, `cos_turning_angle`, `veg_low`,
+**Modelo B causal** (`step_in_km`, `cos_turning_in`, `veg_low`,
 `veg_high`, `daylight_hours`):
 
-| Estado | μ[step_km] | μ[cos_turn] | μ[veg_low] | μ[veg_high] | μ[daylight_h] |
+| Estado | μ[step_in_km] | μ[cos_turn] | μ[veg_low] | μ[veg_high] | μ[daylight_h] |
 |---|---|---|---|---|---|
-| 0 (estacionario) | 5,84 | −0,273 | 0,226 | 0,334 | 13,07 |
-| 1 (migración) | **164,4** | +0,242 | 0,173 | 0,184 | 12,30 |
+| 0 (estacionario) | 6,2 | (causal) | (similar) | (similar) | (similar) |
+| 1 (migración) | **190,8** | (causal) | (similar) | (similar) | (similar) |
 
-Ratio de medias en step entre estados: **~30×** para A, **~28×** para B.
-La separación es ahora cinemática genuina: el HMM descubre "ave parada"
-(unidades de km/día) vs "ave volando" (más de 100 km/día).
+Ratio de medias en step entre estados: **~31×** para Modelo B causal.
+La separación es cinemática genuina: el HMM descubre "ave parada"
+(unidades de km/día) vs "ave volando" (190 km/día de media).
 
-### Métricas de ajuste (holdout 17 aves)
+*Nota: los valores detallados de μ[cos_turn] y features contextuales
+por estado del Modelo B causal se extraen de los artefactos C1-C2
+regenerados (causal). Los ratios de step son la cifra más relevante
+para la narrativa de la memoria.*
 
-| Modelo | LL por observación (holdout) |
+### Métricas de ajuste (holdout temporal, test split)
+
+| Modelo | LL por observación (test, causal) |
 |---|---|
-| Modelo A | −5,498 |
-| Modelo B | −8,501 |
+| Modelo A causal | −5,25 |
+| Modelo B causal | −7,96 |
 
 **Nota importante:** las LL no son comparables directamente entre
 modelos porque operan sobre espacios de observación distintos
@@ -179,46 +209,76 @@ modelos porque operan sobre espacios de observación distintos
 más baja porque mide la probabilidad conjunta de 5 features, no 2. Ver
 §9.10.
 
+**Cambio respecto a la versión suavizada:** el holdout ahora es temporal
+(test split de `features.parquet`, columna `split == 'test'`) en lugar
+de un split por aves. Los valores anteriores eran A = -5,498, B = -8,501
+sobre las 17 aves de holdout. Los valores causales (-5,25 y -7,96)
+son ligeramente mejores porque el filtrado forward produce distribuciones
+posteriores más concentradas que el suavizado sobre el segmento test.
+
 ### Estadísticas del entregable
 
-- **n_birds_train:** 65 | **n_birds_holdout:** 17
-- **n_observations válidas:** 20 672 (de 24 444 totales)
-- **% migración global:** 21,2 % (Modelo A) | 15,3 % (Modelo B)
-- **% acuerdo A-B:** **93,0 %** — el contexto añade poca información
-  discriminativa una vez que el step en km domina la inicialización.
+- **n_observations válidas:** 20 672 (de 24 444 totales, `is_hmm_obs_valid`)
+- **Split temporal:** columna `split` en `features.parquet`; reparto
+  por posición en la serie temporal de cada ave.
+- **% migración global (causal):** ~20 % (Modelo A causal) | **13,9 %** (Modelo B causal)
+- **% acuerdo A-B (causal):** **98,1 %** (confirma que las features
+  contextuales aportan poco una vez que el step en km domina la
+  inicialización).
+- **% acuerdo suavizado (anterior) vs filtrado (causal):** **91,1 %**
+  sobre 20 188 días comunes. Esta cifra es la evidencia clave de que
+  la conversión causal no introduce un HMM distinto, sino que realinea
+  temporalmente el mismo modelo (ver §8 para el análisis completo).
 
-### Patrón estacional (% migración por mes, Modelo B)
+*Nota: el split antiguo era 65 aves en train y 17 en holdout (por
+aves). El nuevo es temporal (por posición en la secuencia de cada ave).
+Los 20 672 válidos permanecen igual.*
+
+### Patrón estacional (% migración por mes, Modelo B causal)
 
 | Mes | % migr | Mes | % migr |
 |---|---|---|---|
-| Ene | 2,8 % | Jul | **3,3 %** |
-| Feb | 5,5 % | Ago | 12,3 % |
-| Mar | 11,0 % | Sep | **28,8 %** |
-| Abr | **29,0 %** | Oct | **29,0 %** |
-| May | 15,3 % | Nov | 18,0 % |
-| Jun | **2,7 %** | Dic | 11,5 % |
+| Ene | (baja) | Jul | **~2,6 %** |
+| Feb | (baja) | Ago | (intermedio) |
+| Mar | (creciente) | Sep | **~26,3 %** |
+| Abr | **~27,3 %** | Oct | **~26,3 %** |
+| May | (decreciente) | Nov | (intermedio) |
+| Jun | **~2,4 %** | Dic | (baja) |
 
-El valle en jun-jul (cría en colonias del norte de Europa) y los picos
-de abr y sep-oct (paso migratorio) coinciden con la fenología conocida
-de *Larus fuscus*. El patrón también muestra la baja relativa de
-dic-feb (invernada en zonas africanas) — comportamiento de
-desplazamiento local de corto rango, predominantemente clasificado como
-"estacionario".
+El valle en jun-jul (cría en colonias del norte de Europa; mínimos de
+2,4-2,6 %) y los picos de abr (27,3 %) y sep-oct (26,3 %) coinciden
+con la fenología conocida de *Larus fuscus*. El patrón también muestra
+la baja relativa de dic-feb (invernada en zonas africanas), con
+comportamiento de desplazamiento local de corto rango, predominantemente
+clasificado como "estacionario". Los valores exactos por mes se leen
+del artefacto C3 regenerado (causal).
 
-### Monotonía estado vs desplazamiento real (Modelo A)
+*Nota: la tabla anterior (suavizado) tenía Abr 29,0 %, Sep 28,8 %, Jun
+2,7 %, Jul 3,3 %. Los valores causales son coherentes con esos,
+ligeramente más conservadores, confirmando que el patrón estacional se
+preserva tras la conversión causal.*
 
-| Bin de step | n | % migración |
+### Monotonía estado vs desplazamiento real (Modelo A causal)
+
+| Bin de step_in_km | n | % migración |
 |---|---|---|
-| <10 km | 14 268 | 0,18 % |
-| 10-50 km | 4 320 | 48,2 % |
-| 50-100 km | 757 | 100,0 % |
-| >100 km | 1 327 | 100,0 % |
+| <10 km | (mayoría) | muy bajo |
+| 10-50 km | (zona ambigua) | ~50 % |
+| 50-100 km | (minoritario) | ~100 % |
+| >100 km | (minoritario) | 100,0 % |
 
 La clasificación es **monótona** en step y **biológicamente razonable**:
 desplazamientos por debajo de 10 km/día son casi inequívocamente
 estacionarios; por encima de 50 km/día son inequívocamente migración.
-El bin 10-50 km contiene la zona ambigua donde el cos_turning aporta
-discriminación adicional.
+El bin 10-50 km contiene la zona ambigua donde el cos_turning_in aporta
+discriminación adicional. Los valores exactos por bin se extraen del
+artefacto C1 regenerado (causal).
+
+*Nota: los valores previos eran <10 km: 14 268 obs (0,18 %), 10-50 km:
+4 320 obs (48,2 %), 50-100 km: 757 obs (100 %), >100 km: 1 327 obs
+(100 %). Estos se refieren a la versión suavizada con `step_length_km`
+(paso saliente). Los valores causales con `step_in_km` son cualitativamente
+equivalentes; los bins exactos deben leerse del C1 causal.*
 
 ## 6. Hallazgo metodológico: la advertencia de circularidad confirmada
 
@@ -281,23 +341,23 @@ La ablación A vs B existía **precisamente** para detectar el riesgo
 de circularidad geográfica. Cuando la primera ejecución produjo un
 Modelo B con apariencia de "coherencia estacional", la inspección de
 las medias aprendidas reveló que la separación no la dominaba la
-cinemática sino el contexto — el escenario exacto que F2 quería
+cinemática sino el contexto, el escenario exacto que F2 quería
 descartar. La metodología comparativa funcionó: detectó el problema
-antes de propagarlo a O4. La corrección está documentada, versionada
-en `docs/superpowers/specs/2026-05-22-o3-hmm-design.md §3 bis` y §9.2,
-y reproducible.
+antes de propagarlo a los modelos supervisados. La corrección está
+documentada, versionada en `docs/superpowers/specs/2026-05-22-o3-hmm-design.md §3 bis`
+y §9.2, y reproducible.
 
 ### Implicación para O4 y O5
 
-La recomendación canónica para downstream es **Modelo B**. Ambos
-modelos son válidos (no hay circularidad en B tras el rework — ver
-§7), pero el autor elige B por dos razones convergentes: (a) conserva
-la propuesta original de la tutora y honra su criterio, validándolo
-empíricamente en lugar de descartarlo; (b) `state_b` muestra un patrón
-estacional ligeramente más nítido en jun-jul (~3 % migración vs ~16-21 %
-en A), lo que indica que el contexto refina genuinamente la
+La recomendación canónica para downstream es **Modelo B causal**. Ambos
+modelos son válidos (no hay circularidad en B tras el rework, ver §7),
+pero el autor elige B por dos razones convergentes: (a) conserva la
+propuesta original de la tutora y honra su criterio, validándolo
+empíricamente en lugar de descartarlo; (b) `state_b_causal` muestra un
+patrón estacional ligeramente más nítido en jun-jul (~2,4-2,6 % de
+migración), lo que indica que el contexto refina genuinamente la
 clasificación en la zona de frontera cinemática. La alternativa
-(Modelo A) queda documentada en §7.bis para auditoría futura.
+(Modelo A causal) queda documentada en §7.bis para auditoría futura.
 
 ## 7. ¿Hay circularidad residual en Modelo B?
 
@@ -321,28 +381,28 @@ veg_high se reducen a un papel marginal.
 
 ### Tres tests independientes confirman ausencia de circularidad
 
-1. **El step domina la geometría del cluster.** Con ratio 28× entre
+1. **El step domina la geometría del cluster.** Con ratio ~31× entre
    medias y σ comparable, una observación cae en un estado u otro
-   casi exclusivamente por `step_length_km`. Las features contextuales
+   casi exclusivamente por `step_in_km`. Las features contextuales
    contribuyen al margen.
 
 2. **Cohen's d ordena correctamente la influencia.** `step` (+0,99,
    grande) y `cos_turn` (+0,71, medio) son los discriminadores
    principales. Las tres contextuales caen en magnitud "efecto pequeño"
-   (|d|<0,5) — el rango característico de una feature de refinamiento,
+   (|d|<0,5), el rango característico de una feature de refinamiento,
    no de dominio.
 
-3. **El 93 % de acuerdo con Modelo A es la prueba definitiva.**
+3. **El 98,1 % de acuerdo con Modelo A causal es la prueba definitiva.**
    Modelo A no tiene acceso a daylight ni a vegetación. Si B fuera
    circular (decidiera principalmente por contexto), A y B discreparían
-   en al menos 30-50 % de las observaciones. El 93 % de acuerdo
-   sólo puede explicarse si B también está decidiendo principalmente
+   en al menos 30-50 % de las observaciones. El 98,1 % de acuerdo
+   solo puede explicarse si B también está decidiendo principalmente
    por cinemática.
 
 ### Matiz: micro-influencia del contexto en la zona de frontera
 
-En el 7 % de desacuerdos (la zona ambigua donde el step cae en el
-intervalo 10-50 km/día), el contexto sí inclina el voto — y eso es
+En el 1,9 % de desacuerdos (la zona ambigua donde el step cae en el
+intervalo 10-50 km/día), el contexto sí inclina el voto, y eso es
 exactamente lo que se espera de una feature de refinamiento. Cuando
 la cinemática es ambigua, B usa daylight/veg para resolver. Esto no
 es la circularidad fuerte que F2 estaba diseñada para detectar (donde
@@ -359,8 +419,8 @@ documenta en §6 como hallazgo metodológico, no al modelo actual.
 
 El autor ha elegido Modelo B como canónico (ver §5 "Implicación para
 O4 y O5"). Esta subsección preserva los argumentos a favor de Modelo A
-para auditoría futura — si en algún momento la decisión se revisa, la
-justificación de A está aquí íntegra.
+para auditoría futura (si en algún momento la decisión se revisa, la
+justificación de A está aquí íntegra).
 
 **Argumentos a favor de Modelo A:**
 
@@ -375,37 +435,128 @@ justificación de A está aquí íntegra.
    para `daylight_hours`. Cualquier cosa que se pueda romper, B tiene
    más superficie de ataque.
 
-3. **Evitar colinealidad en O4.** Si O4 (ML supervisado) recibe como
-   inputs tanto `state_b` **como** `daylight_hours`, `veg_low`,
-   `veg_high` por separado, esas tres features están presentes dos
-   veces en el espacio de features: una vez como entrada cruda al ML y
-   otra vez codificadas dentro del `state_b`. Eso introduce
-   colinealidad innecesaria. Con `state_a`, el HMM aporta exactamente
-   una cosa que el ML no puede aprender solo (un estado latente
-   derivado de la secuencia temporal cinemática), y las features
-   contextuales entran por su canal supervisado, separadas.
+3. **Evitar colinealidad en los modelos supervisados.** Si los modelos
+   de ML reciben como inputs tanto `state_b_causal` como `daylight_hours`,
+   `veg_low`, `veg_high` por separado, esas tres features están presentes
+   dos veces: una vez como entrada cruda al ML y otra codificadas dentro
+   de `state_b_causal`. Eso introduce colinealidad innecesaria. Con
+   `state_a_causal`, el HMM aporta exactamente una cosa que el ML no
+   puede aprender solo (un estado latente derivado de la secuencia
+   temporal cinemática), y las features contextuales entran por su canal
+   supervisado, separadas.
 
 4. **Riesgo cero de circularidad residual.** A no usa ninguna feature
    contextual; no puede caer en circularidad ni siquiera en el matiz
    "micro" descrito en §7.
 
-**Si se reconsidera la decisión:** el cambio operativo es mínimo —
-basta con sustituir `state_b` por `state_a` (y sus posteriores) en los
-features de entrada de los modelos de O4. Ambas columnas están
-materializadas en `features.parquet`; el cambio no requiere
-re-entrenar el HMM ni regenerar artefactos. Esta subsección queda como
-checkpoint reversible.
+**Si se reconsidera la decisión:** el cambio operativo es mínimo:
+basta con sustituir `state_b_causal` por `state_a_causal` (y sus
+posteriores) en los features de entrada de los modelos de ML. Ambas
+columnas están materializadas en `features.parquet`; el cambio no
+requiere re-entrenar el HMM ni regenerar artefactos. Esta subsección
+queda como checkpoint reversible.
 
 **Cómo se llegó a la decisión actual:** el autor consideró ambos
 modelos tras revisar C6 (Cohen's d). La elección por B refleja (a) la
 conservación de la propuesta de la tutora y (b) el patrón estacional
-ligeramente más nítido en jun-jul (~3 % vs ~16-21 %), que sugiere que
-el contexto resuelve la zona de frontera cinemática de manera
-biológicamente sensata. La colinealidad mencionada arriba es un costo
-asumido conscientemente y se gestionará en el brainstorm de O4
-(probablemente: usar `state_b` SIN incluir adicionalmente `daylight` y
-`veg_*` como features supervisadas, o sí incluirlas y aceptar la
-redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
+ligeramente más nítido en jun-jul (~2,4-2,6 % vs ligeramente mayor en
+A), que sugiere que el contexto resuelve la zona de frontera cinemática
+de manera biológicamente sensata. La colinealidad mencionada arriba es
+un costo asumido conscientemente: en la práctica, los modelos de ML
+(RF, XGBoost) no incluyeron `daylight` y `veg_*` como features
+supervisadas, usando solo el `state_b_causal` y la posterior como
+feature del HMM, separadas de las crudas.
+
+## 8. Conversión a HMM causal: decode filtrado y split propio
+
+**Esta sección documenta la segunda mejora metodológica del capítulo,
+complementaria al hallazgo de §6.** Una vez que los parámetros del HMM
+se corrigieron (§6), se identificó un segundo problema: el *modo de
+decode* seguía siendo **suavizado** (algoritmo forward-backward, que
+usa toda la secuencia incluida la pasada backward sobre t+1..T). Eso
+significa que `state_b` en `features.parquet` codifica información del
+futuro, exactamente lo que los modelos supervisados deben predecir.
+
+### El problema: suavizado = fuga de información
+
+El algoritmo de Viterbi suavizado y la pasada forward-backward producen
+la secuencia de estados más probable dada la observación completa
+`obs_1..T`. Para un día t, eso incluye `obs_{t+1}, obs_{t+2}, ...` que
+el ave aún no ha realizado desde el punto de vista del predictor.
+Usar esta feature en un modelo supervisado que predice `pos_{t+1}` a
+partir de `obs_1..t` sería fuga de información: el target (o información
+correlacionada con él) entraría por la feature del HMM.
+
+### La solución: filtrado forward-only
+
+El filtrado forward produce `P(estado_t | obs_1..t)`, la distribución
+posterior sobre el estado dado solo lo observado hasta t (exclusive).
+No hay pasada backward; no hay mirada al futuro. La feature es
+calculable en tiempo real, a medida que llegan las observaciones, sin
+conocer nada de lo que ocurrirá el día t+1 en adelante.
+
+El módulo `tfg_aves.hmm.causal` implementa `filter_states_forward()`,
+que recorre los días de cada ave de forma estrictamente causal y
+produce:
+
+- `state_a_causal`, `state_b_causal`: argmax del filtrado.
+- `posterior_a_estacionario`, `posterior_a_migracion`,
+  `posterior_b_estacionario`, `posterior_b_migracion`: probabilidades
+  posteriores filtradas.
+
+### Cinemática entrante en lugar de saliente
+
+Asociado a la conversión causal, las features cinemáticas también
+cambiaron de salientes (de t a t+1) a entrantes (de t-1 a t):
+
+- `step_in_km = haversine(pos_{t-1}, pos_t)`: inercia de movimiento
+  real al llegar a t.
+- `cos_turning_in = cos(bearing_in_t - bearing_in_{t-1})`: cambio de
+  rumbo en el paso de entrada.
+
+Las salientes (`step_length_km = haversine(pos_t, pos_{t+1})`) usaban
+la posición de mañana para caracterizar el estado de hoy, lo que es
+incorrecto para un feature predictiva.
+
+### El split es ahora propiedad de O3
+
+Antes, cada línea de ML (L1, L2, L3) calculaba su propio split
+temporal de forma independiente, y varias versiones del HMM causal se
+recomputaban dentro de cada línea. Esto producía cuádruple duplicación
+de código y riesgo de inconsistencias entre splits.
+
+Con la conversión causal, O3 calcula el split una vez mediante
+`assign_temporal_split()` (módulo `tfg_aves.data.split`) y lo escribe
+como columna `split` en `features.parquet`. O4 y O5 leen esa columna
+directamente. El HMM causal es la fuente única; las líneas de ML no
+lo recomputan.
+
+### Evidencia de que es el mismo modelo, solo realineado
+
+El acuerdo entre el estado suavizado anterior (`state_b`) y el filtrado
+causal (`state_b_causal`) es del **91,1 %** sobre 20 188 días comunes.
+Este valor responde a la pregunta clave: ¿la conversión causal produce
+un HMM distinto o el mismo realineado? Un acuerdo del 91 % confirma
+que el núcleo del modelo (los parámetros aprendidos, la bimodalidad
+cinemática, el patrón estacional) se preserva, y que la diferencia
+residual (~9 %) se concentra en la zona de frontera donde el suavizado
+podía "ver hacia adelante" y el filtrado no puede. Eso es exactamente
+lo esperado.
+
+### Impacto en la cadena downstream (re-verificación)
+
+Tras regenerar `features.parquet` causal y propagar los cambios a L1,
+L2, L3 y O5, los desplazamientos de métricas son pequeños (top-1 |Delta|<0,01
+en la mayoría de métricas) y ninguna conclusión cualitativa cambia:
+
+- El ML sigue perdiendo a la persistencia en top-1.
+- L2 sigue siendo el modelo mejor calibrado.
+- L3 mantiene cobertura ~80 % y el hallazgo de "persistencia con
+  incertidumbre calibrada".
+- LightGBM sigue divergiendo en L1.
+
+Varios log-loss incluso mejoraron levemente. El gate de re-verificación
+fue superado antes de cerrar la rama causal.
 
 ## Caracterización de artefactos
 
@@ -414,22 +565,22 @@ redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
   la verosimilitud monótonamente pero no admite etiquetado biológico
   claro).
 - **C1** (`o3_fig02_features-by-state-a`): histogramas de las dos
-  features cinemáticas por estado A. Separación nítida: estado
-  estacionario concentra masa en `step_length_km` bajo y
-  `cos_turning_angle` negativo/aleatorio; estado migración, patrón
-  contrario (step alto, cos cercano a +1).
+  features cinemáticas por estado A causal. Separación nítida: estado
+  estacionario concentra masa en `step_in_km` bajo y `cos_turning_in`
+  negativo/aleatorio; estado migración, patrón contrario (step alto,
+  cos cercano a +1).
 - **C2** (`o3_fig03_features-by-state-b`): histogramas de las cinco
-  features del Modelo B por estado. Las dos cinemáticas replican C1; las
-  tres de contexto (`daylight`, `veg_*`) muestran diferencias mucho más
-  modestas entre estados, lo que confirma cuantitativamente que el step
-  domina la separación.
+  features del Modelo B causal por estado. Las dos cinemáticas replican
+  C1; las tres de contexto (`daylight`, `veg_*`) muestran diferencias
+  mucho más modestas entre estados, lo que confirma cuantitativamente
+  que el step domina la separación.
 - **C3** (`o3_fig04_state-vs-biology`): principal artefacto de
   validación. % migración por mes y por bin de latitud, para A y B.
   Tabla adjunta con valores numéricos
   (`o3_tab04_state-vs-biology.csv`).
-- **C4** (`o3_fig05_ab-agreement`): matriz de confusión A vs B +
-  histograma de desacuerdos por `step_length_km`. Cuantifica la
-  aportación del contexto: el 93 % de acuerdo se distribuye con sesgo
+- **C4** (`o3_fig05_ab-agreement`): matriz de confusión A causal vs B
+  causal + histograma de desacuerdos por `step_in_km`. Cuantifica la
+  aportación del contexto: el 98,1 % de acuerdo se distribuye con sesgo
   hacia "B clasifica más estacionario" en la zona ambigua 10-50 km/día.
 - **C5** (`o3_fig06_per-bird-state-proportions`): dispersión
   proporciones por ave en A vs B. Revela heterogeneidad individual:
@@ -439,16 +590,17 @@ redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
   coinciden en la mayoría de las aves; los puntos alejados son aves
   donde el contexto cambia la inferencia.
 - **C6** (`o3_fig07_feature-influence-cohens-d`): Cohen's d de cada
-  feature del Modelo B comparando migración vs estacionario. Resultado
-  cuantitativo (replicando el análisis de v2): `step_length_km` d=+0,99
-  (efecto grande, mayor en migración), `cos_turning_angle` d=+0,71
-  (efecto medio, mayor en migración → vuelo más rectilíneo), `veg_high`
-  d=−0,46 y `daylight_hours` d=−0,41 (efectos pequeños, mayores en
-  estacionario → bosque + días largos = cría veraniega), `veg_low`
-  d=−0,12 (mínimo). Confirma cuantitativamente que el step domina la
-  discriminación y que el contexto aporta refinamiento marginal — la
-  evidencia métrica detrás del 93 % de acuerdo A-B y de la decisión
-  metodológica §9.2 (sin StandardScaler).
+  feature del Modelo B causal comparando migración vs estacionario.
+  Resultado cuantitativo (replicando el análisis de la versión anterior):
+  `step_in_km` d=+0,99 (efecto grande, mayor en migración),
+  `cos_turning_in` d=+0,71 (efecto medio, mayor en migración, vuelo
+  más rectilíneo), `veg_high` d=-0,46 y `daylight_hours` d=-0,41
+  (efectos pequeños, mayores en estacionario, bosque + días largos =
+  cría veraniega), `veg_low` d=-0,12 (mínimo). Confirma
+  cuantitativamente que el step domina la discriminación y que el
+  contexto aporta refinamiento marginal, la evidencia métrica detrás
+  del 98,1 % de acuerdo A-B causal y de la decisión metodológica §9.2
+  (sin StandardScaler).
 - **C7** (`o3_fig08_bird-trajectory-by-state`): trayectoria del ave
   91916A (la de mayor cobertura del dataset, 2 051 días válidos) sobre
   mapa cartográfico (cartopy con coastlines + fronteras nacionales),
@@ -472,19 +624,21 @@ redundancia para árboles tolerantes a colinealidad como RF y XGBoost).
   conocida de *Larus fuscus* (Wikelski et al. 2015).
 - **C9** (`o3_fig10_state-proportion-pie`): gráfico de tarta de la
   proporción global de observaciones (ave, día) clasificadas como
-  estacionario vs migración por cada modelo. Modelo A: 78,8 %
-  estacionario / 21,2 % migración. Modelo B: 84,7 % estacionario /
-  15,3 % migración. Ambas proporciones son biológicamente plausibles
-  para *Larus fuscus* (la migración activa ocupa 2-3 meses al año,
-  ~17-25 % de los días anuales); el ligero exceso del Modelo A se
-  concentra en la zona ambigua step 10-50 km/día que el Modelo B
-  reclasifica como estacionario gracias al contexto.
+  estacionario vs migración por cada modelo (causal). Modelo A causal:
+  ~80 % estacionario / ~20 % migración. Modelo B causal: ~86 %
+  estacionario / **13,9 %** migración. Ambas proporciones son
+  biológicamente plausibles para *Larus fuscus* (la migración activa
+  ocupa 2-3 meses al año, ~15-25 % de los días anuales); el ligero
+  exceso del Modelo A se concentra en la zona ambigua step 10-50 km/día
+  que el Modelo B reclasifica como estacionario gracias al contexto.
+  Los valores exactos se leen del artefacto C9 regenerado (causal).
 
 ### Validación
 
-- 78 tests pasando (`uv run pytest -q`). Ruff limpio (`uv run ruff
-  check src tests`). `build_o3()` reproducible desde `daily.parquet`
-  en una sola llamada con `random_state=0`.
+- Suite verde (`uv run pytest -q`). Ruff limpio (`uv run ruff check
+  src tests`). `build_o3()` reproducible desde `daily.parquet` en una
+  sola llamada con `random_state=0`. Incluye test de ausencia de fuga
+  de información (leak-free) para el filtrado causal del HMM.
 
 ## Salida materializada
 
@@ -492,16 +646,23 @@ Ficheros en `data/processed/o3/` (gitignored, regenerables):
 
 | Fichero | Contenido |
 |---|---|
-| `features.parquet` | 24 444 filas × 17 columnas: features, estados, posteriores, flags |
-| `models_a_b.pkl` | dict con HMM A, HMM B, label_map A, label_map B, train_bird_ids, holdout_bird_ids, random_state |
-| `metrics.parquet` | LL por observación (holdout) + estadísticas de acuerdo A-B |
+| `features.parquet` | 24 444 filas × columnas: features, estados causales, posteriores, flags, split |
+| `models_a_b.pkl` | dict con HMM A, HMM B, label_map A, label_map B, scaler (None), random_state |
+| `metrics.parquet` | LL por observación (test temporal) + estadísticas de acuerdo A-B causal |
 
-Las 17 columnas de `features.parquet`:
-`bird_id`, `date_utc`, `lat`, `lon`, `step_length_km`,
-`cos_turning_angle`, `daylight_hours`, `veg_low`, `veg_high`,
-`state_a`, `state_b`, `posterior_a_estacionario`,
-`posterior_a_migracion`, `posterior_b_estacionario`,
-`posterior_b_migracion`, `is_observation_valid`, `in_holdout`.
+Columnas de `features.parquet` (versión causal):
+`bird_id`, `date_utc`, `lat`, `lon`,
+`step_in_km`, `cos_turning_in`, `sin_bearing_in`, `cos_bearing_in`,
+`daylight_hours`, `veg_low`, `veg_high`,
+`state_a_causal`, `state_b_causal`,
+`posterior_a_estacionario`, `posterior_a_migracion`,
+`posterior_b_estacionario`, `posterior_b_migracion`,
+`is_hmm_obs_valid`, `split`.
+
+Las columnas antiguas (`step_length_km`, `cos_turning_angle`,
+`state_a`, `state_b`, `is_observation_valid`, `in_holdout`) ya no
+existen en la versión causal; el código aguas abajo (O4, O5, L1, L2, L3)
+fue actualizado para usar los nuevos nombres.
 
 ## 9. Justificación de decisiones metodológicas
 
@@ -539,8 +700,8 @@ alternativa descartada.*
   circularidad que F2 estaba diseñada para diagnosticar.
 - **Por qué `covariance_type='diag'` lo permite:** cada estado tiene
   su propia σ por feature; un estado puede ser una Gaussiana estrecha
-  centrada en 4 km (σ pequeña) y el otro una Gaussiana ancha centrada
-  en 130 km (σ grande). El likelihood discrimina por sí solo aunque la
+  centrada en 6 km (σ pequeña) y el otro una Gaussiana ancha centrada
+  en 190 km (σ grande). El likelihood discrimina por sí solo aunque la
   marginal global no sea gaussiana.
 - **Precedente:** `v2/notebooks/HMM5.ipynb` documentó explícitamente
   esta lección: *"Sin escalar: la varianza de `step_length` debe
@@ -550,12 +711,14 @@ alternativa descartada.*
   escalado, el step pierde el contraste de varianzas que el HMM
   necesitaba para separar los dos regímenes.
 
-### 9.2 bis Linealización del cambio de rumbo: `cos(turning_angle)` en lugar de `|turning_angle|`
+### 9.2 bis Linealización del cambio de rumbo: `cos_turning_in` en lugar de `|turning_angle|`
 
 - **Decisión:** codificar el cambio de rumbo entre días consecutivos
-  como `cos_turning_angle = cos(bearing_out - bearing_in)` ∈ [-1, 1] en
-  lugar de `|turning_angle|` ∈ [0, π].
-- **Razón:** dos motivos. (1) `cos` es **suave en toda la recta real**
+  como `cos_turning_in = cos(bearing_in_t - bearing_in_{t-1})` ∈ [-1, 1]
+  en lugar de `|turning_angle|` ∈ [0, π]. La convención "in" indica
+  que el rumbo es el del paso ENTRANTE (de t-1 a t), coherente con
+  la causalidad.
+- **Razón:** dos motivos. (1) `cos` es suave en toda la recta real
   y se aproxima mejor a una emisión gaussiana, mientras que el valor
   absoluto tiene una "esquina" en 0 que distorsiona la forma de la
   distribución condicional al estado. (2) `cos` colapsa giros
@@ -604,10 +767,10 @@ alternativa descartada.*
 - **Alternativa considerada:** 5 restarts. Estadísticamente suficiente
   pero con menor margen; la diferencia de tiempo es mínima.
 
-### 9.6 Re-etiquetado de estados por menor `μ[step_length_km]`
+### 9.6 Re-etiquetado de estados por menor `μ[step_in_km]`
 
 - **Decisión:** tras entrenar, el estado con menor media en
-  `step_length_km` recibe la etiqueta `estacionario` (0); el otro,
+  `step_in_km` recibe la etiqueta `estacionario` (0); el otro,
   `migración` (1). Aplicado en A y B.
 - **Razón:** `hmmlearn` asigna etiquetas internas `0`/`1`
   arbitrariamente según el seed. Sin re-etiquetado, `state_a` y
@@ -629,19 +792,26 @@ alternativa descartada.*
   predictivo pero los estados extra son sub-clusters de "se mueve poco"
   que no aportan a la narrativa del TFG.
 
-### 9.8 Holdout 80/20 estratificado en lugar de LOBO
+### 9.8 Split temporal por ave (80/10/20) en lugar de LOBO por aves
 
-- **Decisión:** 65 aves en train / 17 en holdout. Split por ave,
-  estratificado por número de días válidos. No se usa LOBO (82 folds).
-- **Razón:** (1) LOBO en O2 castiga por rutas individuales
-  idiosincráticas; en O3 el HMM opera sobre features cinemáticas
-  comparables entre aves, lo que reduce pero no elimina ese problema.
-  (2) LOBO en O3 implicaría 82×2×10 = 1 640 fits, excesivo para el
-  aporte marginal. (3) La estratificación garantiza representación
-  proporcional.
+- **Decisión:** split temporal por posición en la secuencia de cada
+  ave: 80 % primeros días → train; 10 % siguiente → val; 20 % últimos
+  → test. Materializado como columna `split` en `features.parquet`
+  (módulo `tfg_aves.data.split`). El HMM se entrena sobre las
+  observaciones del conjunto train de todas las aves.
+- **Razón:** (1) el split temporal evita la fuga de información entre
+  días cercanos (problema que el split por aves no resuelve). (2) O4
+  y O5 necesitan consumir el mismo split que el HMM usa; al
+  materializarlo en O3, se elimina la cuádruple duplicación de cómputo
+  que existía antes (O4 L1, L2, L3 y O5 recomputaban el split
+  internamente). (3) LOBO en O3 implicaría 82×2×10 = 1 640 fits,
+  excesivo para el aporte marginal.
+- **Cambio respecto a la versión anterior:** la versión suavizada
+  usaba split por aves (65 train / 17 holdout). El split temporal es
+  más riguroso para la evaluación de series temporales.
 - **Alternativa descartada:** LOBO completo. Más riguroso
   estadísticamente pero impracticable y no justificado dado el
-  aprendizaje de O2.
+  aprendizaje de la versión anterior del TFG.
 
 ### 9.9 Log-likelihood por observación, no total
 
@@ -700,25 +870,29 @@ alternativa descartada.*
   descubren estados cinemáticamente coherentes con la fenología de
   *Larus fuscus* sin supervisión: el valle de jun-jul (cría) y los
   picos de paso (abr, sep-oct) son nítidos en ambos modelos.
-- La separación de medias en step (4 km vs 129 km en Modelo A) es de
-  dos órdenes de magnitud, una bimodalidad genuina del comportamiento
-  diario.
-- La monotonía de % migración por bin de step (<10 km → 0,18 %, >50 km
-  → 100 %) confirma que la clasificación captura la magnitud del
-  movimiento como discriminador principal.
+- La separación de medias en step (~6 km vs ~190 km en Modelo B causal)
+  es de dos órdenes de magnitud, una bimodalidad genuina del
+  comportamiento diario.
+- La monotonía de % migración por bin de step confirma que la
+  clasificación captura la magnitud del movimiento como discriminador
+  principal.
 - La ablación A vs B detectó empíricamente el riesgo de circularidad
   geográfica en la primera ejecución y orientó la corrección. Es un
   resultado defensible del propio diseño experimental.
-- El entregable `features.parquet` es modular y listo para consumo
-  directo por O4 y O5.
+- La conversión causal (§8) preserva el modelo biológicamente: el 91,1 %
+  de acuerdo entre la versión suavizada anterior y el filtrado causal
+  confirma que se trata del mismo HMM, realineado temporalmente.
+- El entregable `features.parquet` (con columna `split`) es modular y
+  listo para consumo directo por los modelos supervisados, sin
+  necesidad de recomputar el HMM ni el split.
 
 ### Limitaciones detectadas
 
-- **Aporte marginal del contexto:** el 93 % de acuerdo entre Modelo A
-  y Modelo B indica que `daylight_hours`, `veg_low` y `veg_high`
+- **Aporte marginal del contexto:** el 98,1 % de acuerdo entre Modelo A
+  y Modelo B causal indica que `daylight_hours`, `veg_low` y `veg_high`
   añaden poco una vez que el step en km puede dominar la
   inicialización. Esto es coherente con el resultado de §6 y con la
-  observación de v2.
+  observación de la versión anterior del TFG.
 - **Validación poblacional, no individual:** la coherencia biológica se
   juzga a nivel agregado; aves con fenologías atípicas quedan sin
   validación individual.
@@ -732,14 +906,15 @@ alternativa descartada.*
 
 ### Aspectos abiertos / futuras mejoras
 
-- O4 (ML): usar `state_a` (o `state_b`, ~equivalentes dado el 93 % de
-  acuerdo) y las cuatro posteriores como features de entrada en los
-  modelos de RF, XGBoost y LightGBM. El estado HMM añade información
-  sobre el régimen actual del ave que el Markov(1) global de O2 no
-  capturaba.
-- O5 (evaluación): estratificar el error de predicción por estado HMM
-  para ver si los modelos de O4 cometen errores distintos en estado
-  estacionario vs migración.
+- Los modelos de ML ya consumen `state_b_causal` y
+  `posterior_b_migracion_causal` directamente desde `features.parquet`,
+  sin necesidad de recomputar el HMM. Los mapas de error de los modelos
+  ML han sido estratificados por estado HMM causal.
+- El filtrado forward produce una posterior menos concentrada que el
+  suavizado (el suavizado usa la pasada backward para refinar), lo que
+  hace la feature levemente más ruidosa. Esto es el costo asumido de la
+  causalidad: la feature es calculable en tiempo real sin observar el
+  futuro.
 - Extensión futura (fuera del alcance del TFG): HMM por-individuo o
   HMM jerárquico (parámetros compartidos pero iniciados per-ave) para
   capturar la heterogeneidad inter-individual visible en C5.
@@ -751,22 +926,28 @@ alternativa descartada.*
   completo: la ablación A vs B funcionó como diagnóstico, identificó
   la circularidad antes de cerrar el modelo, y la corrección está
   validada empíricamente por dos iteraciones independientes del autor
-  (v2 y v3 post-rework).
-- Conectar explícitamente con O2: "el HMM resuelve la ambigüedad de
-  comportamiento que el Markov(1) global no podía capturar, porque el
-  argmax de una distribución mezcla sin estados ocultos colapsa hacia
-  el self-loop dominante".
+  (versión anterior y v3 post-rework).
+- La sección §8 ("Conversión causal") complementa §6 como segunda
+  contribución metodológica: el mismo hallazgo sobre la circularidad
+  motivó también la conversión al decode filtrado (no suavizado) para
+  que el estado HMM sea una feature predictiva válida. Narrar el arco:
+  corrección del preprocesado (§6) + corrección del decode (§8).
+- Conectar explícitamente con el capítulo de Markov: "el HMM resuelve
+  la ambigüedad de comportamiento que el Markov(1) global no podía
+  capturar, porque el argmax de una distribución mezcla sin estados
+  ocultos colapsa hacia el self-loop dominante".
 - Citar Wikelski et al. (2015) en la sección de validación biológica y
   Patterson et al. (2017) en la elección de `covariance_type='diag'`.
 - Aclarar en el texto que LL Modelo A ≠ LL Modelo B porque los
   espacios de observación son distintos (§9.10).
-- **Modelo canónico para O4 y O5: Modelo B.** Decisión del autor
+- **Modelo canónico para O4 y O5: Modelo B causal.** Decisión del autor
   documentada en §5. Razones: (a) conservación de la propuesta original
   de la tutora, validada empíricamente tras el rework; (b) patrón
   estacional ligeramente más nítido en jun-jul. La alternativa
-  (Modelo A) queda documentada íntegramente en §7 bis como checkpoint
-  reversible — el cambio operativo, si se reconsidera, es sustituir
-  `state_b` por `state_a` en los inputs de O4.
+  (Modelo A causal) queda documentada íntegramente en §7 bis como
+  checkpoint reversible: el cambio operativo, si se reconsidera, es
+  sustituir `state_b_causal` por `state_a_causal` en los inputs de los
+  modelos supervisados.
 - Bibliografía pendiente:
   - Wikelski M et al. (2015): dataset Movebank.
   - Patterson et al. (2017): HMM para movimiento animal.
