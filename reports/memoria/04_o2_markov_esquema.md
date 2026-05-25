@@ -100,11 +100,13 @@ biológica de *L. fuscus*.
   nombres/slugs; regeneradas con `save_artifact(..., overwrite=True)`.
 
 ### 4.4 Suavizado de Laplace
-- **Puntos:** problema de sparsity (0,19 % de pares observados; frecuencias crudas
-  dan prob = 1 a celdas vistas una vez y 0 al resto → log-loss infinito; este fue
-  el problema visible en la iteración v2 sin suavizar). **F6 Laplace α = 1**
-  (add-one): suelo de probabilidad a toda celda → distribución válida y log-loss
-  finito. Ecuación de la fila suavizada.
+- **Puntos:** problema de sparsity (frecuencias crudas dan prob = 1 a celdas vistas
+  una vez y 0 al resto → sobreconfianza estadística + log-loss infinito). **F6
+  Laplace α = 1** (add-one): no como truco para el cálculo, sino para dar una
+  distribución sensata (transición no vista = improbable, no imposible); no altera
+  el top-1 (conserva el orden de la fila). Ecuación de la fila suavizada. Fila de
+  origen sin observar → uniforme (gancho a §4.6). **NO citar la iteración v2**
+  (decisión del autor 2026-05-25: fuera de la prosa).
 - **Figuras:** ninguna propia (se apoya en 4.2/4.3).
 
 ### 4.5 Protocolo de evaluación

@@ -180,3 +180,41 @@ siguiente.
   de los datos.}
   \label{fig:o2-monthly}
 \end{figure}
+
+\section{Suavizado de Laplace}
+\label{sec:o2-suavizado}
+
+La alta dispersión de las matrices obliga a decidir con cuidado cómo se convierten los
+recuentos en probabilidades. La opción más directa, las frecuencias relativas (cada
+recuento dividido por el total de su fila), es inadecuada aquí: una celda de origen
+observada una sola vez asignaría probabilidad uno al único destino visto y cero a todos
+los demás. Eso equivale a afirmar, a partir de una única observación, que desde esa
+celda el ave irá con total certeza a un sitio y que le es imposible ir a cualquier
+otro, una conclusión que los datos no respaldan. Tiene además una consecuencia práctica
+inmediata: si en una transición de prueba el ave se desplaza a una celda con
+probabilidad estimada cero, el log-loss (sección \ref{sec:o2-evaluacion}) se vuelve
+infinito.
+
+El suavizado de Laplace (\textit{add-one}) evita ese exceso de confianza sumando una
+constante $\alpha$ a todos los recuentos antes de normalizar. La probabilidad suavizada
+de transitar de la celda $i$ a la $j$ en el mes $m$ es
+
+\begin{equation}
+  \hat{p}^{(m)}_{ij}
+  = \frac{n^{(m)}_{ij} + \alpha}{\sum_{k} n^{(m)}_{ik} + \alpha N},
+  \label{eq:o2-laplace}
+\end{equation}
+
+donde $n^{(m)}_{ij}$ es el recuento observado, $N = 1\,217$ el número de celdas
+activas y $\alpha$ el parámetro de suavizado, fijado en el valor estándar
+$\alpha = 1$. Con ello ninguna celda recibe probabilidad cero: las transiciones no
+observadas quedan como improbables, no como imposibles, que es la lectura correcta de
+un destino simplemente no visto todavía. Su efecto se concentra en las probabilidades
+y, con ellas, en el log-loss (que sin suavizar sería infinito); no altera la predicción
+de máxima probabilidad, porque sumar la misma constante a toda la fila conserva el orden
+de las celdas. Se adopta el valor estándar $\alpha = 1$ sin optimizarlo, ya que su papel
+es regularizar la distribución, no ajustar el modelo. Una fila sin ninguna transición
+observada ($\sum_{k} n^{(m)}_{ik} = 0$) queda, por construcción, uniforme: el modelo
+carece de información sobre esa celda de origen y reparte la probabilidad por igual entre
+todas las celdas, un caso que resultará central al evaluar la generalización a individuos
+nuevos (sección \ref{sec:o2-resultados}).
