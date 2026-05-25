@@ -79,15 +79,25 @@ biológica de *L. fuscus*.
 - **Puntos:** conteo de transiciones de 1 paso → **12 matrices mensuales**
   (tensor `12 × 1217 × 1217`, 21 214 transiciones). **F3 mensual:** capta el
   ciclo migratorio sin fragmentar por debajo del mínimo estadístico (vs estacional
-  o global). **F5 gap-aware:** solo cuentan pares de días válidos consecutivos
+  o global). **Enganche con §3.6.3 de O1 (pedido del autor):** la estacionalidad
+  del movimiento (migración primavera/otoño vs residencia verano/invierno)
+  motiva las 12 matrices mensuales frente a una única global, que promediaría
+  ambos regímenes; el sesgo de muestreo descrito en §3.6.3 (otoño ≫ primavera)
+  añade el matiz de que algunos meses se estiman con más datos que otros (hilo
+  H6). **F5 gap-aware:** solo cuentan pares de días válidos consecutivos
   (paso 1 día); ningún par cruza un hueco de O1 (semántica estricta de Markov(1)).
   **H1 resuelta:** se entrena con **todas** las transiciones de 1 paso, sin exigir
   racha mínima (Markov(1) solo necesita pares consecutivos; exigir rachas largas
   tiraría la mayoría de los datos, mediana de racha 8 días de O1).
-- **Lectura cualitativa:** matriz ejemplo (mes 9) con diagonal dominante
-  (self-loops) y dispersión fuera de la diagonal en migración; vista de las 12.
-- **Figuras:** `o2_fig02_transition-matrix-example`,
-  `o2_fig03_monthly-matrices-overview`.
+- **Lectura cualitativa:** `o2_fig02`/`o2_fig03` **regeneradas como scatter**
+  (índice origen vs destino; el heatmap original era ilegible, 99,8 % vacío,
+  decisión del autor 2026-05-25). El scatter SÍ muestra la banda diagonal y, además,
+  la variación estacional: junio-julio sedentarios (puntos en un tramo corto de la
+  diagonal) vs abril-mayo y sep-oct migración (dispersión a lo largo y fuera de la
+  diagonal). Refuerza la justificación de las matrices mensuales.
+- **Figuras:** `o2_fig02_transition-matrix-example` (scatter de un mes, septiembre),
+  `o2_fig03_monthly-matrices-overview` (scatter de los 12 meses). Mismos
+  nombres/slugs; regeneradas con `save_artifact(..., overwrite=True)`.
 
 ### 4.4 Suavizado de Laplace
 - **Puntos:** problema de sparsity (0,19 % de pares observados; frecuencias crudas

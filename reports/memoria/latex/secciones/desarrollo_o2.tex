@@ -103,3 +103,80 @@ Se adopta, por tanto, \texttt{cell\_deg} = 0,5\textdegree.
   inflar artificialmente los self-loops.}
   \label{fig:o2-grid}
 \end{figure}
+
+\section{Estimación de las matrices de transición}
+\label{sec:o2-matrices}
+
+Con el espacio ya discretizado, las probabilidades de transición se estiman
+contando con qué frecuencia cada celda de origen lleva a cada celda de destino. Una
+transición es un par de días válidos \emph{consecutivos} (con paso de exactamente un
+día): los pares separados por un hueco, que la tabla diaria representa de forma
+explícita, no se cuentan. Esta regla preserva la semántica estricta de la cadena, en la que cada
+transición describe un único día, y evita que el modelo aprenda saltos espaciales
+inexistentes a partir de dos observaciones a ambos lados de una laguna del
+seguimiento.
+
+La fragmentación de las series dejaba planteada en el capítulo anterior (sección
+\ref{sec:o1-fragmentacion}) una decisión pendiente: entrenar con todas las rachas o
+exigir una longitud mínima.
+La cadena de primer orden la resuelve sin ambigüedad, porque solo necesita pares de
+días consecutivos y no tramos largos: se entrenan con \emph{todas} las transiciones
+de un paso, sin imponer una racha mínima. Exigirla descartaría la mayor parte de los
+datos (la mediana de racha es de 8 días) sin beneficio para un modelo que no mira más
+allá del día anterior. El recuento resultante es de 21\,214 transiciones.
+
+En lugar de una única matriz global, el modelo emplea una matriz por mes natural,
+$P^{(m)}$ con $m = 1, \dots, 12$, lo que da un tensor de dimensiones
+$12 \times 1\,217 \times 1\,217$. La razón es que el movimiento de la especie es
+fuertemente estacional, como anticipaba el análisis de cobertura del capítulo
+anterior (sección \ref{sec:o1-estacional}): hay fases de migración en primavera y
+otoño y fases
+sedentarias en verano e invierno. Una única matriz promediaría ambos regímenes y
+produciría transiciones que no describirían bien ninguno; una matriz mensual, en
+cambio, recoge que desde una misma celda de origen los destinos probables cambian
+según la época del año. El mes es la partición estacional más fina que conserva
+datos suficientes por matriz sin fragmentar el recuento por debajo de lo estimable.
+Como contrapartida, ese mismo sesgo estacional del seguimiento hace que las matrices
+no se apoyen todas en el mismo volumen de datos: las transiciones por mes van de
+1\,149 en mayo a 2\,928 en septiembre (figura \ref{fig:o2-monthly}), de modo que las
+matrices del otoño quedan mejor estimadas que las de la primavera, un matiz a tener
+presente al interpretar la precisión por mes en la sección \ref{sec:o2-resultados}.
+
+La figura \ref{fig:o2-matrix} representa las transiciones observadas en un mes
+concreto (septiembre, el de mayor número), con cada par origen-destino observado como
+un punto. La nube se alinea sobre la diagonal, que recoge los self-loops (permanecer
+en la celda) y los desplazamientos a celdas vecinas; solo unos pocos puntos se alejan
+de ella, que son los saltos largos. El conjunto de las doce matrices (figura
+\ref{fig:o2-monthly}) hace visible, además de esa estructura, la variación estacional
+que justifica las matrices mensuales: los meses sedentarios (junio y julio) concentran
+los puntos en un tramo corto de la diagonal, mientras que los de migración (abril-mayo
+y septiembre-octubre) los reparten a lo largo de toda la diagonal y fuera de ella.
+Frente al millón largo de combinaciones de origen y destino posibles, las observadas
+son una minoría, una escasez de datos que es lo que aborda el suavizado de la sección
+siguiente.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\linewidth]{o2_fig02_transition-matrix-example.png}
+  \caption[Transiciones observadas en un mes]{Transiciones observadas en septiembre
+  (el mes de mayor volumen, 2\,928 transiciones): cada punto es un par (celda de
+  origen, celda de destino) observado al menos una vez, coloreado por
+  $\log(1 + \text{recuento})$. Los puntos se alinean sobre la diagonal (self-loops y
+  desplazamientos a celdas vecinas) y solo unos pocos se alejan de ella, que son los
+  saltos largos.}
+  \label{fig:o2-matrix}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o2_fig03_monthly-matrices-overview.png}
+  \caption[Transiciones observadas por mes]{Transiciones observadas en cada mes
+  (índice de celda de origen frente a destino; la línea discontinua marca la diagonal
+  de self-loops). Los meses sedentarios (junio, julio) concentran los puntos en un
+  tramo corto de la diagonal, mientras que los de migración (abril-mayo y
+  septiembre-octubre) los reparten a lo largo de toda la diagonal y fuera de ella. El
+  volumen por mes ($n$ en el título) va de 1\,149 en mayo a 2\,928 en septiembre,
+  reflejo del sesgo estacional del seguimiento descrito en el capítulo de preparación
+  de los datos.}
+  \label{fig:o2-monthly}
+\end{figure}

@@ -1,9 +1,9 @@
 # o2_fig02_transition-matrix-example
 
 - **Objetivo:** O2
-- **Decisión justificada:** Heatmap del mes 9 como ejemplo representativo de las matrices de transición
+- **Decisión justificada:** Patrón de no-ceros de una matriz de transición mensual (ejemplo: septiembre)
 - **Figura:** `reports/figures/o2_fig02_transition-matrix-example.png`
 
 ## Caption (memoria)
 
-Heatmap (escala log) de la matriz de counts del mes con más transiciones (mes 9, 2928 transiciones). La diagonal (self-loops) y los bloques cercanos a la diagonal recogen la mayor parte de la masa, lo que refleja la naturaleza geográfica de las transiciones día a día. El suavizado Laplace α=1 garantiza que la matriz suavizada no tenga ceros estructurales.
+Transiciones observadas en el mes de septiembre (el de mayor volumen, 2 928 transiciones): cada punto es un par (celda de origen, celda de destino) con al menos una transición, coloreado por el logaritmo del número de transiciones. La mayoría de los puntos cae sobre la diagonal (self-loops: permanecer en la misma celda) o muy cerca de ella (desplazamientos a celdas vecinas); los puntos alejados de la diagonal, que corresponden a saltos largos, son escasos.
