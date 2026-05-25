@@ -273,3 +273,134 @@ log-loss, que evalúa la distribución completa y no solo el argmax, es el crite
 adecuado para un modelo probabilístico y, además, el que heredan los modelos de los
 capítulos posteriores, lo que mantiene la comparación coherente a lo largo del
 trabajo.
+
+\section{Resultados y discusión}
+\label{sec:o2-resultados}
+
+\subsection{Comparación global}
+\label{sec:o2-global}
+
+La tabla \ref{tab:o2-global} recoge las cuatro métricas sobre las 21\,214
+transiciones de prueba, agregadas en las 82 particiones. El resultado es nítido y, a
+primera vista, desfavorable para el modelo: la persistencia gana a la cadena de Markov
+en todas las métricas de predicción puntual (top-1, top-3 y distancia), y solo en
+log-loss el orden se invierte. La persistencia acierta la celda exacta el 73,0\,\% de
+las veces frente al 42,6\,\% de Markov, y su distancia mediana (20,5 km) es menor; la
+diferencia se vuelve extrema en la cola, donde el percentil 90 de la distancia es de
+55,9 km para la persistencia y de 3\,173 km para Markov. En log-loss, sin embargo,
+Markov (5,451) mejora a la persistencia (5,586): es un modelo probabilísticamente
+mejor calibrado. Las dos subsecciones siguientes explican esta aparente contradicción.
+
+\begin{table}[H]
+  \centering
+  \caption[Comparación global Markov frente a persistencia]{Métricas globales de la
+  cadena de Markov y de la baseline de persistencia sobre las 21\,214 transiciones de
+  prueba (evaluación \textit{leave-one-bird-out}). La persistencia gana en predicción
+  puntual; Markov, solo en log-loss. El top-3 de la persistencia coincide con su top-1
+  porque predice una única celda.}
+  \label{tab:o2-global}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Métrica} & \textbf{Markov} & \textbf{Persistencia} \\
+    \midrule
+    Top-1 \textit{accuracy}    & 0,426 & 0,730 \\
+    Top-3 \textit{accuracy}    & 0,524 & 0,730 \\
+    Distancia mediana (km)     & 35,4  & 20,5 \\
+    Distancia p90 (km)         & 3\,173 & 55,9 \\
+    Log-loss                   & 5,451 & 5,586 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Por qué el top-1 favorece a la persistencia}
+\label{sec:o2-estructural}
+
+Dos rasgos estructurales del conjunto explican la ventaja de la persistencia en
+predicción puntual. El primero es la residencialidad ya cuantificada: el 73,0\,\% de
+las transiciones son self-loops, de modo que la regla trivial de quedarse en la celda
+actual acierta por construcción casi tres de cada cuatro días, y su top-1 (0,730)
+coincide en la práctica con la tasa de self-loops.
+
+El segundo aparece al evaluar bajo \textit{leave-one-bird-out}. Una de cada tres
+transiciones de prueba (el 34\,\%) parte de una celda que ninguna de las otras 81 aves
+visita en ese mes, porque cada individuo sigue su propia ruta migratoria. En esos
+casos la fila correspondiente es uniforme (sección \ref{sec:o2-suavizado}) y el modelo
+predice esencialmente al azar: el top-1 cae a cero y la distancia mediana se dispara
+hasta unos 1\,970 km, lo que arrastra la mediana global y el percentil 90. En el resto
+de transiciones, las que parten de una celda sí observada en el entrenamiento, la
+cadena alcanza un top-1 de 0,64 y una distancia mediana de 21 km, a la par con la
+persistencia.
+
+El top-1 global mezcla, por tanto, dos regímenes: uno en el que Markov iguala a la
+persistencia y otro, el de las rutas no observadas, en el que se hunde. Y está
+dominado por el segundo, que no refleja un fallo de calibración del modelo sino la
+individualidad de las rutas. Esta es la razón de fondo por la que el top-1 no es el
+criterio adecuado y sí lo es el log-loss: al puntuar la probabilidad asignada a la
+celda real sobre la distribución completa, una fila uniforme (admitir que no se sabe)
+se penaliza mucho menos que un error cometido con plena confianza, que es lo que hace
+la persistencia cuando el ave se mueve. Bajo esa lente Markov es el modelo mejor
+calibrado.
+
+\subsection{Lectura estacional}
+\label{sec:o2-estacional-resultados}
+
+La ventaja de Markov en log-loss no se reparte por igual a lo largo del año (figura
+\ref{fig:o2-accuracy}). La cadena gana a la persistencia en log-loss en los meses de
+movimiento (de abril a octubre) y la pierde en el invierno sedentario (de noviembre a
+marzo). El mecanismo es coherente con la biología de la especie: en invierno las aves
+apenas se desplazan, así que la persistencia asigna casi toda la probabilidad a la
+celda correcta (la misma de ayer) y su log-loss es muy bajo (en torno a 2,5 en enero),
+imbatible para una distribución suavizada; en los meses de migración, en cambio, el
+ave se mueve, la persistencia coloca casi toda su masa en la celda equivocada y su
+log-loss se dispara (8,1 en abril), mientras que la distribución de Markov mantiene una
+penalización acotada. La mejora global de la cadena procede, pues, enteramente de los
+meses de paso migratorio, las ventanas de primavera y otoño de \textit{Larus fuscus}.
+El panel de top-1 confirma que la persistencia gana ese argmax en los doce meses (la
+residencialidad domina todo el año), y el de la distancia muestra que el error de
+Markov se dispara en enero y febrero, cuando las aves están en sus áreas de invernada
+individuales, las menos compartidas entre individuos.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o2_fig04_accuracy-vs-baseline.png}
+  \caption[Comparación por mes con la baseline]{Comparación mensual de Markov y la
+  persistencia en top-1 \textit{accuracy}, distancia mediana y log-loss. La
+  persistencia gana el top-1 en todos los meses; en log-loss el orden se invierte por
+  estaciones: Markov es mejor en los meses de migración (abril-octubre) y peor en el
+  invierno sedentario, cuando la persistencia es casi perfecta. La distancia de Markov
+  se dispara en enero y febrero, por el peso de las áreas de invernada individuales.}
+  \label{fig:o2-accuracy}
+\end{figure}
+
+\subsection{Heterogeneidad entre individuos}
+\label{sec:o2-perbird}
+
+El promedio global oculta una variación enorme entre aves (figura
+\ref{fig:o2-perbird}). El top-1 por individuo de la cadena va desde 0,06 hasta 1,00,
+con una mediana de 0,43, y un subconjunto de aves presenta distancias medianas de
+miles de kilómetros, la cola del fallback a la fila uniforme. La persistencia es, de
+nuevo, más alta y más compacta (mediana de 0,71). Esa dispersión es la huella de lo
+que un modelo global no puede capturar: aves de comportamiento casi residente, muy
+predecibles, conviven con aves migratorias de ruta propia, sobre las que el modelo
+poblacional poco puede decir.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o2_fig05_per-bird-performance.png}
+  \caption[Rendimiento por individuo]{Distribución por ave del top-1 \textit{accuracy}
+  y de la distancia mediana, agregando las métricas mensuales de cada individuo. La
+  cadena de Markov presenta una variación entre aves mucho mayor que la persistencia
+  (top-1 de 0,06 a 1,00) y una cola de aves con distancias medianas de miles de
+  kilómetros, las de rutas menos compartidas.}
+  \label{fig:o2-perbird}
+\end{figure}
+
+En conjunto, la cadena de Markov visible es una baseline global bien calibrada (mejora
+a la persistencia en log-loss, sobre todo durante la migración), pero su predicción
+puntual está limitada por dos factores que no modela: el régimen de comportamiento de
+cada día (residente o en migración) y la ruta individual de cada ave. Estos dos vacíos
+motivan los capítulos siguientes, que introducen estados ocultos para separar los
+regímenes de comportamiento (capítulo \ref{ch:o3}) y modelos supervisados con
+variables por individuo (capítulo \ref{ch:o4}). Las predicciones almacenadas en esta
+evaluación sirven, además, como referencia cuantificada para el análisis comparativo
+del error del capítulo \ref{ch:o5}.
