@@ -155,13 +155,13 @@ modelos supervisados deben predecir.
     cargadas directamente sin transformación (ya normalizadas 0-1).
   - `fit_hmm_with_restarts()`: k-means init → EM → selección por LL
     train. Devuelve `(GaussianHMM, best_ll, all_lls)` (sin scaler).
-  - `relabel_states()`: re-etiquetado determinista por menor
-    `μ[step_in_km]` (el estado de menor desplazamiento medio recibe
+  - `_relabel_by_step()` (módulo `causal`): re-etiquetado determinista por
+    menor `μ[step_in_km]` (el estado de menor desplazamiento medio recibe
     la etiqueta `estacionario`).
-  - `filter_states_forward()`: filtrado forward-only, `P(estado_t | obs_1..t)`.
-    No usa la pasada backward; no mira al futuro. Produce
-    `state_a_causal`, `state_b_causal` y las posteriores. Módulo
-    `tfg_aves.hmm.causal`.
+  - `forward_filtered_posteriors()` + `decode_causal_states()`: filtrado
+    forward-only, `P(estado_t | obs_1..t)`. No usan la pasada backward; no
+    miran al futuro. `decode_causal_states` produce `state_a_causal`,
+    `state_b_causal` y las posteriores. Módulo `tfg_aves.hmm.causal`.
 - **Orquestador:** `build_o3(n_restarts=10, random_state=0)` en
   `src/tfg_aves/hmm/build.py`, que escribe los 3 ficheros de
   `data/processed/o3/` y devuelve un `BuildO3Result`.
@@ -172,29 +172,34 @@ modelos supervisados deben predecir.
 
 ### Medias aprendidas por estado (unidades originales)
 
-**Modelo A causal** (`step_in_km`, `cos_turning_in`):
+**Modelo A causal** (`step_in_km`, `cos_turning_in`), medias gaussianas
+del HMM (`model.means_`):
 
 | Estado | μ[step_in_km] | μ[cos_turning_in] |
 |---|---|---|
-| 0 (estacionario) | 6,2 km | (similar a la versión suavizada) |
-| 1 (migración) | **190,8 km** | (similar a la versión suavizada) |
+| 0 (estacionario) | 6,3 km | −0,27 |
+| 1 (migración) | **169,6 km** | +0,24 |
 
 **Modelo B causal** (`step_in_km`, `cos_turning_in`, `veg_low`,
 `veg_high`, `daylight_hours`):
 
 | Estado | μ[step_in_km] | μ[cos_turn] | μ[veg_low] | μ[veg_high] | μ[daylight_h] |
 |---|---|---|---|---|---|
-| 0 (estacionario) | 6,2 | (causal) | (similar) | (similar) | (similar) |
-| 1 (migración) | **190,8** | (causal) | (similar) | (similar) | (similar) |
+| 0 (estacionario) | 6,5 | −0,28 | 0,21 | 0,37 | 13,3 |
+| 1 (migración) | **162,7** | +0,26 | 0,18 | 0,18 | 12,3 |
 
-Ratio de medias en step entre estados: **~31×** para Modelo B causal.
-La separación es cinemática genuina: el HMM descubre "ave parada"
-(unidades de km/día) vs "ave volando" (190 km/día de media).
+Ratio de medias gaussianas en step entre estados: **~25×** para Modelo B
+causal (162,7 / 6,5) y **~27×** para Modelo A. La separación es cinemática
+genuina: el HMM descubre "ave parada" (~6 km/día) vs "ave volando"
+(>160 km/día de media gaussiana del estado). La media **empírica** del
+step en los días clasificados como migración es aún mayor (~190 km/día),
+porque la cola de desplazamientos muy largos tira por encima de la media
+del estado.
 
-*Nota: los valores detallados de μ[cos_turn] y features contextuales
-por estado del Modelo B causal se extraen de los artefactos C1-C2
-regenerados (causal). Los ratios de step son la cifra más relevante
-para la narrativa de la memoria.*
+*Nota: las contextuales del Modelo B muestran diferencias pequeñas entre
+estados (veg_high 0,37 vs 0,18, daylight 13,3 vs 12,3 h, veg_low 0,21 vs
+0,18), confirmando que el step domina la separación y el contexto solo
+refina. Detalle visual en los artefactos C1-C2 causales.*
 
 ### Métricas de ajuste (holdout temporal, test split)
 
@@ -221,7 +226,7 @@ posteriores más concentradas que el suavizado sobre el segmento test.
 - **n_observations válidas:** 20 672 (de 24 444 totales, `is_hmm_obs_valid`)
 - **Split temporal:** columna `split` en `features.parquet`; reparto
   por posición en la serie temporal de cada ave.
-- **% migración global (causal):** ~20 % (Modelo A causal) | **13,9 %** (Modelo B causal)
+- **% migración global (causal):** **13,7 %** (Modelo A causal) | **13,9 %** (Modelo B causal). A y B quedan casi idénticos en la versión causal (a diferencia del suavizado, donde A marcaba ~21 %).
 - **% acuerdo A-B (causal):** **98,1 %** (confirma que las features
   contextuales aportan poco una vez que el step en km domina la
   inicialización).
@@ -362,35 +367,37 @@ clasificación en la zona de frontera cinemática. La alternativa
 ## 7. ¿Hay circularidad residual en Modelo B?
 
 Pregunta legítima que surgió tras revisar C6: si las features
-contextuales tienen Cohen's d no nulo (`veg_high` −0,46, `daylight`
-−0,41), ¿no significa eso que B sigue siendo parcialmente circular?
+contextuales tienen Cohen's d no nulo (`veg_high` −0,47, `daylight`
+−0,39), ¿no significa eso que B sigue siendo parcialmente circular?
 **No, y la evidencia es triple.**
 
 ### Comparación cuantitativa B pre-rework vs post-rework
 
-| Magnitud | B pre-rework (broken) | B post-rework |
+Medias por estado en orden estacionario vs migración:
+
+| Magnitud | B pre-rework (broken) | B causal (actual) |
 |---|---|---|
-| Δμ[step] entre estados | 5,4 vs 3,8 km (ratio 1,4×) | **5,8 vs 164 km (ratio 28×)** |
-| Δμ[daylight] entre estados | 17,3 vs 12,0 h (5,3 h) | 13,1 vs 12,3 h (0,8 h) |
-| Δμ[veg_high] entre estados | 0,94 vs 0,09 (0,85) | 0,33 vs 0,18 (0,15) |
+| μ[step] (estac vs migr) | 3,8 vs 5,4 km (ratio 1,4×) | **6,5 vs 162,7 km (ratio ~25×)** |
+| μ[daylight] (estac vs migr) | 12,0 vs 17,3 h (Δ5,3 h) | 13,3 vs 12,3 h (Δ1,0 h) |
+| μ[veg_high] (estac vs migr) | 0,09 vs 0,94 (Δ0,85) | 0,37 vs 0,18 (Δ0,19) |
 | Discriminador efectivo | contexto (daylight + veg) | **step (cinemática)** |
 
 Pre-rework, el step apenas separaba (1,4×) y daylight + veg_high
-hacían el trabajo. Post-rework, el step separa por 28× y daylight +
-veg_high se reducen a un papel marginal.
+hacían el trabajo. En la versión causal, el step separa por ~25× y
+daylight + veg_high se reducen a un papel marginal.
 
 ### Tres tests independientes confirman ausencia de circularidad
 
-1. **El step domina la geometría del cluster.** Con ratio ~31× entre
-   medias y σ comparable, una observación cae en un estado u otro
+1. **El step domina la geometría del cluster.** Con ratio ~25× entre
+   medias gaussianas y σ comparable, una observación cae en un estado u otro
    casi exclusivamente por `step_in_km`. Las features contextuales
    contribuyen al margen.
 
-2. **Cohen's d ordena correctamente la influencia.** `step` (+0,99,
-   grande) y `cos_turn` (+0,71, medio) son los discriminadores
+2. **Cohen's d ordena correctamente la influencia.** `step` (+1,05,
+   grande) y `cos_turn` (+0,79, medio-grande) son los discriminadores
    principales. Las tres contextuales caen en magnitud "efecto pequeño"
-   (|d|<0,5), el rango característico de una feature de refinamiento,
-   no de dominio.
+   (|d|<0,5: veg_high −0,47, daylight −0,39, veg_low −0,09), el rango
+   característico de una feature de refinamiento, no de dominio.
 
 3. **El 98,1 % de acuerdo con Modelo A causal es la prueba definitiva.**
    Modelo A no tiene acceso a daylight ni a vegetación. Si B fuera
@@ -495,9 +502,10 @@ No hay pasada backward; no hay mirada al futuro. La feature es
 calculable en tiempo real, a medida que llegan las observaciones, sin
 conocer nada de lo que ocurrirá el día t+1 en adelante.
 
-El módulo `tfg_aves.hmm.causal` implementa `filter_states_forward()`,
-que recorre los días de cada ave de forma estrictamente causal y
-produce:
+El módulo `tfg_aves.hmm.causal` implementa el filtrado
+(`forward_filtered_posteriors`) y el decode causal
+(`decode_causal_states`), que recorre los días de cada ave de forma
+estrictamente causal y produce:
 
 - `state_a_causal`, `state_b_causal`: argmax del filtrado.
 - `posterior_a_estacionario`, `posterior_a_migracion`,
@@ -591,12 +599,12 @@ fue superado antes de cerrar la rama causal.
   donde el contexto cambia la inferencia.
 - **C6** (`o3_fig07_feature-influence-cohens-d`): Cohen's d de cada
   feature del Modelo B causal comparando migración vs estacionario.
-  Resultado cuantitativo (replicando el análisis de la versión anterior):
-  `step_in_km` d=+0,99 (efecto grande, mayor en migración),
-  `cos_turning_in` d=+0,71 (efecto medio, mayor en migración, vuelo
-  más rectilíneo), `veg_high` d=-0,46 y `daylight_hours` d=-0,41
+  Resultado cuantitativo (artefacto C6 causal regenerado):
+  `step_in_km` d=+1,05 (efecto grande, mayor en migración),
+  `cos_turning_in` d=+0,79 (efecto medio-grande, mayor en migración, vuelo
+  más rectilíneo), `veg_high` d=-0,47 y `daylight_hours` d=-0,39
   (efectos pequeños, mayores en estacionario, bosque + días largos =
-  cría veraniega), `veg_low` d=-0,12 (mínimo). Confirma
+  cría veraniega), `veg_low` d=-0,09 (mínimo). Confirma
   cuantitativamente que el step domina la discriminación y que el
   contexto aporta refinamiento marginal, la evidencia métrica detrás
   del 98,1 % de acuerdo A-B causal y de la decisión metodológica §9.2
@@ -610,28 +618,28 @@ fue superado antes de cerrar la rama causal.
   mediterráneo, con los puntos rojos (migración) concentrados a lo
   largo del paso y los azules (estacionario) agrupados en la zona de
   cría norte y en la zona de invernada africana. Ambos modelos
-  identifican el mismo patrón general; el modelo B marca 257 días de
-  migración vs 485 en A (menor sobre-clasificación en la zona ambigua).
+  identifican el mismo patrón general y, en la versión causal, marcan un
+  número de días de migración muy parecido (coherente con el 98,1 % de
+  acuerdo A-B); los recuentos exactos por ave se leen del C7 causal.
 - **C8** (`o3_fig09_all-birds-spatial-by-state`): distribución
   espacial de las 20 672 observaciones de las 82 aves sobre mapa
   cartográfico, coloreadas por estado HMM. Revela los tres clusters
   poblacionales esperados: (1) cría en N Europa (~55-65°N) en azul;
   (2) corredor migratorio mediterráneo (Italia, Grecia, Levante) en
   rojo; (3) invernada en Sahel/Sudán (~0-10°N) en azul. La similitud
-  entre los paneles A y B confirma visualmente el 93 % de acuerdo
+  entre los paneles A y B confirma visualmente el 98,1 % de acuerdo
   cuantitativo. Sirve como sanity-check biológico fuerte: la
   separación geográfica obtenida coincide con la ruta migratoria
   conocida de *Larus fuscus* (Wikelski et al. 2015).
 - **C9** (`o3_fig10_state-proportion-pie`): gráfico de tarta de la
   proporción global de observaciones (ave, día) clasificadas como
   estacionario vs migración por cada modelo (causal). Modelo A causal:
-  ~80 % estacionario / ~20 % migración. Modelo B causal: ~86 %
-  estacionario / **13,9 %** migración. Ambas proporciones son
-  biológicamente plausibles para *Larus fuscus* (la migración activa
-  ocupa 2-3 meses al año, ~15-25 % de los días anuales); el ligero
-  exceso del Modelo A se concentra en la zona ambigua step 10-50 km/día
-  que el Modelo B reclasifica como estacionario gracias al contexto.
-  Los valores exactos se leen del artefacto C9 regenerado (causal).
+  **86,3 %** estacionario / **13,7 %** migración. Modelo B causal:
+  **86,1 %** estacionario / **13,9 %** migración. Ambas proporciones son
+  casi idénticas en la versión causal (a diferencia del suavizado, donde
+  A marcaba ~21 % de migración), coherente con el 98,1 % de acuerdo A-B, y
+  biológicamente plausibles para *Larus fuscus* (la migración activa ocupa
+  2-3 meses al año, ~14-25 % de los días anuales).
 
 ### Validación
 
@@ -647,7 +655,7 @@ Ficheros en `data/processed/o3/` (gitignored, regenerables):
 | Fichero | Contenido |
 |---|---|
 | `features.parquet` | 24 444 filas × columnas: features, estados causales, posteriores, flags, split |
-| `models_a_b.pkl` | dict con HMM A, HMM B, label_map A, label_map B, scaler (None), random_state |
+| `models_a_b.pkl` | dict con `model_a`, `model_b`, `emission_cols_a/b`, `label_map_a/b`, `cutoff_by_bird`, `random_state` |
 | `metrics.parquet` | LL por observación (test temporal) + estadísticas de acuerdo A-B causal |
 
 Columnas de `features.parquet` (versión causal):
