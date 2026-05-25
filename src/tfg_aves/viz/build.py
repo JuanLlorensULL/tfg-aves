@@ -47,7 +47,7 @@ def build_curated_table(daily: pd.DataFrame, preds: pd.DataFrame,
         dv = int(daily[(daily["bird_id"] == bird) & daily["is_valid"]].shape[0])
         dt = int(preds[preds["bird_id"] == bird].shape[0])
         fb = features_o3[features_o3["bird_id"] == bird]
-        pct = float((fb["state_b"] == 1).mean() * 100) if len(fb) else float("nan")
+        pct = float((fb["state_b_causal"] == 1).mean() * 100) if len(fb) else float("nan")
         rows.append({"bird_id": bird, "dias_validos": dv, "dias_test": dt,
                      "pct_migracion": round(pct, 1)})
     return pd.DataFrame(rows)
@@ -268,7 +268,7 @@ def markov_points_for_test(features_o3: pd.DataFrame, cells: pd.DataFrame,
     from tfg_aves.ml.build_l3 import _prepare_poblacional_split
     from tfg_aves.ml.evaluate import compute_markov_baseline
 
-    train, _val, test = _prepare_poblacional_split(features_o3, cells, seed)
+    train, _val, test = _prepare_poblacional_split(features_o3, cells)
     mk = compute_markov_baseline(train, test, cells=cells)
     centroid = cells.set_index("cell_id")[["lat_c", "lon_c"]]
     out: dict = {}

@@ -26,13 +26,13 @@ def test_build_o5_tables_curated_and_regime(tmp_path):
         "is_valid": [True, True, True, True],
     })
     features_o3 = pd.DataFrame({
-        "bird_id": ["91916A"] * 4, "state_b": [0, 0, 1, 1],
+        "bird_id": ["91916A"] * 4, "state_b_causal": [0, 0, 1, 1],
     })
     tables = build_o5_tables(preds, daily=daily, features_o3=features_o3, project_root=tmp_path)
     assert set(tables) == {"aves_curadas", "por_regimen", "por_mes"}
     assert (tmp_path / "reports" / "tables" / "o5_tab02_error-por-regimen.csv").exists()
     assert len(tables["aves_curadas"]) == 4
-    # 91916A: 4 días de test y 50 % de migración en el fixture (state_b=[0,0,1,1]).
+    # 91916A: 4 días de test y 50 % de migración en el fixture (state_b_causal=[0,0,1,1]).
     row = tables["aves_curadas"].set_index("bird_id").loc["91916A"]
     assert row["dias_test"] == 4
     assert row["pct_migracion"] == 50.0
