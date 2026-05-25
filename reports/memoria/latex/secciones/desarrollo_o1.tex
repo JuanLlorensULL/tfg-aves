@@ -42,7 +42,7 @@ reproducibilidad del entregable.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{o1_pipeline.pdf}
-  \caption[Canalización de preparación de datos de O1]{Canalización de
+  \caption[Canalización de preparación de datos]{Canalización de
   preparación de datos. A partir del fichero crudo de Movebank, las cuatro
   etapas (carga, limpieza, tabla diaria y filtrado de individuos) producen dos
   salidas: \texttt{daily.parquet}, la tabla diaria que alimenta el modelo de
@@ -108,7 +108,7 @@ valor numérico.
 \begin{table}[H]
   \centering
   \caption[Selección y renombrado de variables]{Subconjunto de variables del
-  formato Movebank conservadas en O1, con su nombre en el proyecto y su uso. El
+  formato Movebank conservadas en este capítulo, con su nombre en el proyecto y su uso. El
   resto de columnas (metadatos administrativos y covariables ambientales) se
   descarta.}
   \label{tab:o1-variables}
@@ -372,8 +372,8 @@ latitudes nórdicas hasta el este de África.
 Las rachas de días válidos consecutivos son en su mayoría cortas: la mediana es de
 8 días (figura \ref{fig:o1-streak}). Para el modelo de Markov esto supone abundancia
 de transiciones de un solo paso, pero escasez de tramos largos continuos en la mayor
-parte de la muestra. Queda abierta para O2 una decisión: entrenar sobre todas las
-rachas o exigir una longitud mínima.
+parte de la muestra. Queda abierta para ese modelo una decisión: entrenar sobre
+todas las rachas o exigir una longitud mínima.
 
 \begin{figure}[H]
   \centering
