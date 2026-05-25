@@ -6,4 +6,4 @@
 
 ## Caption (memoria)
 
-Distribución geográfica de los fixes GPS supervivientes tras los filtros de O1 (muestra aleatoria de 20 000 puntos). Permite verificar el dominio espacial del dataset y la consistencia con las rutas migratorias conocidas de Larus fuscus entre Europa septentrional y África occidental.
+Distribución geográfica de los fixes GPS supervivientes tras los filtros de O1 (muestra aleatoria de 20 000 puntos). Permite verificar el dominio espacial del dataset y la consistencia con las rutas migratorias conocidas de Larus fuscus entre el norte de Europa y el este de África.

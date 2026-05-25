@@ -55,8 +55,8 @@ Markov de O2.
      un compromiso entre los picos de 05:00 y 08:00.
   2. *Larus fuscus* es una especie diurna; las 08:00 UTC coinciden
      con el inicio del ciclo diario de actividad en gran parte de su
-     rango migratorio (Europa septentrional durante la cría, costas
-     atlánticas e ibéricas durante la migración). La posición a esa
+     rango migratorio (norte de Europa durante la cría, este de África
+     durante la invernada). La posición a esa
      hora capta el **lugar de roost nocturno** o el punto
      inmediatamente posterior al despegue matinal — un estado
      espacialmente estacionario, bien definido.
@@ -161,9 +161,8 @@ Fuente: `o1_fig08_spatial-overview`
 (`reports/figures/o1_fig08_spatial-overview.png`).
 
 Los fixes cubren rutas de migración desde el norte de Europa hasta el
-África subsahariana y costas atlánticas. La distribución espacial
-confirma que el dataset es representativo de la migración completa de
-la especie.
+este de África (invernada en torno al lago Victoria, lon ~33 E, lat ~-1).
+Cero fixes al oeste de Greenwich: es el corredor oriental, no el atlántico.
 
 ### Datos descartados (C3)
 

@@ -119,7 +119,7 @@ código (`load`/`clean`/`daily`/`build`) y la de las notas existentes.
 
 ### 3.6 Caracterización del dataset resultante (entrada para O2)
 - **3.6.1 Dominio espacial** — distribución geográfica de los fixes
-  supervivientes; verifica el dominio (Europa septentrional ↔ África occidental)
+  supervivientes; verifica el dominio (norte de Europa ↔ este de África)
   y la consistencia con las rutas migratorias conocidas de *L. fuscus*.
 - **3.6.2 Fragmentación de las series** — longitud de racha consecutiva sin
   huecos. **Datos reales (`tab09`): p25=3, p50=8, p90=96, máx 1326** (las
