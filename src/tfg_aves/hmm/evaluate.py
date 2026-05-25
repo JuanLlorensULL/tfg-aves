@@ -112,3 +112,19 @@ def ab_agreement(df_features: pd.DataFrame) -> dict[str, float | pd.DataFrame]:
         "disagreements": disagreements,
         "confusion": confusion,
     }
+
+
+def ab_agreement_causal(df: pd.DataFrame) -> dict[str, float]:
+    """Acuerdo entre state_a_causal y state_b_causal sobre días HMM-válidos."""
+    valid = df[
+        df["is_hmm_obs_valid"]
+        & df["state_a_causal"].notna()
+        & df["state_b_causal"].notna()
+    ]
+    a = valid["state_a_causal"].astype(int)
+    b = valid["state_b_causal"].astype(int)
+    n = len(valid)
+    return {
+        "pct_agreement": float((a == b).mean() * 100.0) if n else 0.0,
+        "n": float(n),
+    }

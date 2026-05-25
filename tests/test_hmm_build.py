@@ -59,7 +59,6 @@ def test_build_o3_produce_ficheros_esperados(tmp_path: Path) -> None:
     out_dir = tmp_path / "o3"
 
     result = build_o3(
-        holdout_frac=0.25,
         n_restarts=2,
         random_state=0,
         daily_path=daily_path,
@@ -69,28 +68,30 @@ def test_build_o3_produce_ficheros_esperados(tmp_path: Path) -> None:
     assert result.features_path.is_file()
     assert result.models_path.is_file()
     assert result.metrics_path.is_file()
-    assert result.n_birds_train + result.n_birds_holdout == 8
     assert result.n_observations > 0
     assert np.isfinite(result.ll_per_obs_a)
     assert np.isfinite(result.ll_per_obs_b)
     assert 0.0 <= result.pct_agreement_ab <= 100.0
+
+    feats = pd.read_parquet(result.features_path)
+    assert set(feats["split"].dropna().unique()).issubset({"train", "val", "test"})
 
 
 def test_build_o3_esquema_features_releen(tmp_path: Path) -> None:
     daily_path, raw_path = _write_synthetic_inputs(tmp_path)
     out_dir = tmp_path / "o3"
     result = build_o3(
-        holdout_frac=0.25, n_restarts=2, random_state=0,
+        n_restarts=2, random_state=0,
         daily_path=daily_path, raw_csv=raw_path, out_dir=out_dir,
     )
     feats = pd.read_parquet(result.features_path)
-    expected = {
+    expected_cols = {
         "bird_id", "date_utc", "lat", "lon",
-        "step_length_km", "cos_turning_angle", "daylight_hours",
-        "veg_low", "veg_high",
-        "state_a", "state_b",
+        "step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
+        "daylight_hours", "veg_low", "veg_high",
+        "is_hmm_obs_valid", "split",
+        "state_a_causal", "state_b_causal",
         "posterior_a_estacionario", "posterior_a_migracion",
         "posterior_b_estacionario", "posterior_b_migracion",
-        "is_observation_valid", "in_holdout",
     }
-    assert expected.issubset(feats.columns)
+    assert expected_cols.issubset(set(feats.columns))
