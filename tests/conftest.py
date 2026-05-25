@@ -6,6 +6,53 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+
+def write_synthetic_o3_features(raw: pd.DataFrame, out_path: Path, *, seed: int = 0) -> Path:
+    """Escribe un features.parquet con el esquema de salida de O3 a partir de
+    filas crudas (bird_id, date_utc, lat, lon, veg_low, veg_high, daylight_hours).
+
+    Reproduce el ensamblaje causal de build_o3: cinemática entrante, split
+    temporal sobre los días HMM-válidos, ajuste y decodificado filtrado del
+    Modelo B. Lo usan los tests de integración de O4, que ahora consumen el
+    estado HMM causal y el split directamente de O3 (no los recalculan).
+    """
+    from tfg_aves.data.split import assign_temporal_split
+    from tfg_aves.hmm.causal import (
+        HMM_EMISSION_COLS_B,
+        compute_causal_kinematics,
+        decode_causal_states,
+        fit_causal_hmm,
+    )
+
+    kin = compute_causal_kinematics(raw)
+    valid = kin[kin["is_hmm_obs_valid"]].copy()
+    valid = assign_temporal_split(valid)
+    kin = kin.merge(
+        valid[["bird_id", "date_utc", "split"]], on=["bird_id", "date_utc"], how="left",
+    )
+    train_valid = valid[valid["split"] == "train"]
+    cutoff_by_bird = (
+        train_valid.assign(_d=pd.to_datetime(train_valid["date_utc"]))
+        .groupby("bird_id")["_d"].max().to_dict()
+    )
+    model_b, labels_b = fit_causal_hmm(
+        kin, cutoff_by_bird, emission_cols=HMM_EMISSION_COLS_B, n_restarts=4, seed=seed,
+    )
+    states_b = decode_causal_states(
+        model_b, labels_b, kin, emission_cols=HMM_EMISSION_COLS_B, suffix="b",
+    )
+    df = kin.merge(states_b, on=["bird_id", "date_utc"], how="left")
+    cols = [
+        "bird_id", "date_utc", "lat", "lon",
+        "step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
+        "daylight_hours", "veg_low", "veg_high",
+        "is_hmm_obs_valid", "split",
+        "state_b_causal", "posterior_b_estacionario", "posterior_b_migracion",
+    ]
+    out_cols = [c for c in cols if c in df.columns]
+    df[out_cols].to_parquet(out_path, index=False)
+    return out_path
+
 # Cabecera Movebank reducida a las columnas que usamos + algunas
 # 'visible' duplicadas como en el CSV real.
 _MOVEBANK_HEADER = (

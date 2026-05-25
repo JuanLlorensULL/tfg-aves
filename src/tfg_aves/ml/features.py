@@ -4,9 +4,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from tfg_aves.data.split import split_temporal_per_bird  # noqa: F401  # reexport (movido a data)
-from tfg_aves.hmm.causal import HMM_EMISSION_COLS_B as HMM_EMISSION_COLS  # noqa: F401  reexport
-from tfg_aves.hmm.causal import compute_causal_kinematics  # noqa: F401  reexport
 from tfg_aves.markov.discretize import _format_cell_id, assign_cell
 
 # Features cinemáticas causales (conocidas el día t). Ver R6 del spec.
@@ -79,8 +76,8 @@ def build_feature_matrix(
 ) -> pd.DataFrame:
     """Construye la matriz de filas candidatas de O4 a partir de la cinemática causal.
 
-    ``kin`` es la salida de ``compute_causal_kinematics`` (todas las filas con la
-    cinemática entrante e ``is_hmm_obs_valid``). Pasos:
+    ``kin`` es el ``features.parquet`` de O3 (una fila por (bird_id, date_utc) con
+    la cinemática entrante e ``is_hmm_obs_valid``). Pasos:
         1. Asigna ``cell_id_t`` y ``cell_id_t_next`` (target) vía ``cells``.
         2. Añade ``sin_doy``/``cos_doy``.
         3. Filtra a filas candidatas: ``is_hmm_obs_valid`` y target válido
@@ -88,7 +85,7 @@ def build_feature_matrix(
            máscara de racha de 4 días (t-2, t-1, t, t+1).
 
     Las columnas del HMM causal (``state_b_causal``, ``posterior_b_migracion_causal``)
-    NO se añaden aquí: las inserta ``build_o4`` tras ajustar y filtrar el HMM.
+    NO se añaden aquí: las pega ``attach_o3_state_and_split`` desde O3.
     El atributo ``_features`` contiene de momento sólo las cinemáticas (+bird_id).
     """
     df = assign_cells_to_features(kin, cells)
@@ -108,5 +105,27 @@ def build_feature_matrix(
     out = df[keep_cols].reset_index(drop=True)
     out.attrs["_features"] = feature_cols
     return out
+
+
+def attach_o3_state_and_split(
+    matrix: pd.DataFrame, features_o3: pd.DataFrame,
+) -> pd.DataFrame:
+    """Pega state_b_causal/posterior_b_migracion_causal y split desde O3 (merge m:1).
+
+    O3 nombra el posterior ``posterior_b_migracion``; aquí se renombra al
+    nombre que consume O4 (``posterior_b_migracion_causal``). Lanza si alguna
+    fila candidata queda sin estado o sin etiqueta de split.
+    """
+    cols = features_o3[[
+        "bird_id", "date_utc", "state_b_causal", "posterior_b_migracion", "split",
+    ]].rename(columns={"posterior_b_migracion": "posterior_b_migracion_causal"})
+    merged = matrix.merge(cols, on=["bird_id", "date_utc"], how="left", validate="m:1")
+    missing = (
+        merged[["state_b_causal", "posterior_b_migracion_causal", "split"]]
+        .isna().any().any()
+    )
+    if missing:
+        raise ValueError("Filas candidatas sin estado HMM causal o sin split tras el merge.")
+    return merged
 
 

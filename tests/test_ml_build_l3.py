@@ -6,10 +6,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from tests.conftest import write_synthetic_o3_features
+
 
 def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
     """5 aves × 90 días válidos consecutivos sobre celdas activas (espejo de
-    tests/test_ml_build_l2.py)."""
+    tests/test_ml_build_l2.py).
+
+    El features.parquet lleva el esquema de O3 (estado HMM causal + split),
+    que es lo que build_o4_l3 consume desde el rewire causal.
+    """
     rng = np.random.default_rng(0)
     birds = ["A", "B", "C", "D", "E"]
     dates = pd.date_range("2020-01-01", periods=90)
@@ -26,11 +32,15 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
                 "is_observation_valid": True,
             })
     feat_path = tmp_path / "features.parquet"
-    pd.DataFrame(rows).to_parquet(feat_path)
+    write_synthetic_o3_features(pd.DataFrame(rows), feat_path)
 
+    # Rejilla amplia que cubre toda la deriva de las 5 aves a lo largo de los
+    # 90 días (lat ~39..45, lon ~-4..2). Necesaria desde el rewire causal: el
+    # split de O3 se aplica a todos los días HMM-válidos, así que las celdas
+    # deben seguir activas también en los últimos días (val/test).
     cells = []
-    for i in range(78, 86):
-        for j in range(-9, -1):
+    for i in range(76, 92):
+        for j in range(-11, 7):
             cells.append({
                 "cell_id": f"{i}_{j}", "cell_lat_idx": i, "cell_lon_idx": j,
                 "lat_c": (i + 0.5) * 0.5, "lon_c": (j + 0.5) * 0.5, "n_obs_total": 30,
@@ -45,7 +55,7 @@ def test_prepare_poblacional_split_attaches_hmm(tmp_path):
     feat_path, cells_path = _write_synthetic_inputs(tmp_path)
     features_o3 = pd.read_parquet(feat_path)
     cells = pd.read_parquet(cells_path)
-    train, val, test = _prepare_poblacional_split(features_o3, cells, seed=0)
+    train, val, test = _prepare_poblacional_split(features_o3, cells)
     assert "bird_id" not in _FEATURES
     for df in (train, val, test):
         assert "state_b_causal" in df.columns

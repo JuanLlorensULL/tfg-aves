@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from tests.conftest import write_synthetic_o3_features
 from tfg_aves.ml.build_l2 import build_o4_l2
 
 
@@ -14,7 +15,8 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
 
     Mismo patrón que tests/test_ml_build.py pero con más días para
     garantizar suficientes filas con y_move=1 tras la máscara de racha
-    de 4 días del HMM causal.
+    de 4 días del HMM causal. El features.parquet lleva el esquema de O3
+    (estado HMM causal + split), que es lo que build_o4_l2 consume.
     """
     rng = np.random.default_rng(0)
     birds = ["A", "B", "C", "D", "E"]
@@ -31,13 +33,16 @@ def _write_synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
                 "daylight_hours": 12.0, "veg_low": 0.5, "veg_high": 0.5,
                 "is_observation_valid": True,
             })
-    feat = pd.DataFrame(rows)
     feat_path = tmp_path / "features.parquet"
-    feat.to_parquet(feat_path)
+    write_synthetic_o3_features(pd.DataFrame(rows), feat_path)
 
+    # Rejilla amplia que cubre toda la deriva de las 5 aves a lo largo de los
+    # 90 días (lat ~39..45, lon ~-4..2). Necesaria desde el rewire causal: el
+    # split de O3 se aplica a todos los días HMM-válidos, así que las celdas
+    # deben seguir activas también en los últimos días (val/test).
     cells = []
-    for i in range(78, 86):
-        for j in range(-9, -1):
+    for i in range(76, 92):
+        for j in range(-11, 7):
             cells.append({
                 "cell_id": f"{i}_{j}",
                 "cell_lat_idx": i, "cell_lon_idx": j,

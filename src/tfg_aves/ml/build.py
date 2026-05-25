@@ -26,11 +26,9 @@ from .evaluate import (
 from .features import (
     FEATURES_HMM,
     FEATURES_KINEMATIC,
+    attach_o3_state_and_split,
     build_feature_matrix,
-    compute_causal_kinematics,
-    split_temporal_per_bird,
 )
-from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .quantile import INDIVIDUAL_BIRD_ID
 from .train import (
     train_lightgbm,
@@ -120,27 +118,15 @@ def build_o4(
     features_o3 = pd.read_parquet(features_path)
     cells = pd.read_parquet(cells_path)
 
-    kin = compute_causal_kinematics(features_o3)
-
     # Una sola matriz poblacional (sin bird_id); el individual sale de filtrarla.
-    matrix = build_feature_matrix(kin, cells, include_bird_id=False)
-    train_pob, val_pob, test_pob = split_temporal_per_bird(matrix)
+    # El estado HMM causal y el split temporal se leen directamente de O3.
+    matrix = build_feature_matrix(features_o3, cells, include_bird_id=False)
+    matrix = attach_o3_state_and_split(matrix, features_o3)
 
-    # HMM causal: fit sobre el train temporal, decode filtrado de todo.
-    cutoff_by_bird = (
-        train_pob.assign(_d=pd.to_datetime(train_pob["date_utc"]))
-        .groupby("bird_id")["_d"].max().to_dict()
-    )
-    hmm_model, hmm_labels = fit_causal_hmm(kin, cutoff_by_bird, n_restarts=10, seed=seed)
-    states = decode_causal_states(hmm_model, hmm_labels, kin)
+    def _by_split(label: str) -> pd.DataFrame:
+        return matrix[matrix["split"] == label].reset_index(drop=True)
 
-    def _attach_states(df: pd.DataFrame) -> pd.DataFrame:
-        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
-        if merged[FEATURES_HMM].isna().any().any():
-            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
-        return merged
-
-    train_s, val_s, test_s = (_attach_states(d) for d in (train_pob, val_pob, test_pob))
+    train_s, val_s, test_s = _by_split("train"), _by_split("val"), _by_split("test")
 
     def _filter_bird(df: pd.DataFrame) -> pd.DataFrame:
         return df[df["bird_id"] == individual_bird_id].reset_index(drop=True)

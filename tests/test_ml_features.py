@@ -5,14 +5,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tfg_aves.data.split import split_temporal_per_bird
+from tfg_aves.hmm.causal import compute_causal_kinematics
 from tfg_aves.markov.discretize import haversine_km
 from tfg_aves.ml.features import (
     FEATURES_KINEMATIC,
     add_cyclic_doy,
     assign_cells_to_features,
+    attach_o3_state_and_split,
     build_feature_matrix,
-    compute_causal_kinematics,
-    split_temporal_per_bird,
 )
 
 # ---------------------------------------------------------------------------
@@ -152,6 +153,45 @@ def test_build_feature_matrix_incluye_bird_id():
     m = build_feature_matrix(kin, _cells_grid(), include_bird_id=True)
     assert m.attrs["_features"][0] == "bird_id"
     assert "bird_id" in m.columns
+
+
+# ---------------------------------------------------------------------------
+# Tests de attach_o3_state_and_split
+# ---------------------------------------------------------------------------
+
+def _features_o3_for(matrix, *, split="train", state=0, posterior=0.3):
+    """Construye un features.parquet sintético de O3 que cubre las filas de matrix."""
+    keys = matrix[["bird_id", "date_utc"]].drop_duplicates().reset_index(drop=True)
+    keys["state_b_causal"] = state
+    keys["posterior_b_migracion"] = posterior
+    keys["split"] = split
+    return keys
+
+
+def test_attach_o3_state_and_split_renombra_y_pega() -> None:
+    kin = compute_causal_kinematics(_linear_bird(n=10, dlat=0.1))
+    cells = _cells_grid()
+    matrix = build_feature_matrix(kin, cells, include_bird_id=False)
+    features_o3 = _features_o3_for(matrix, split="train", state=1, posterior=0.7)
+    out = attach_o3_state_and_split(matrix, features_o3)
+    # El posterior se renombra al nombre que consume O4.
+    assert "posterior_b_migracion_causal" in out.columns
+    assert "posterior_b_migracion" not in out.columns
+    assert (out["state_b_causal"] == 1).all()
+    assert (out["posterior_b_migracion_causal"] == 0.7).all()
+    assert (out["split"] == "train").all()
+    assert len(out) == len(matrix)
+
+
+def test_attach_o3_state_and_split_lanza_si_falta() -> None:
+    kin = compute_causal_kinematics(_linear_bird(n=10, dlat=0.1))
+    cells = _cells_grid()
+    matrix = build_feature_matrix(kin, cells, include_bird_id=False)
+    features_o3 = _features_o3_for(matrix)
+    # Quita una fila candidata de O3 → su estado/split queda NaN tras el merge.
+    features_o3 = features_o3.iloc[1:].reset_index(drop=True)
+    with pytest.raises(ValueError, match="sin estado HMM causal o sin split"):
+        attach_o3_state_and_split(matrix, features_o3)
 
 
 # ---------------------------------------------------------------------------

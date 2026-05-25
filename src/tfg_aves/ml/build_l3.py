@@ -17,11 +17,9 @@ from .evaluate import (
 from .features import (
     FEATURES_HMM,
     FEATURES_KINEMATIC,
+    attach_o3_state_and_split,
     build_feature_matrix,
-    compute_causal_kinematics,
-    split_temporal_per_bird,
 )
-from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .quantile import (
     INDIVIDUAL_BIRD_ID,
     QUANTILES,
@@ -61,33 +59,19 @@ class BuildO4L3Result:
 
 
 def _prepare_poblacional_split(
-    features_o3: pd.DataFrame, cells: pd.DataFrame, seed: int,
+    features_o3: pd.DataFrame, cells: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Replica el ensamblaje causal de build_o4 SOLO para el modo poblacional
-    (sin bird_id) y adjunta state_b_causal/posterior_b_migracion_causal del HMM
-    causal global. Se replica (en vez de importar de build.py) para no tocar el
-    build.py estabilizado; usa exactamente las mismas funciones leak-free.
+    """Devuelve (train, val, test) poblacional (sin bird_id) desde el
+    features.parquet de O3.
+
+    El estado HMM causal (``state_b_causal``, ``posterior_b_migracion_causal``)
+    y el split temporal se leen directamente de O3; no se recalculan aquí.
     """
-    kin = compute_causal_kinematics(features_o3)
-    matrix = build_feature_matrix(kin, cells, include_bird_id=False)
-    train, val, test = split_temporal_per_bird(matrix)
-
-    cutoff_by_bird = (
-        train.assign(_d=pd.to_datetime(train["date_utc"]))
-        .groupby("bird_id")["_d"].max().to_dict()
+    matrix = build_feature_matrix(features_o3, cells, include_bird_id=False)
+    matrix = attach_o3_state_and_split(matrix, features_o3)
+    return tuple(
+        matrix[matrix["split"] == s].reset_index(drop=True) for s in ("train", "val", "test")
     )
-    hmm_model, hmm_labels = fit_causal_hmm(
-        kin, cutoff_by_bird, n_restarts=10, seed=seed,
-    )
-    states = decode_causal_states(hmm_model, hmm_labels, kin)
-
-    def attach(df: pd.DataFrame) -> pd.DataFrame:
-        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
-        if merged[FEATURES_HMM].isna().any().any():
-            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
-        return merged
-
-    return attach(train), attach(val), attach(test)
 
 
 def _y_move(df: pd.DataFrame) -> np.ndarray:
@@ -178,7 +162,7 @@ def build_o4_l3(
     features_o3 = pd.read_parquet(features_path)
     cells = pd.read_parquet(cells_path)
 
-    train_pob, val_pob, test_pob = _prepare_poblacional_split(features_o3, cells, seed)
+    train_pob, val_pob, test_pob = _prepare_poblacional_split(features_o3, cells)
 
     model_paths: dict[str, Path] = {}
     n_crossings: dict[str, dict[str, int]] = {}

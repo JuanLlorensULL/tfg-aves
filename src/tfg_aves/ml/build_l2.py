@@ -21,11 +21,9 @@ from .evaluate import (
 from .features import (
     FEATURES_HMM,
     FEATURES_KINEMATIC,
+    attach_o3_state_and_split,
     build_feature_matrix,
-    compute_causal_kinematics,
-    split_temporal_per_bird,
 )
-from .hmm_causal import decode_causal_states, fit_causal_hmm
 from .train import train_random_forest, train_xgboost
 from .two_stage import (
     calibrate_prefit,
@@ -58,40 +56,22 @@ class BuildO4L2Result:
 
 
 def _prepare_causal_splits(
-    features_o3: pd.DataFrame, cells: pd.DataFrame, seed: int,
+    features_o3: pd.DataFrame, cells: pd.DataFrame,
 ) -> dict[str, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
-    """Replica el ensamblaje causal de build_o4 (cinemática entrante + HMM
-    causal filtrado forward-only) y devuelve {mode: (train, val, test)} con
-    state_b_causal y posterior_b_migracion_causal ya adjuntados.
+    """Devuelve {mode: (train, val, test)} a partir del features.parquet de O3.
 
-    Se replica (en vez de extraer un helper de build.py) para NO tocar el
-    build.py recién estabilizado; es leak-safe porque usa exactamente las
-    mismas funciones leak-free.
+    El estado HMM causal (``state_b_causal``, ``posterior_b_migracion_causal``)
+    y el split temporal se leen directamente de O3; no se recalculan aquí.
     """
-    kin = compute_causal_kinematics(features_o3)
-    matrices = {
-        "personalizado": build_feature_matrix(kin, cells, include_bird_id=True),
-        "poblacional": build_feature_matrix(kin, cells, include_bird_id=False),
-    }
-    raw_splits = {m: split_temporal_per_bird(mat) for m, mat in matrices.items()}
-
-    train_ref = raw_splits["poblacional"][0]
-    cutoff_by_bird = (
-        train_ref.assign(_d=pd.to_datetime(train_ref["date_utc"]))
-        .groupby("bird_id")["_d"].max().to_dict()
-    )
-    hmm_model, hmm_labels = fit_causal_hmm(
-        kin, cutoff_by_bird, n_restarts=10, seed=seed,
-    )
-    states = decode_causal_states(hmm_model, hmm_labels, kin)
-
-    def attach(df: pd.DataFrame) -> pd.DataFrame:
-        merged = df.merge(states, on=["bird_id", "date_utc"], how="left", validate="m:1")
-        if merged[FEATURES_HMM].isna().any().any():
-            raise ValueError("Filas candidatas sin estado HMM causal tras el merge.")
-        return merged
-
-    return {m: tuple(attach(d) for d in raw_splits[m]) for m in _MODES}
+    out = {}
+    for mode in _MODES:
+        include_bird = mode == "personalizado"
+        matrix = build_feature_matrix(features_o3, cells, include_bird_id=include_bird)
+        matrix = attach_o3_state_and_split(matrix, features_o3)
+        out[mode] = tuple(
+            matrix[matrix["split"] == s].reset_index(drop=True) for s in ("train", "val", "test")
+        )
+    return out
 
 
 def _feature_cols(mode: str) -> list[str]:
@@ -112,7 +92,7 @@ def build_o4_l2(
     features_o3 = pd.read_parquet(features_path)
     cells = pd.read_parquet(cells_path)
 
-    splits = _prepare_causal_splits(features_o3, cells, seed)
+    splits = _prepare_causal_splits(features_o3, cells)
 
     # y_move se deriva del modo poblacional (filas idénticas entre modos).
     train_pob, val_pob, test_pob = splits["poblacional"]
