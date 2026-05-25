@@ -35,10 +35,18 @@ metrics_v0 = pd.read_parquet(O4_OUT_DIR / "metrics.parquet")  # O4 causal
 preds_soft = pd.read_parquet(O4_L2V1_DIR / "predictions_test_soft.parquet")
 preds_v0 = pd.read_parquet(O4_OUT_DIR / "predictions_test.parquet")  # O4 causal
 
+# El rework causal renombró el modo "personalizado" → "individual" en build_o4.
+# L2 conserva "personalizado" internamente. Normalizamos preds_v0 y metrics_v0
+# para que las comparaciones L2-v0 vs L2-v1 usen la misma etiqueta.
+preds_v0 = preds_v0.copy()
+preds_v0["modo"] = preds_v0["modo"].replace("individual", "personalizado")
+metrics_v0 = metrics_v0.copy()
+metrics_v0["modo"] = metrics_v0["modo"].replace("individual", "personalizado")
+
 # Splits causales (para D1 y para reconstruir y_move/cell_id_t del test).
 features_o3 = pd.read_parquet(FEATURES_O3_PARQUET)
 cells = pd.read_parquet(CELLS_PARQUET)
-splits = _prepare_causal_splits(features_o3, cells, seed=0)
+splits = _prepare_causal_splits(features_o3, cells)
 _, _, test_pob = splits["poblacional"]
 feat_pob = _feature_cols("poblacional")
 y_move_test = derive_y_move(test_pob).to_numpy().astype(int)
@@ -75,6 +83,7 @@ print(d1.to_string(index=False))
 
 save_artifact(
     "l2v1-clf-move-quality",
+    overwrite=True,
     objective="o4", num=17,
     decision="Calidad bruta del clasificador de movimiento (etapa 1)",
     caption_es=(
@@ -102,6 +111,7 @@ fig.tight_layout()
 
 save_artifact(
     "l2v1-tau-sweep",
+    overwrite=True,
     objective="o4", num=18,
     decision="τ* de la regla hard elegido por top-1 sobre val",
     caption_es=(
@@ -146,6 +156,7 @@ fig.tight_layout()
 
 save_artifact(
     "l2v1-metrics-comparison",
+    overwrite=True,
     objective="o4", num=19,
     decision="Comparativa global L2-v0 (O4 causal) vs L2-v1 (entregable central de L2)",
     caption_es=(
@@ -199,6 +210,7 @@ fig.tight_layout()
 
 save_artifact(
     "l2v1-by-state-comparison",
+    overwrite=True,
     objective="o4", num=20,
     decision="Comparativa por estado HMM (estacionario/migración) L2-v0 vs L2-v1",
     caption_es=(
@@ -243,6 +255,7 @@ print(c3.to_string(index=False))
 
 save_artifact(
     "l2v1-moves-only",
+    overwrite=True,
     objective="o4", num=21,
     decision="Calidad de la etapa 2B sobre el subset de días con movimiento real",
     caption_es=(
@@ -302,6 +315,7 @@ fig.tight_layout()
 
 save_artifact(
     "l2v1-gap-train-test",
+    overwrite=True,
     objective="o4", num=22,
     decision="Gap train-test de la etapa 2B para vigilar sobreajuste (R2)",
     caption_es=(
@@ -348,6 +362,7 @@ fig.tight_layout()
 
 save_artifact(
     "l2v1-state-confusion",
+    overwrite=True,
     objective="o4", num=23,
     decision="Régimen HMM real frente a la decisión de cambio de celda (L2-v1 vs L2-v0)",
     caption_es=(

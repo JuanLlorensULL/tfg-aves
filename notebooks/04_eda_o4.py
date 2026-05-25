@@ -48,10 +48,10 @@ cells = pd.read_parquet(CELLS_PARQUET)
 print(f"features_o3: {features_o3.shape}")
 print(f"cells: {cells.shape}")
 print(f"Aves: {features_o3['bird_id'].nunique()}")
-print(f"Filas válidas (is_observation_valid=True): {features_o3['is_observation_valid'].sum()}")
+print(f"Filas válidas (is_hmm_obs_valid=True): {features_o3['is_hmm_obs_valid'].sum()}")
 print(
-    "Cobertura state_b en válidas (columna O3 de entrada): "
-    f"{(features_o3.loc[features_o3['is_observation_valid'], 'state_b'].notna()).mean():.3f}"
+    "Cobertura state_b_causal en válidas (columna O3 de entrada): "
+    f"{(features_o3.loc[features_o3['is_hmm_obs_valid'], 'state_b_causal'].notna()).mean():.3f}"
 )
 
 # %% [markdown]

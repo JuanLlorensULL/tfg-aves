@@ -41,7 +41,7 @@ metrics_v0 = pd.read_parquet(O4_OUT_DIR / "metrics.parquet")  # O4 causal (L3-v0
 # Splits reales para D1 (distribución del target y conteo de histórico por ave).
 features_o3 = pd.read_parquet(FEATURES_O3_PARQUET)
 cells = pd.read_parquet(CELLS_PARQUET)
-train_pob, _, _ = _prepare_poblacional_split(features_o3, cells, seed=0)
+train_pob, _, _ = _prepare_poblacional_split(features_o3, cells)
 
 # %% [markdown]
 # ## D1 — Distribución del target y selección del individuo
