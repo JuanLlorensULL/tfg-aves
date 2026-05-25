@@ -51,3 +51,55 @@ el mismo lugar la hace sorprendentemente difícil de batir, y esa dificultad es,
 por sí misma, un resultado. El modelo de Markov aporta además el criterio de
 comparación cuantificado que reutilizan los objetivos siguientes: sus predicciones
 se almacenan para el análisis comparativo del error del capítulo \ref{ch:o5}.
+
+\section{Discretización del espacio}
+\label{sec:o2-discretizacion}
+
+El primer paso convierte la posición continua en un estado discreto. El dominio
+geográfico se cubre con una rejilla de celdas cuadradas de lado \texttt{cell\_deg}
+grados, y cada posición $(\texttt{lon}, \texttt{lat})$ se asigna a la celda que la
+contiene, identificada por su índice de latitud
+$\lfloor \texttt{lat} / \texttt{cell\_deg} \rfloor$ y su índice de longitud
+$\lfloor \texttt{lon} / \texttt{cell\_deg} \rfloor$ (por ejemplo, \texttt{122\_49}). Solo se conservan como estados las celdas con al
+menos una observación válida, que forman el espacio de celdas activas. Con ello la
+posición diaria de un individuo queda reducida a la secuencia de celdas $X_t$ sobre
+la que opera la cadena.
+
+El tamaño de celda no es un parámetro inocuo: fija a la vez la resolución espacial
+del modelo y la proporción de \emph{self-loops} (transiciones que permanecen en la
+misma celda de un día al siguiente), que es justamente la magnitud de la que
+depende la fortaleza de la baseline de persistencia. Una celda demasiado grande
+hace que casi todos los días parezcan estacionarios y una demasiado pequeña deja
+sin datos a la mayoría de las transiciones, así que la elección se decide
+comparando cuatro candidatos (0,25\textdegree, 0,5\textdegree, 1\textdegree\ y
+2\textdegree; figura \ref{fig:o2-grid}).
+
+El compromiso es claro en los extremos. Con celdas de 2\textdegree\ (del orden de
+222 km) el 86,1\,\% de las transiciones son self-loops: el movimiento migratorio
+que el modelo debería capturar se diluye dentro de la celda y la persistencia se
+infla por construcción. Con celdas de 0,25\textdegree\ (unos 28 km) la resolución
+es fina pero la estimación se vuelve inviable, porque en un mes típico cada celda
+registra menos de una transición (la mediana de transiciones por celda y mes es
+0,86; panel B de la figura), de modo que la mayoría de las celdas se queda sin datos
+con los que estimar sus probabilidades. El tamaño intermedio de \textbf{0,5\textdegree}
+(del orden de 56 km) es comparable a la escala del grueso de los desplazamientos
+diarios (panel A de la figura): un día de movimiento real cruza varias celdas
+mientras que un día de descanso permanece en la misma. A esa resolución el espacio
+tiene 1\,217 celdas activas y el 73,0\,\% de las transiciones son self-loops, una
+residencialidad alta pero no exagerada y coherente con la fenología de la especie.
+Se adopta, por tanto, \texttt{cell\_deg} = 0,5\textdegree.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o2_fig01_grid-size-tradeoff.png}
+  \caption[Compromiso del tamaño de celda]{Comparación de cuatro tamaños de celda
+  para la discretización del espacio (0,25\textdegree, 0,5\textdegree, 1\textdegree\
+  y 2\textdegree). Panel A: distribución del desplazamiento diario observado, con
+  líneas verticales en el tamaño físico aproximado de cada celda. Panel B: métricas
+  de cobertura y densidad por candidato (celdas activas, transiciones, mediana de
+  transiciones por celda-mes, porcentaje de pares observados y de self-loops). Panel
+  C: cada rejilla superpuesta a la nube de \textit{fixes} válidos. Se adopta
+  0,5\textdegree\ porque equilibra resolución espacial y densidad estadística sin
+  inflar artificialmente los self-loops.}
+  \label{fig:o2-grid}
+\end{figure}
