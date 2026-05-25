@@ -111,15 +111,18 @@ biológica de *L. fuscus*.
 
 ### 4.5 Protocolo de evaluación
 - **Puntos:** **F7 LOBO (leave-one-bird-out)**, 82 folds: el sesgo temporal del
-  dataset (82 aves en 2009, 1 en 2014-15, de O1 §3.6.3) descarta splits por año;
-  LOBO mide generalización a un ave estructuralmente nueva. Predicción: fila
-  `P[mes, celda_origen]` → top-1 (argmax), top-3 y distribución completa;
-  fallback a marginal/uniforme si el origen no se vio en el fold. Distancia =
-  Haversine (ref. ecuación de O1, NO redefinir) entre centroide del top-1 y la
+  dataset (82 aves en 2009 → 32/10/8/6/1/1 hasta 2015, verificado desde
+  `daily.parquet`; NO está en el cap. de datos, se afirma aquí) descarta splits por
+  año; LOBO mide generalización a un ave estructuralmente nueva. Predicción: fila
+  `P[mes, celda_origen]` → top-1 (argmax), top-3 y distribución completa; fila
+  **uniforme** (no marginal) si el origen no se vio en el fold. Distancia = Haversine
+  (ref. ecuación del cap. de datos, NO redefinir) entre centroide del top-1 y la
   posición real. Baseline de persistencia ("mañana = hoy"). **Métricas:** top-1,
-  top-3, distancia mediana km, **log-loss** (definición; criterio heredado por
-  O3/O4). El cambio de criterio (top-1 → log-loss) se justifica en 4.6 con la
-  evidencia, no aquí.
+  top-3, distancia mediana km, **log-loss** (definición; criterio heredado por los
+  capítulos siguientes). **Por qué log-loss y no top-1** se justifica en 4.6 con la
+  evidencia. **NO hablar de "criterio original/de aceptación"** (jerga interna de la
+  spec, referencia colgante; decisión del autor 2026-05-25): plantearlo como "la
+  métrica intuitiva sería top-1, pero engaña aquí".
 - **Figuras:** ninguna propia.
 
 ### 4.6 Resultados y discusión
@@ -133,7 +136,7 @@ biológica de *L. fuscus*.
   observado Markov sube a top-1 0,64 (≈ persistencia). Conclusión metodológica:
   el top-1 no es la métrica adecuada para un Markov global LOBO con rutas
   individuales; log-loss mide la calibración de la distribución completa. Aquí se
-  justifica el cambio de criterio.
+  justifica por qué el log-loss y no el top-1 (sin hablar de "criterio original").
 - **4.6.3 Lectura estacional (fig04 + tab06):** Markov gana log-loss en abr–oct
   (movimiento real) y pierde en nov–mar (sedentarismo, persistencia casi cierta);
   el triunfo global viene de los meses de migración donde la persistencia es

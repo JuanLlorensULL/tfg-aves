@@ -218,3 +218,58 @@ observada ($\sum_{k} n^{(m)}_{ik} = 0$) queda, por construcción, uniforme: el m
 carece de información sobre esa celda de origen y reparte la probabilidad por igual entre
 todas las celdas, un caso que resultará central al evaluar la generalización a individuos
 nuevos (sección \ref{sec:o2-resultados}).
+
+\section{Protocolo de evaluación}
+\label{sec:o2-evaluacion}
+
+El modelo es global: una única familia de matrices compartida por todos los
+individuos. La pregunta que debe responder la evaluación es, por tanto, si ese modelo
+poblacional generaliza a un ave que no ha visto nunca. El protocolo que la responde es
+\emph{leave-one-bird-out} (LOBO): para cada una de las 82 aves, las doce matrices se
+reestiman con las otras 81 y se usan para predecir las transiciones del ave excluida.
+Hay así 82 particiones y cada individuo se evalúa exactamente una vez, siempre con un
+modelo que no ha visto ninguno de sus días.
+
+La alternativa de separar entrenamiento y prueba por tiempo se descarta por dos
+razones. Una partición dentro de cada ave (sus primeros días para entrenar, los
+últimos para probar) dejaría que el modelo viera las celdas propias de ese individuo
+durante el entrenamiento e inflaría el resultado. Una partición por año natural es
+inviable porque el seguimiento se concentra en los primeros años: las 82 aves están
+activas en 2009, pero solo una sigue emitiendo en 2014-2015, de modo que cualquier
+conjunto de prueba por año sería insignificante. LOBO es la prueba honesta de
+generalización entre individuos y anticipa el hallazgo central de la sección
+siguiente.
+
+Para cada transición de prueba (celda de origen $i$, mes $m$) el modelo devuelve la
+fila suavizada $\hat{p}^{(m)}_{i,\cdot}$: su celda más probable es la predicción
+\emph{top-1}, sus tres celdas más probables el \emph{top-3} y la fila completa la
+distribución predicha. Como referencia se evalúa con las mismas reglas la baseline de
+persistencia, que predice siempre la celda actual y, a efectos de log-loss, se trata
+como un predictor casi determinista que concentra toda la probabilidad en ella. La
+comparación se resume en cuatro métricas:
+
+\begin{itemize}
+  \item \emph{Top-1} y \emph{top-3 accuracy}: la fracción de transiciones cuya celda
+  real es, respectivamente, la más probable o una de las tres más probables.
+  \item \emph{Distancia mediana}: la distancia de Haversine (ecuación
+  \ref{eq:haversine}) entre el centroide de la celda predicha (top-1) y la posición
+  real, resumida por su mediana, robusta frente a la larga cola de errores.
+  \item \emph{Log-loss}: la media del logaritmo negativo de la probabilidad asignada a
+  la celda real,
+  \begin{equation}
+    L = -\frac{1}{T} \sum_{t=1}^{T} \log \hat{p}_t,
+    \label{eq:o2-logloss}
+  \end{equation}
+  donde $\hat{p}_t$ es la probabilidad que el modelo asigna a la celda efectivamente
+  ocupada y $T$ el número de transiciones de prueba. Premia concentrar probabilidad en
+  la celda correcta y penaliza los errores cometidos con confianza; es la única de las
+  cuatro que lee la distribución completa y no solo el argmax.
+\end{itemize}
+
+Se toma el log-loss como criterio principal de comparación. La métrica más intuitiva
+sería el \emph{top-1} (acertar la celda exacta), pero en este conjunto resulta
+engañosa por razones que la sección \ref{sec:o2-resultados} hace evidentes; el
+log-loss, que evalúa la distribución completa y no solo el argmax, es el criterio
+adecuado para un modelo probabilístico y, además, el que heredan los modelos de los
+capítulos posteriores, lo que mantiene la comparación coherente a lo largo del
+trabajo.
