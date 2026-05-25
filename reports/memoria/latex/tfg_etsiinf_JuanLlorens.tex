@@ -44,6 +44,10 @@
 %% Algunos paquetes útiles
 \usepackage{colortbl} % colores en tablas
 \usepackage{longtable} % tablas en múltiples páginas
+\usepackage{booktabs} % reglas horizontales para tablas (\toprule, \midrule...)
+\usepackage{graphicx} % inclusión de figuras (.pdf, .png)
+\graphicspath{{figuras/}{../../figures/}} % diagramas propios y artefactos de reports/figures
+\usepackage{float} % colocación fija de figuras/tablas con [H]
 \usepackage[pdfborder={0 0 0},pdfusetitle]{hyperref} % hypervínculos
 \usepackage{parskip} % separa párrafos con espacio vertical
 \usepackage{csquotes} % comillas en diferentes idiomas y contextos.
@@ -123,7 +127,7 @@
 %% Capítulos del trabajo
 \input{secciones/intro}
 
-\input{secciones/desarrollo}
+\input{secciones/desarrollo_o1}
 
 \input{secciones/impacto}
 

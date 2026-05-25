@@ -1,0 +1,407 @@
+\chapter{Preparación de los datos GPS}
+\label{ch:o1}
+
+Este capítulo describe la primera fase del trabajo: convertir los registros GPS
+en bruto del repositorio de seguimiento en una tabla regular con una posición por
+individuo y día, que es la base de los modelos de los capítulos siguientes. El
+criterio que guía todo el proceso es intervenir lo menos posible sobre los datos
+y no añadir información que no se haya observado.
+
+\section{Introducción y objetivo}
+\label{sec:o1-intro}
+
+Los dispositivos GPS no producen una señal continua, sino una sucesión de
+\textit{fixes}: posiciones puntuales con marca temporal. Su frecuencia depende de
+la programación del transmisor, de la cobertura de satélites y de la energía
+disponible, de modo que la serie resultante es irregular (con intervalos que van
+de unos minutos a varios días) y desigual entre individuos. Los tres modelos de
+este trabajo (cadenas de Markov, modelos ocultos de Markov y aprendizaje
+supervisado) comparten un requisito: operan sobre una secuencia de estados a
+intervalos regulares. El objetivo de este capítulo es, por tanto, transformar esa
+señal irregular y desigual en una secuencia diaria homogénea.
+
+Dos decisiones de diseño determinan el resto del capítulo. La primera es la
+\emph{granularidad diaria}: en lugar de modelar el tiempo de forma continua, cada
+individuo se reduce a una posición representativa por día natural (en tiempo
+universal coordinado, UTC). La irregularidad del muestreo hace inviable un modelo
+de tiempo continuo, y la escala diaria capta el desplazamiento migratorio sin
+depender de las lagunas del seguimiento. La segunda es la \emph{representación
+explícita de los huecos}: los días sin observación válida no se eliminan, sino que
+permanecen como filas con valores ausentes. De este modo, la ausencia de dato
+queda registrada y no se convierte en una discontinuidad que un modelo de
+transición día a día pudiera interpretar como un salto espacial.
+
+Ambos principios se concretan en cuatro etapas encadenadas (carga, limpieza,
+construcción de la tabla diaria y filtrado de individuos) que forman la
+canalización de preparación de datos (figura \ref{fig:o1-pipeline}). Cada etapa es
+una transformación pura sobre una tabla, y un único orquestador,
+\texttt{build\_o1()}, las encadena y escribe los resultados en disco. Separar el
+cálculo de la escritura permite probar cada paso de forma aislada y garantiza la
+reproducibilidad del entregable.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o1_pipeline.pdf}
+  \caption[Canalización de preparación de datos de O1]{Canalización de
+  preparación de datos. A partir del fichero crudo de Movebank, las cuatro
+  etapas (carga, limpieza, tabla diaria y filtrado de individuos) producen dos
+  salidas: \texttt{daily.parquet}, la tabla diaria que alimenta el modelo de
+  Markov, y \texttt{fixes\_clean.parquet}, los \textit{fixes} limpios que se
+  reservan como material de auditoría para los objetivos posteriores.}
+  \label{fig:o1-pipeline}
+\end{figure}
+
+La tabla diaria es la única entrada del modelo de Markov del capítulo siguiente,
+por lo que las decisiones sobre granularidad y representación de huecos
+condicionan directamente su diseño. La canalización conserva además los
+\textit{fixes} limpios a su resolución original, antes del submuestreo, como
+material de auditoría: de ahí se extraerán variables cinemáticas para la detección
+de comportamiento y los modelos supervisados.
+
+\section{El conjunto de datos de partida}
+\label{sec:o1-dataset}
+
+\subsection{Origen, especie y experimento}
+\label{sec:o1-origen}
+
+Los datos proceden del repositorio Movebank, del estudio \textit{Navigation
+experiments in lesser black-backed gulls} \cite{movebank_gulls}, asociado a los
+experimentos de navegación de Wikelski et al. \cite{wikelski2015}. Recogen el
+seguimiento GPS de gaviotas sombrías (\textit{Larus fuscus}) entre 2009 y 2015.
+Todos los individuos pertenecen a la misma especie: no hay variabilidad
+interespecífica, de modo que las diferencias que se observen son atribuibles a la
+variación individual, estacional o geográfica, no a la especie. Esta homogeneidad
+simplifica la interpretación de los modelos y permite tratar a los individuos como
+variantes de un mismo patrón migratorio.
+
+\subsection{Formato y selección de variables}
+\label{sec:o1-variables}
+
+El conjunto sigue el formato estándar de Movebank, en el que cada fila es un
+\textit{fix} y las columnas se agrupan en cuatro familias:
+
+\begin{itemize}
+  \item \emph{Identificación y contexto:} el identificador único del evento
+  (\texttt{event-id}), el del individuo (\texttt{individual-local-identifier}) y
+  el tipo de sensor (\texttt{sensor-type}), que en este conjunto es siempre GPS.
+  \item \emph{Espacio-temporales:} la marca temporal (\texttt{timestamp}) y las
+  coordenadas geográficas en grados decimales (\texttt{location-long} y
+  \texttt{location-lat}).
+  \item \emph{Calidad y control:} los indicadores \texttt{visible} y
+  \texttt{manually-marked-outlier}, que señalan los registros que el propio
+  repositorio marca como no visibles o como atípicos por inspección.
+  \item \emph{Ambientales:} covariables de modelos climáticos externos, como la
+  cobertura de vegetación baja y alta de ECMWF o la vegetación superficial de
+  NCEP\@.
+\end{itemize}
+
+De ahí se selecciona el subconjunto de variables imprescindible para el modelado y
+se renombra a una nomenclatura uniforme en \textit{snake\_case} (tabla
+\ref{tab:o1-variables}). Se descartan los metadatos administrativos (nombre del
+estudio, identificador físico de la etiqueta y nombre taxonómico, redundante al
+haber una sola especie) y, en este objetivo, también las covariables ambientales:
+no intervienen en la tabla diaria y, en el caso de la vegetación de NCEP, están
+ausentes en todo el conjunto. El identificador de individuo se conserva como
+cadena de texto (por ejemplo, \texttt{91732A}), ya que es una etiqueta y no un
+valor numérico.
+
+\begin{table}[H]
+  \centering
+  \caption[Selección y renombrado de variables]{Subconjunto de variables del
+  formato Movebank conservadas en O1, con su nombre en el proyecto y su uso. El
+  resto de columnas (metadatos administrativos y covariables ambientales) se
+  descarta.}
+  \label{tab:o1-variables}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Columna Movebank} & \textbf{Nombre en el proyecto} & \textbf{Uso} \\
+    \midrule
+    \texttt{event-id} & \texttt{event\_id} & Identificador del \textit{fix} \\
+    \texttt{timestamp} & \texttt{timestamp} & Eje temporal (UTC) \\
+    \texttt{location-long} & \texttt{lon} & Longitud \\
+    \texttt{location-lat} & \texttt{lat} & Latitud \\
+    \texttt{individual-local-identifier} & \texttt{bird\_id} & Identificador del individuo \\
+    \texttt{visible} & \texttt{visible} & Control de calidad \\
+    \texttt{manually-marked-outlier} & \texttt{manually\_marked\_outlier} & Control de calidad \\
+    \texttt{sensor-type} & \texttt{sensor\_type} & Tipo de sensor (siempre GPS) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Caracterización inicial}
+\label{sec:o1-caracterizacion}
+
+Tras la carga, el conjunto comprende 89\,867 \textit{fixes} de 126 individuos a
+lo largo de algo más de seis años (tabla \ref{tab:o1-overview}). La cobertura por
+individuo es marcadamente asimétrica: la mediana es de 262 \textit{fixes}, pero el
+percentil 10 baja a 26 y el percentil 90 asciende a 1\,533. Coexisten, por tanto,
+aves con un seguimiento denso y prolongado y aves con un rastro esporádico. Esta
+disparidad anticipa la necesidad de un criterio de admisión por individuo, que se
+introduce más adelante en este capítulo.
+
+\begin{table}[H]
+  \centering
+  \caption[Caracterización del conjunto crudo]{Métricas agregadas del conjunto
+  crudo de Movebank tras la carga y normalización.}
+  \label{tab:o1-overview}
+  \begin{tabular}{lr}
+    \toprule
+    \textbf{Métrica} & \textbf{Valor} \\
+    \midrule
+    \textit{Fixes} GPS totales & 89\,867 \\
+    Individuos (\textit{Larus fuscus}) & 126 \\
+    Mediana de \textit{fixes} por individuo & 262 \\
+    Percentil 10 / 90 de \textit{fixes} por individuo & 26 / 1\,533 \\
+    Primer registro (UTC) & 2009-05-25 \\
+    Último registro (UTC) & 2015-08-27 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Limpieza de los \textit{fixes} GPS}
+\label{sec:o1-limpieza}
+
+La limpieza aplica primero varias comprobaciones de integridad estándar: descarta
+los \textit{fixes} que el repositorio marca como no válidos (indicadores
+\texttt{visible} y \texttt{manually-marked-outlier}), las coordenadas fuera del
+rango geográfico físico y los registros duplicados en
+\texttt{(bird\_id, timestamp)}. Ninguna de ellas elimina registros en este
+conjunto, lo que indica que los datos se distribuyen ya parcialmente depurados. El
+único filtro con efecto es el de velocidad, que reduce los 89\,867 \textit{fixes}
+iniciales a 89\,847 (el 99,98\,\% del total).
+
+Este filtro compara la velocidad implícita entre \textit{fixes} consecutivos del
+mismo individuo con un máximo admisible. La
+distancia entre dos posiciones se calcula con la fórmula de Haversine, que da la
+distancia sobre la superficie de la esfera:
+
+\begin{equation}
+  d = 2R \arcsin\sqrt{\sin^2\!\frac{\Delta\phi}{2}
+      + \cos\phi_1 \cos\phi_2 \sin^2\!\frac{\Delta\lambda}{2}},
+  \label{eq:haversine}
+\end{equation}
+
+donde $\phi$ es la latitud, $\lambda$ la longitud (en radianes), $\Delta\phi$ y
+$\Delta\lambda$ sus diferencias entre los dos \textit{fixes} y
+$R = 6371{,}0088$ km el radio medio terrestre. La velocidad implícita es
+$v = d/\Delta t$, con $\Delta t$ el intervalo entre ambos.
+
+El umbral se fija en 120 km/h, valor que justifica la distribución de velocidades
+(figura \ref{fig:o1-speed}). La mediana es de 0,66 km/h y el percentil 99,5 es de
+50,6 km/h, en línea con la velocidad de crucero de \textit{Larus fuscus} (unos
+50 km/h); solo el extremo de la cola (percentil 99,9 en 134 km/h) alcanza valores
+incompatibles con el vuelo del ave. El umbral queda por encima del régimen de
+crucero y de su margen con viento favorable, de modo que aísla los artefactos del
+GPS sin penalizar desplazamientos legítimos.
+
+Un único \textit{fix} erróneo contamina dos velocidades: la del segmento que llega
+a él y la del que parte de él. Para no penalizar a sus vecinos legítimos, el filtro
+es iterativo. En cada iteración elimina solo el \textit{fix} de mayor velocidad (el
+responsable más probable) y recalcula las velocidades de los vecinos en la
+siguiente, hasta que ninguna supera el umbral o hasta un tope de 20 iteraciones.
+Sobre este conjunto el filtro alcanza ese tope sin converger por completo, pero su
+efecto es marginal: descarta 20 \textit{fixes} (el 0,022\,\% del total).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig03_speed-distribution.png}
+  \caption[Distribución de velocidades entre \textit{fixes}]{Distribución de las
+  velocidades entre \textit{fixes} consecutivos del mismo individuo. Casi todos los
+  valores se concentran muy por debajo de la velocidad de crucero de la especie; el
+  umbral de 120 km/h (línea discontinua) deja un margen amplio sobre ese régimen y
+  aísla los artefactos del GPS sin penalizar desplazamientos legítimos.}
+  \label{fig:o1-speed}
+\end{figure}
+
+\section{Construcción de la tabla diaria}
+\label{sec:o1-resample}
+
+Con los \textit{fixes} ya limpios, el último paso reduce la trayectoria de cada
+individuo a una posición por día natural (UTC): para cada día se toma el
+\textit{fix} más cercano a una hora de referencia fija, y los días sin un
+\textit{fix} suficientemente próximo quedan como huecos.
+
+\subsection{Hora de referencia}
+\label{sec:o1-hora}
+
+La hora de referencia debe coincidir con uno de los picos de muestreo: fuera de
+ellos hay muy pocos \textit{fixes}, y cualquier otra hora dejaría la mayoría de los
+días sin una observación cercana. Esto reduce la elección a las cuatro ventanas en
+que se concentra el muestreo (05:00, 08:00, 14:00 y 20:00 UTC, ya anticipadas en la
+sección \ref{sec:o1-caracterizacion}), de volumen casi idéntico (entre 15\,466 y
+15\,656 \textit{fixes}; figura \ref{fig:o1-hourly}), por lo que el volumen no decide
+entre ellas. La elección concreta de las 08:00 responde a un criterio biológico:
+coinciden con el inicio del ciclo diario de actividad de \textit{Larus fuscus} en
+buena parte de su rango migratorio, por lo que la posición a esa hora corresponde al
+lugar de descanso nocturno (\textit{roost}) o al punto inmediatamente posterior al
+despegue, un estado espacialmente estable. El anclaje
+favorece además al modelo de Markov: observar el origen y el destino de cada
+transición en el mismo punto del ciclo diario hace las transiciones comparables
+entre días.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig04_hourly-coverage.png}
+  \caption[Distribución horaria de los \textit{fixes}]{Número de \textit{fixes} por
+  hora UTC tras la limpieza. El muestreo se concentra en cuatro ventanas (05:00,
+  08:00, 14:00 y 20:00 UTC) de volumen casi idéntico; la ventana sombreada marca la
+  elegida (08:00 $\pm$ 60 min).}
+  \label{fig:o1-hourly}
+\end{figure}
+
+\subsection{Selección por cercanía y huecos explícitos}
+\label{sec:o1-seleccion}
+
+De cada día se conserva el \textit{fix} más cercano a la hora de referencia, medido
+por su distancia temporal en minutos (\texttt{delta\_minutes}); no se interpola una
+posición intermedia, en coherencia con el principio de no introducir datos no
+observados. Un \textit{fix} se acepta como representante del día solo si cae dentro
+de una ventana de tolerancia de $\pm 60$ min alrededor de las 08:00, holgada a
+propósito para no fragmentar la serie con huecos innecesarios: con $\pm 60$ min se
+conserva el 94,6\,\% de los días, frente al 66\,\% que dejaría una ventana estrecha
+de $\pm 30$ min. No se amplía más porque entonces mezclaría posiciones de puntos
+distintos del ciclo diario. Para
+los días sin \textit{fix} válido, el procedimiento reconstruye el calendario completo de cada
+individuo entre su primera y su última observación e inserta una fila por cada día
+ausente, marcada como no válida y con coordenadas nulas. De este modo los huecos son
+explícitos: una fila registrada, no una discontinuidad implícita.
+
+La figura \ref{fig:o1-timeline} muestra el resultado para un individuo (91916A):
+rachas largas de días válidos intercaladas con huecos puntuales o de varios días.
+Esta heterogeneidad es habitual en el conjunto y es la razón de representar los
+huecos en lugar de eliminarlos. Un modelo de transición día a día que encontrara dos
+observaciones separadas por un hueco no anotado las trataría como días consecutivos e
+introduciría un salto espacial inexistente.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig11_timeline-91916a.png}
+  \caption[Línea de tiempo de un individuo]{Línea de tiempo del individuo 91916A
+  tras el resample. En azul, los días con \textit{fix} válido (08:00 UTC
+  $\pm$ 60 min); en rojo, los huecos. Alterna rachas largas de continuidad con
+  huecos puntuales o de varios días, un patrón habitual en el conjunto.}
+  \label{fig:o1-timeline}
+\end{figure}
+
+\section{Filtrado de individuos y dataset final}
+\label{sec:o1-final}
+
+\subsection{Umbral de días válidos}
+\label{sec:o1-umbral}
+
+El resample genera días válidos y huecos para cada individuo, pero no todos tienen
+suficiente historia para estimar transiciones. El último filtro descarta los
+individuos con menos de 30 días válidos. La figura \ref{fig:o1-validdays} muestra la
+distribución de días válidos por individuo y el número de aves que supera distintos
+umbrales. Con 30 días se conservan 82 de los 126 individuos (el 65\,\%). Un umbral
+más laxo retendría más aves, pero a costa de admitir rastros demasiado escasos para
+estimar transiciones; uno más estricto sacrificaría muestra útil. El corte en 30
+días equilibra ambos extremos.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig06_valid-days-per-bird.png}
+  \caption[Días válidos por individuo]{Distribución del número de días válidos por
+  individuo y número de aves conservadas según el umbral. El corte en 30 días
+  descarta los individuos con seguimiento insuficiente para el modelo de Markov sin
+  penalizar a la mayoría del conjunto.}
+  \label{fig:o1-validdays}
+\end{figure}
+
+\subsection{El conjunto de datos final}
+\label{sec:o1-dataset-final}
+
+La tabla \ref{tab:o1-funnel} resume la reducción de los datos a lo largo de la
+pipeline.
+
+\begin{table}[H]
+  \centering
+  \caption[Reducción de los datos a lo largo de la pipeline]{Reducción del volumen
+  de datos en cada etapa, desde los \textit{fixes} en bruto hasta la tabla diaria
+  final.}
+  \label{tab:o1-funnel}
+  \begin{tabular}{lr}
+    \toprule
+    \textbf{Etapa} & \textbf{Recuento} \\
+    \midrule
+    \textit{Fixes} GPS brutos (126 individuos) & 89\,867 \\
+    \textit{Fixes} tras la limpieza & 89\,847 \\
+    Individuos conservados ($\geq 30$ días válidos) & 82 \\
+    Filas de la tabla diaria final & 24\,444 \\
+    Filas válidas (con posición real) & 21\,823 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+La pipeline produce dos ficheros: \texttt{daily.parquet}, la tabla diaria que
+alimenta el modelo de Markov, y \texttt{fixes\_clean.parquet}, los \textit{fixes}
+limpios a su resolución original, reservados como material de auditoría para los
+objetivos posteriores. Ambos se regeneran con una sola llamada a
+\texttt{build\_o1()}; sus funciones de carga, limpieza y resample son puras y solo
+el orquestador escribe a disco.
+
+\section{Caracterización del dataset resultante}
+\label{sec:o1-resultante}
+
+La tabla diaria es la entrada del modelo de Markov del capítulo siguiente. Tres
+propiedades del conjunto resultante condicionan cómo puede explotarse: su cobertura
+espacial, la fragmentación de las series y el sesgo estacional del seguimiento.
+
+\subsection{Dominio espacial}
+\label{sec:o1-espacial}
+
+Los \textit{fixes} conservados cubren el corredor migratorio completo de la especie,
+desde las zonas de cría en el norte de Europa hasta las áreas de invernada en el
+África occidental (figura \ref{fig:o1-spatial}). Esta extensión fija el dominio que
+la cadena de Markov deberá discretizar: la rejilla de celdas ha de abarcar desde las
+latitudes nórdicas hasta el África occidental.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig08_spatial-overview.png}
+  \caption[Distribución geográfica de los \textit{fixes}]{Distribución geográfica de
+  una muestra de los \textit{fixes} conservados. El conjunto cubre el corredor
+  migratorio de \textit{Larus fuscus} entre el norte de Europa y el África
+  occidental.}
+  \label{fig:o1-spatial}
+\end{figure}
+
+\subsection{Fragmentación de las series}
+\label{sec:o1-fragmentacion}
+
+Las rachas de días válidos consecutivos son en su mayoría cortas: la mediana es de
+8 días (figura \ref{fig:o1-streak}). Para el modelo de Markov esto supone abundancia
+de transiciones de un solo paso, pero escasez de tramos largos continuos en la mayor
+parte de la muestra. Queda abierta para O2 una decisión: entrenar sobre todas las
+rachas o exigir una longitud mínima.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig09_streak-length-distribution.png}
+  \caption[Longitud de las rachas de días válidos]{Distribución de la longitud de
+  las rachas de días válidos consecutivos en la tabla diaria (eje recortado a 200
+  días). La mayoría son cortas (mediana de 8 días), con una cola larga de aves
+  seguidas de forma casi continua durante meses.}
+  \label{fig:o1-streak}
+\end{figure}
+
+\subsection{Sesgo estacional del seguimiento}
+\label{sec:o1-estacional}
+
+El seguimiento no se reparte por igual a lo largo del año (figura
+\ref{fig:o1-seasonal}). El otoño reúne casi el doble de observaciones válidas que la
+primavera, con un máximo en septiembre y un mínimo en mayo; en términos de
+fenología, la migración de otoño queda mucho mejor muestreada que la de primavera.
+En consecuencia, las transiciones que el modelo estime para las estaciones bien
+representadas se apoyarán en más datos que las de las estaciones escasas, algo a
+tener en cuenta al interpretar su precisión por régimen.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{o1_fig10_monthly-seasonal-coverage.png}
+  \caption[Cobertura mensual y estacional]{Filas diarias válidas por mes y por
+  estación (hemisferio norte). El seguimiento se concentra en el otoño y es escaso
+  en primavera, un sesgo que condiciona la interpretación de las transiciones por
+  estación.}
+  \label{fig:o1-seasonal}
+\end{figure}

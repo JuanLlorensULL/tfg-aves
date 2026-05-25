@@ -57,51 +57,50 @@ código (`load`/`clean`/`daily`/`build`) y la de las notas existentes.
   ambientales y de metadatos administrativos. `bird_id` como strings tipo
   `91732A`.
 - **3.2.3 Caracterización inicial** — volumen (89 867 fixes); fixes/ave muy
-  asimétrico (mediana 262, p10 26, p90 1 533); muestreo nativo irregular.
-  Mención breve de la cobertura espacial amplia (Europa septentrional ↔ África
-  occidental), con la figura detallada en §3.6. *Adelanto:* el muestreo no solo
-  es irregular sino **discreto en 4 ventanas** → se desarrolla en §3.4.
+  asimétrico (mediana 262, p10 26, p90 1 533) → anticipa el filtro por individuo.
+  (El análisis del muestreo horario y los 4 picos se trata en §3.4; la cobertura
+  espacial, en §3.6. `o1_fig02` retirada por el autor 2026-05-25 por redundante
+  con `o1_fig04`.)
 - **Figuras/tablas:** **[NUEVA] tabla de selección/renombrado** (columna
   Movebank original → nombre v3 → uso; + columnas descartadas y motivo);
-  `o1_tab01` (overview del dataset); `o1_fig02` (distribución del Δt nativo).
+  `o1_tab01` (overview del dataset).
 
-### 3.3 Limpieza de los fixes GPS
-- **3.3.1 Filtros de calidad Movebank y coordenadas** — flags `visible` y
-  `manually_marked_outlier`, coordenadas fuera de rango, duplicados
-  `(bird_id, timestamp)`. **Hallazgo:** 0 descartes (dataset pre-limpio); el
-  conteo con precedencia evita doble contabilización.
-- **3.3.2 Filtro de velocidad imposible** — fórmula Haversine (LaTeX, inline);
-  velocidad respecto al fix anterior del mismo ave; **eliminación iterativa
-  golosa** (solo el "peor" fix por iteración, porque un outlier envenena su
-  salto de entrada y de salida); umbral 120 km/h (crucero de *L. fuscus*
-  ~50 km/h); cap de 20 iteraciones y nota de no convergencia (20 fixes =
-  0,022 %, impacto despreciable).
-- **Figuras/tablas:** `o1_fig03` (distribución de velocidad → umbral 120 km/h),
-  `o1_tab07` (desglose acumulado de descartes por causa).
+### 3.3 Limpieza de los fixes GPS (sin subsecciones)
+- **Comprobaciones de calidad y coordenadas, de pasada** — flags `visible` /
+  `manually_marked_outlier`, rango de coordenadas y duplicados
+  `(bird_id, timestamp)`. **0 descartes** → el conjunto venía ya algo depurado
+  desde el origen. Mención breve; **sin tabla de desglose** (decisión del autor
+  2026-05-25: `o1_tab07` ya no se incluye en la memoria).
+- **Filtro de velocidad (cuerpo de la sección)** — fórmula Haversine (ecuación
+  numerada); velocidad respecto al fix anterior del mismo ave; eliminación
+  iterativa golosa (solo el "peor" fix por iteración, porque un outlier contamina
+  sus dos segmentos); umbral 120 km/h fundamentado con percentiles reales
+  (mediana 0,66; p99,5 = 50,6 ≈ crucero; p99,9 = 134); no convergencia (tope 20
+  iter, 20 fixes = 0,022 %, marginal), declarada sin tono apologético.
+- **Figuras:** `o1_fig03` (distribución de velocidad → umbral 120 km/h).
 
 ### 3.4 Construcción de la tabla diaria
-- **3.4.1 La abstracción de "posición diaria"** — por qué una posición por día
-  (la irregularidad hace inviable un modelo de tiempo continuo); día calendario
-  UTC; una fila por `(bird_id, date_utc)`.
-- **3.4.2 Selección de la hora de referencia (08:00 UTC)** — los **4 picos
-  discretos** del muestreo (05/08/14/20 UTC, ~15 500 fixes c/u); función
-  `coverage_by_hour`; triple criterio convergente (pico de mayor volumen real +
-  biología de *L. fuscus* diurna: roost/despegue matinal + transiciones Markov
-  más informativas ancladas al mismo punto del ciclo diario). Definición de
-  **`delta_minutes`** (distancia en minutos del fix elegido a la hora de
-  referencia).
-- **3.4.3 Ventana de tolerancia (±60 min)** — trade-off cobertura vs. precisión
-  temporal; ±60 recoge el pico de las 08:00 y vecinos minoritarios (07/09) sin
-  solapar con el pico vecino (05:00, a 3 h).
-- **3.4.4 Selección por cercanía y huecos explícitos** — *nearest-fix* (no
-  interpolación); reconstrucción del calendario completo por ave; huecos como
-  filas `is_valid=False` con `lat/lon=NaN`; justificado por la heterogeneidad
-  del tracking individual.
-- **Figuras:** `o1_fig04` (cobertura horaria / 4 picos → 08:00), `o1_fig05`
-  (trade-off de tolerancia → ±60 min), `o1_fig11` (timeline de 91916A →
-  justifica los huecos explícitos); **[NUEVA] esquema del resample diario**
-  (fixes de un día sobre el eje horario, hora de referencia, ventana ±60 min,
-  fix elegido y un día-hueco).
+> Revisado 2026-05-25: **eliminados** el diagrama del resample y la subsección de
+> tolerancia; la tolerancia pasa a mención de pasada. Hora de referencia
+> reformulada (volumen NO discrimina entre picos; decide la biología).
+- **Opening (1 frase)** — una posición por día (UTC): fix más cercano a la hora
+  de referencia dentro de tolerancia; días sin fix próximo = huecos. (Sin
+  diagrama de resample.)
+- **3.4.1 Hora de referencia (08:00 UTC)** — la hora ha de **coincidir con un
+  pico de muestreo** (fuera de ellos casi no hay fixes → cobertura). Los 4 picos
+  (05/08/14/20 UTC) tienen **volumen casi idéntico (15 466–15 656 fixes)**, así
+  que el volumen NO decide; la elección concreta de las 08:00 es **biológica**
+  (inicio de actividad de *L. fuscus* → roost/post-despegue, posición estable) +
+  anclaje para Markov. Figura `o1_fig04`.
+- **3.4.2 Selección por cercanía y huecos explícitos** — *nearest-fix* por
+  `delta_minutes` (no interpolación, principio de no inventar datos); **tolerancia
+  ±60 mencionada de pasada** (sin subsección ni figura): holgada para no
+  fragmentar de más (94,6 % con ±60 vs 66 % con ±30 estricta; no más de ±60 para
+  no tocar el pico vecino de 05:00, a 3 h). Reconstrucción del
+  calendario + huecos explícitos (`is_valid=False`, NaN); figura `o1_fig11`.
+- **Figuras:** `o1_fig04` (cobertura horaria → 08:00), `o1_fig11` (timeline
+  91916A → huecos). **Retiradas:** el diagrama del resample y `o1_fig05`
+  (tolerancia, ya no se incluye).
 
 ### 3.5 Filtrado de individuos y dataset final
 - **3.5.1 Umbral de días válidos (30)** — distribución de días válidos por ave;
@@ -123,24 +122,22 @@ código (`load`/`clean`/`daily`/`build`) y la de las notas existentes.
   supervivientes; verifica el dominio (Europa septentrional ↔ África occidental)
   y la consistencia con las rutas migratorias conocidas de *L. fuscus*.
 - **3.6.2 Fragmentación de las series** — longitud de racha consecutiva sin
-  huecos (p25=3, p50=12, p90=142, máx 1 330); implicación para O2: muchas
-  transiciones de un solo paso, pocas rachas largas → decisión pendiente
-  (longitud mínima de racha para entrenamiento).
+  huecos. **Datos reales (`tab09`): p25=3, p50=8, p90=96, máx 1326** (las
+  notas/CLAUDE.md decían 12/142/1330 — desactualizadas; usar el artefacto).
+  Implicación para O2: muchas transiciones de un solo paso, pocas rachas largas
+  → decisión pendiente (longitud mínima de racha para entrenamiento).
 - **3.6.3 Sesgo estacional del seguimiento** — cobertura mensual/estacional de
   las filas válidas; condiciona la interpretación de las transiciones (qué
   fases migratorias/estacionales están mejor representadas).
 - **Figuras/tablas:** `o1_fig08` (visión espacial), `o1_fig09` (longitud de
   racha), `o1_fig10` (cobertura mensual/estacional).
 
-### 3.7 Conclusiones y limitaciones
-- **Funciona bien:** limpieza mínimamente invasiva (<0,03 % de fixes); 4
-  decisiones (D1–D4) justificadas con figura y reproducibles; tabla diaria lista
-  como entrada de O2.
-- **Limitaciones:** (1) sesgo temporal de la posición diaria (ancla
-  roost/despegue, no centroide de actividad); (2) descarte de 44 aves (34,9 %);
-  (3) no convergencia del filtro de velocidad; (4) fragmentación elevada.
-- **Abierto para O2–O4:** longitud mínima de racha; revisar el umbral de aves
-  si O3/O4 demandan más diversidad (eco del artefacto C5 de O3).
+### 3.7 Conclusiones y limitaciones — ELIMINADA (2026-05-25)
+> El autor retiró la sección de conclusiones del capítulo: repetía lo ya dicho
+> en §3.1–§3.6 sin aportar. Las conclusiones globales irán en el capítulo 9
+> (`conclusiones.tex`). Las limitaciones relevantes quedan ya integradas en su
+> sección (anclaje 08:00 en §3.4; descarte de 44 aves en §3.5; fragmentación en
+> §3.6). El capítulo O1 termina en §3.6.
 
 ---
 
@@ -149,12 +146,12 @@ código (`load`/`clean`/`daily`/`build`) y la de las notas existentes.
 | Artefacto | Tipo | Sección | Justifica |
 |---|---|---|---|
 | `o1_tab01_dataset-overview` | tabla | 3.2.3 | Caracterización del crudo |
-| `o1_fig02_fix-interval-distribution` | figura | 3.2.3 | Muestreo nativo irregular |
+| `o1_fig02_fix-interval-distribution` | figura | — | Retirada: redundante con o1_fig04 |
 | `o1_fig08_spatial-overview` | figura | 3.6.1 | Dominio espacial |
 | `o1_fig03_speed-distribution` | figura | 3.3.2 | Umbral 120 km/h (D1) |
-| `o1_tab07_discard-breakdown` | tabla | 3.3 | Descartes por causa |
+| `o1_tab07_discard-breakdown` | tabla | — | Retirada: mención de pasada, sin tabla |
 | `o1_fig04_hourly-coverage` | figura | 3.4.2 | Hora ref. 08:00 (D2) |
-| `o1_fig05_tolerance-tradeoff` | figura | 3.4.3 | Tolerancia ±60 min (D3) |
+| `o1_fig05_tolerance-tradeoff` | figura | — | Retirada: tolerancia mencionada de pasada |
 | `o1_fig11_timeline-91916a` | figura | 3.4.4 | Huecos explícitos |
 | `o1_fig06_valid-days-per-bird` | figura | 3.5.1 | Mínimo 30 días (D4) |
 | `o1_fig09_streak-length-distribution` | figura | 3.6.1 | Fragmentación → O2 |
@@ -162,7 +159,7 @@ código (`load`/`clean`/`daily`/`build`) y la de las notas existentes.
 | **[NUEVA] tabla selección/renombrado** | tabla | 3.2.2 | Variables Movebank → v3 |
 | **[NUEVA] tabla embudo del filtrado** | tabla | 3.5.2 | Reducción por etapas |
 | **[NUEVA] diagrama pipeline** | diagrama | 3.1 | Ilustrativo |
-| **[NUEVA] esquema resample diario** | diagrama | 3.4 | Ilustrativo |
+| **[NUEVA] esquema resample diario** | diagrama | — | Retirada del capítulo (artefacto sigue en latex/figuras) |
 
 Cobertura: **9/9 figuras + tab01 + tab07** colocadas; las tablas pareadas
 (`tab02–06`, `tab09–11`) acompañan a su figura. Las 4 decisiones justificadas
@@ -186,7 +183,8 @@ con figura (D1–D4) caen en 3.3–3.5.
 
 ## Artefactos nuevos pendientes de crear
 - [x] Diagrama de la pipeline (§3.1) — `latex/figuras/o1_pipeline.{tex,pdf}`.
-- [x] Esquema del resample diario (§3.4) — `latex/figuras/o1_resample_diario.{tex,pdf}`.
+- [~] Esquema del resample diario — creado pero **retirado del capítulo**
+  (2026-05-25, decisión del autor); el artefacto sigue en `latex/figuras/`.
 - [ ] Tabla de selección/renombrado de variables (§3.2.2).
 - [ ] Tabla embudo del filtrado (§3.5.2).
 

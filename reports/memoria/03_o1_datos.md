@@ -1,7 +1,8 @@
 # Capítulo 3 — O1: Preparación de datos GPS
 
 > **Estado:** notas
-> **Última actualización:** 2026-05-21
+> **Última actualización:** 2026-05-25 (corrige cifras de racha: mediana 8 días,
+> no 12 — el valor previo era de un análisis preliminar con otros parámetros)
 
 ## Resumen ejecutivo
 
@@ -187,13 +188,13 @@ Fuente: `o1_fig09_streak-length-distribution`
 |---|---|
 | p10 | 1 |
 | p25 | 3 |
-| p50 | 12 |
-| p75 | 61 |
-| p90 | 142 |
-| p95 | 261 |
-| máx | 1 330 |
+| p50 | 8 |
+| p75 | 32 |
+| p90 | 96 |
+| p95 | 160 |
+| máx | 1 326 |
 
-La mediana es 12 días y el p90 es 142 días. La distribución es muy
+La mediana es 8 días y el p90 es 96 días. La distribución es muy
 asimétrica: la mayoría de rachas son cortas (huecos frecuentes), pero
 existe un subconjunto de aves con seguimiento casi continuo de meses.
 Para O2, esto significa que la cadena de Markov dispondrá de muchas
@@ -273,8 +274,8 @@ build_o1(max_speed_kmh=120.0, reference_hour_utc=8,
    algún par de fixes tiene velocidades marginalmente superiores a
    120 km/h que no se eliminan en iteraciones posteriores. Susceptible
    de revisión si O2/O3 muestran transiciones anómalas.
-4. **Fragmentación elevada.** La mediana de racha es 12 días (p50);
-   el 50 % de las rachas tienen ≤ 3 días (p25). O2 deberá decidir si
+4. **Fragmentación elevada.** La mediana de racha es 8 días (p50);
+   un cuarto de las rachas no supera los 3 días (p25). O2 deberá decidir si
    usa todas las rachas o aplica un umbral de longitud mínima.
 
 **Aspectos abiertos / futuras mejoras:**
