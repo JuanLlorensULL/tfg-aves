@@ -1,6 +1,7 @@
 # Esquema de redacción — Capítulo 4: Predicción con cadenas de Markov visibles (O2)
 
-> **Estado:** esquema (sin prosa)
+> **Estado:** REDACTADO (§4.1–§4.6 en `latex/secciones/desarrollo_o2.tex`,
+> compila y auditado; capítulo enlazado en el documento principal)
 > **Última actualización:** 2026-05-25
 > **Relación con las notas:** complementa a `04_o2_markov.md` (notas según
 > plantilla). Este fichero fija la **estructura de redacción** del capítulo, con
