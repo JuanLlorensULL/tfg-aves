@@ -1,0 +1,40 @@
+\chapter{Detección de comportamiento con modelos ocultos de Markov}
+\label{ch:o3}
+
+El capítulo anterior cerró señalando dos límites de la cadena de Markov visible que
+su formulación no podía salvar: no distinguía el régimen de comportamiento de cada
+día (si el ave permanecía en su zona o estaba en plena migración) ni la ruta propia
+de cada individuo. Este capítulo aborda el primero. La cuestión que plantea es si un
+modelo no supervisado puede descubrir, en las series de posiciones diarias de
+\textit{Larus fuscus}, esos regímenes que la cadena visible promediaba sin
+separarlos: el movimiento de la especie alterna fases sedentarias (en las zonas de
+cría e invernada) con fases de desplazamiento dirigido (los pasos migratorios de
+primavera y otoño), pero el conjunto de datos no trae ninguna etiqueta que indique,
+para un día concreto, en cuál de los dos regímenes se encontraba el ave. El resultado
+no será todavía una predicción de la posición, sino una etiqueta de comportamiento
+por ave y día.
+
+La cadena de Markov visible no podía separar esos regímenes porque su único estado,
+la celda ocupada, no distinguía si el ave permanecía en su zona o migraba. El modelo
+oculto de Markov sí los separa al introducir una variable latente, el estado de
+comportamiento, del que depende el movimiento de cada día. Su marco formal se expone
+en el capítulo \ref{ch:preliminares} (sección \ref{sec:prelim-hmm}); aquí se ajusta un
+modelo con dos estados ocultos, que se nombran \emph{estacionario} (movimiento local) y
+\emph{migración} (desplazamiento dirigido de largo alcance), con la justificación de su
+número en la sección \ref{sec:o3-modelo}.
+
+El modelo es global: sus parámetros los comparten las 82 aves del conjunto. A
+diferencia del capítulo anterior, donde las rutas individuales hacían que un modelo
+poblacional generalizara mal a un ave no vista, aquí el estado se infiere a partir de
+variables cinemáticas (la distancia recorrida y el cambio de rumbo, sección
+\ref{sec:o3-features}) comparables entre individuos, sobre las que sí es razonable
+compartir parámetros.
+
+Partiendo de la misma tabla diaria del capítulo \ref{ch:o1} (una posición por ave y
+día natural, con los huecos representados de forma explícita), el capítulo produce una
+salida de doble uso: cada observación (ave, día) recibe una etiqueta de estado y la
+probabilidad de cada régimen, que los modelos supervisados del capítulo \ref{ch:o4}
+consumen como variable de entrada de alto nivel y que, a la vez, permite estratificar
+por régimen el análisis del error del capítulo \ref{ch:o5}, separando el acierto de
+los días sedentarios del de los días de migración. El estado detectado es la pieza que
+conecta la fenología de la especie con los modelos predictivos del resto del trabajo.
