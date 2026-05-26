@@ -12,12 +12,13 @@ def write_synthetic_o3_features(raw: pd.DataFrame, out_path: Path, *, seed: int 
     filas crudas (bird_id, date_utc, lat, lon, veg_low, veg_high, daylight_hours).
 
     Reproduce el ensamblaje causal de build_o3: cinemática entrante, split
-    temporal sobre los días HMM-válidos, ajuste y decodificado filtrado del
-    Modelo B. Lo usan los tests de integración de O4, que ahora consumen el
-    estado HMM causal y el split directamente de O3 (no los recalculan).
+    temporal sobre los días HMM-válidos, ajuste y decodificado filtrado de los
+    Modelos A y B. Lo consumen los tests de integración de O4 (L3 lee el estado
+    B; L4 lee el estado A), que no recalculan el HMM.
     """
     from tfg_aves.data.split import assign_temporal_split
     from tfg_aves.hmm.causal import (
+        HMM_EMISSION_COLS_A,
         HMM_EMISSION_COLS_B,
         compute_causal_kinematics,
         decode_causal_states,
@@ -35,18 +36,28 @@ def write_synthetic_o3_features(raw: pd.DataFrame, out_path: Path, *, seed: int 
         train_valid.assign(_d=pd.to_datetime(train_valid["date_utc"]))
         .groupby("bird_id")["_d"].max().to_dict()
     )
+    model_a, labels_a = fit_causal_hmm(
+        kin, cutoff_by_bird, emission_cols=HMM_EMISSION_COLS_A, n_restarts=4, seed=seed,
+    )
     model_b, labels_b = fit_causal_hmm(
         kin, cutoff_by_bird, emission_cols=HMM_EMISSION_COLS_B, n_restarts=4, seed=seed,
+    )
+    states_a = decode_causal_states(
+        model_a, labels_a, kin, emission_cols=HMM_EMISSION_COLS_A, suffix="a",
     )
     states_b = decode_causal_states(
         model_b, labels_b, kin, emission_cols=HMM_EMISSION_COLS_B, suffix="b",
     )
-    df = kin.merge(states_b, on=["bird_id", "date_utc"], how="left")
+    df = (
+        kin.merge(states_a, on=["bird_id", "date_utc"], how="left")
+           .merge(states_b, on=["bird_id", "date_utc"], how="left")
+    )
     cols = [
         "bird_id", "date_utc", "lat", "lon",
         "step_in_km", "sin_bearing_in", "cos_bearing_in", "cos_turning_in",
         "daylight_hours", "veg_low", "veg_high",
         "is_hmm_obs_valid", "split",
+        "state_a_causal", "posterior_a_estacionario", "posterior_a_migracion",
         "state_b_causal", "posterior_b_estacionario", "posterior_b_migracion",
     ]
     out_cols = [c for c in cols if c in df.columns]
