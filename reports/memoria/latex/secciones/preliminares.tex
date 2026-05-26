@@ -133,3 +133,65 @@ La distinción entre filtrado (que usa solo el pasado y el presente) y suavizado
 usa toda la secuencia, incluido el futuro) es relevante para la predicción. El
 capítulo \ref{ch:o3} infiere el estado de comportamiento de cada día por filtrado,
 de modo que la detección no emplee información posterior al instante que se predice.
+
+\section{Aprendizaje automático supervisado}
+\label{sec:prelim-ml}
+
+El aprendizaje supervisado aborda la predicción aprendiendo, a partir de ejemplos,
+una función que asigna a un vector de variables de entrada (predictores) un valor
+objetivo. Según la naturaleza del objetivo se distingue entre clasificación
+(objetivo categórico) y regresión (objetivo continuo). A diferencia de los modelos
+probabilísticos anteriores, estos métodos captan relaciones no lineales y combinan
+numerosos predictores, a costa de una menor transparencia, y su principal reto es
+ajustar los datos de entrenamiento sin perder capacidad de generalización a datos
+nuevos. Entre las familias disponibles, los métodos basados en árboles de decisión
+destacan por su robustez y su rendimiento en problemas con datos tabulares, y son
+los que emplea este trabajo.
+
+\subsection{Árboles de decisión y bosques aleatorios}
+\label{sec:prelim-rf}
+
+Un árbol de decisión predice particionando de forma recursiva el espacio de los
+predictores en regiones cada vez más homogéneas respecto al objetivo, y asignando a
+cada región una predicción. Un árbol individual es interpretable, pero inestable y
+propenso al sobreajuste. El bosque aleatorio (\textit{random forest}) lo corrige
+promediando muchos árboles entrenados sobre muestras distintas de los datos
+(\textit{bagging}) y considerando en cada partición solo un subconjunto aleatorio de
+predictores, lo que reduce la varianza y mejora la generalización
+\cite{breiman2001}. Como subproducto, permite estimar la importancia relativa de
+cada predictor.
+
+\subsection{Potenciación del gradiente: XGBoost y LightGBM}
+\label{sec:prelim-boosting}
+
+La potenciación del gradiente (\textit{gradient boosting}) construye el predictor de
+forma aditiva: en lugar de promediar árboles independientes, los ajusta de manera
+secuencial, cada uno corrigiendo los errores residuales del conjunto anterior
+\cite{friedman2001}. XGBoost y LightGBM son dos implementaciones eficientes y muy
+extendidas de esta idea. La primera incorpora regularización explícita para contener
+el sobreajuste \cite{chen2016}; la segunda acelera el entrenamiento sobre grandes
+volúmenes de datos discretizando los predictores en histogramas y haciendo crecer los
+árboles por hojas \cite{ke2017}. Este trabajo compara las tres familias (bosque
+aleatorio, XGBoost y LightGBM) sobre el mismo problema.
+
+\subsection{Regresión cuantílica}
+\label{sec:prelim-cuantil}
+
+En su forma habitual, los modelos anteriores predicen un único valor (en regresión,
+una estimación de la media condicional). La regresión cuantílica, en cambio, estima
+cuantiles condicionales del objetivo, lo que permite acompañar la predicción de una
+banda de incertidumbre en lugar de un solo punto \cite{koenker1978}. Un cuantil de
+nivel $\tau \in (0,1)$ se estima minimizando la pérdida cuantílica (o pérdida
+\textit{pinball})
+
+\begin{equation}
+  \rho_\tau(u) = u \, \bigl(\tau - \mathbf{1}[u < 0]\bigr), \qquad u = y - \hat{y},
+  \label{eq:prelim-pinball}
+\end{equation}
+
+que penaliza de forma asimétrica los errores por exceso y por defecto según el
+cuantil buscado. Los bosques de regresión cuantílica (\textit{quantile regression
+forests}) llevan esta idea a los conjuntos de árboles, estimando la distribución
+condicional completa del objetivo a partir del mismo bosque \cite{meinshausen2006}.
+El capítulo \ref{ch:o4} la emplea para predecir el desplazamiento con una banda de
+incertidumbre, que el capítulo \ref{ch:o5} traslada al mapa.
