@@ -132,6 +132,8 @@ def _metric_rows(
 
 
 def _baseline_rows(preds: pd.DataFrame, modo_label: str, familia: str) -> list[dict]:
+    # Sin fila "moves": la persistencia no necesita el corte y_move (su
+    # asimetría con _metric_rows, que sí lo tiene, es intencional).
     by = evaluate_by_state(preds, state_col=_STATE_COL)
     rows = []
     for _, r in by.iterrows():

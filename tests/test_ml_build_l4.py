@@ -85,6 +85,7 @@ def test_build_o4_l4_artifacts(tmp_path):
     assert {"familia", "modo", "scope", "top1", "dist_centroide_km",
             "coverage_lat"}.issubset(metrics.columns)
     assert {"xgb", "lgbm", "rf"}.issubset(set(metrics["familia"]))
+    assert "individual" in set(metrics["modo"])          # solo xgb
     assert "persistencia" in set(metrics["modo"])
     assert result.n_rows_test_pob > 0
 
