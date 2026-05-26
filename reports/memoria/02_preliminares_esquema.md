@@ -67,6 +67,15 @@
   - Terminología única en toda la memoria: estados del HMM = **estacionario /
     migración** (decisión I1), nunca "residente".
 
+## Estado: capítulo REDACTADO y cerrado (2026-05-26)
+
+Las 4 secciones están escritas en `secciones/preliminares.tex`, aprobadas sección a
+sección y committeadas. Capítulo insertado en el maestro entre intro y datos.
+Auditado con dos agentes (organización + verificador escéptico): ecuaciones y
+afirmaciones teóricas correctas, coherentes con `src/tfg_aves/`, bibliografía
+verificada (corregidas las páginas de `ke2017` a 3149--3157). H14 cerrado en
+`hilos_abiertos.md`; sembrados P1 (teoría HMM → cap. 5) y P2 (teoría ML → caps. 6-7).
+
 ## Estructura propuesta (4 secciones, entrelazadas)
 
 > Cada sección de método = contexto en la literatura (con citas) + teoría con

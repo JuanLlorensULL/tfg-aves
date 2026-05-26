@@ -46,7 +46,34 @@
 | H11 | Régimen de comportamiento (residente vs migración) no modelado | Limitación → motivación | §4.6.4 (cierre) | **O3** (estados ocultos) |
 | H12 | Ruta individual de cada ave (34 % de orígenes no vistos) no modelada | Limitación → motivación | §4.6.2, §4.6.4 | **O4** (features por individuo) |
 | H13 | Predicciones LOBO almacenadas como referencia del error | Entregable | §4.1, §4.6 cierre | **O5** (análisis comparativo del error) |
-| H14 | Teoría general de cadenas de Markov finitas | Frontera con Preliminares | §4.1 (remite a cap. 2) | **Cap. 2 Preliminares** (aún sin redactar) |
+| H14 | Teoría general de cadenas de Markov finitas | Frontera con Preliminares | §4.1 (remite a cap. 2) | ✅ **CERRADO en cap. 2** (§2.2) |
+
+## Hilos cerrados y sembrados en Preliminares (cap. 2)
+
+> Actualizado al cerrar el capítulo de Preliminares (estado del arte + marco
+> teórico) el 2026-05-26. Estructura entrelazada por método (2.1 movimiento animal /
+> 2.2 Markov / 2.3 HMM / 2.4 aprendizaje supervisado), breve y al servicio de las
+> referencias. Auditado con dos agentes (organización + verificador): sin hallazgos
+> críticos.
+
+**Cerrados en Preliminares:**
+
+| # | Hilo | Cómo se cierra |
+|---|---|---|
+| H14 | Teoría general de cadenas de Markov finitas | §2.2: propiedad de Markov de primer orden, matriz de transición estocástica por filas, Chapman-Kolmogorov y estimación por máxima verosimilitud. El cap. de Markov la referencia y la aplica/refina (Laplace). |
+
+**Sembrados en Preliminares (referencias que los capítulos de desarrollo deben usar):**
+
+| # | Hilo | Tipo | En cap. 2 | Se retoma en |
+|---|---|---|---|---|
+| P1 | Teoría del HMM (parámetros $\pi,A,B$, emisión gaussiana diagonal, problemas forward/Viterbi/Baum-Welch, filtrado vs suavizado) | Referencia teórica | §2.3 (+ fig. del modelo gráfico) | **Cap. 5 (HMM)** la referencia en vez de reexplicarla; debe usar el filtrado causal allí anunciado |
+| P2 | Teoría de aprendizaje supervisado (RF, gradient boosting XGBoost/LightGBM, regresión cuantílica + pérdida pinball) | Referencia teórica | §2.4 | **Cap. 6 (ML)** la referencia; la regresión cuantílica enlaza con la banda de incertidumbre que **Cap. 7** lleva al mapa |
+
+**Pendiente menor (sugerencias de la auditoría de organización, opcionales):** reforzar
+en §2.4 el enganche explícito con la tensión interpretabilidad↔capacidad de la intro;
+y, si se desea, nombrar en §2.1 la especie/caso. No bloqueantes; el autor decidió
+mantener el capítulo lean (se eliminó a propósito el párrafo-panorama de las tres
+familias por repetir §1.2).
 
 ## Decisiones y hilos sembrados en la Introducción (cap. 1)
 
