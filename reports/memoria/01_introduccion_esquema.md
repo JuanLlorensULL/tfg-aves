@@ -51,14 +51,15 @@
 
 ## Estructura final (4 secciones, alineada con la v2)
 
-### 1.1 Motivación  (`sec:intro-motivacion`)
+### 1.1 Motivación  (`sec:intro-motivacion`)  [REDACTADA]
 - Ecología del movimiento: el seguimiento GPS (Movebank y similares) ha generado
   grandes volúmenes de trayectorias animales; el reto pasa de *recoger* datos a
   *modelar y anticipar* el movimiento.
-- Por qué predecir el desplazamiento de aves importa (sin inflar, 2-3 usos
-  concretos): conservación y diseño de áreas protegidas a lo largo de corredores
-  migratorios, seguridad aérea (colisiones), y comprensión de la navegación y la
-  respuesta al cambio climático.
+- **Motivación científico-metodológica** (decisión del autor: NADA de aplicaciones
+  tipo conservación/seguridad aérea): la dificultad del problema (movimiento que
+  combina rutina y cambio, depende del entorno, varía entre individuos) motiva
+  combinar modelos probabilísticos y ML en un enfoque híbrido, en lugar de depender
+  de un único modelo. Una sola frase, integrada (no párrafo aparte).
 - La especie y el caso de estudio: *Larus fuscus* (gaviota sombría), migrante de
   larga distancia entre las zonas de cría del norte de Europa y la invernada en el
   este de África; fenología marcada (cría jun-jul, paso abr-may y sep-oct,
@@ -67,30 +68,34 @@
 - Cifras de encuadre **mínimas** (sin tabla; se detallan en cap. de datos):
   origen Movebank, una sola especie. (Volumen exacto se da en el cap. de datos.)
 
-### 1.2 Planteamiento del problema y enfoque híbrido  (`sec:intro-enfoque`)
+### 1.2 Definición del problema y enfoque híbrido  (`sec:intro-enfoque`)  [REDACTADA]
 - La pregunta concreta del trabajo: dado dónde está hoy un individuo, ¿dónde
-  estará mañana? (predicción a un día sobre la posición diaria).
-- Por qué es difícil y por qué un único modelo no basta: tensión entre
-  interpretabilidad (probabilístico) y capacidad predictiva (ML); el movimiento
-  mezcla días sedentarios y de migración; cada ave sigue su ruta.
-- **El enfoque híbrido como escalera de modelos** (espina dorsal de la memoria):
-  1. Cadenas de Markov visibles: baseline probabilística interpretable; fija el
-     criterio de comparación y revela dos límites (no separa régimen de
-     comportamiento ni ruta individual).
-  2. Modelos ocultos de Markov (HMM): introducen un estado latente de
-     comportamiento (residente vs migración) que Markov no veía.
-  3. Aprendizaje supervisado (RF, XGBoost, LightGBM): incorpora el comportamiento
-     del HMM (de ahí "híbrido": probabilístico + ML) y variables por individuo.
-  4. Cartografía interactiva y análisis espacial del error: cierra el ciclo y lee
-     el error contra la fenología.
+  estará mañana? (predicción a un día sobre la secuencia diaria; plantearla así
+  desacopla del muestreo irregular del GPS).
+- Por qué es difícil y por qué un único modelo no basta: el movimiento mezcla
+  días de residencia y de migración; cada ave sigue su ruta; y hay tensión entre
+  interpretabilidad (probabilístico) y capacidad predictiva (ML).
+- **El enfoque híbrido = baseline frente a predictor combinado** (espina dorsal;
+  arquitectura REAL, corregida con el autor: no es una escalera lineal):
+  1. **Cadena de Markov visible = baseline** probabilística interpretable; fija el
+     criterio de comparación común (junto con la persistencia).
+  2. **Predictor híbrido = HMM + ML:** el modelo oculto de Markov infiere el
+     estado de comportamiento (residente / migración) y ese estado **alimenta**,
+     como una variable más, a los modelos de aprendizaje supervisado (RF, XGBoost,
+     LightGBM), que añaden variables por individuo. Esa unión (probabilístico + ML)
+     es el carácter híbrido, y busca **superar** la baseline.
+  3. **Herramienta de cartografía interactiva** (visor de la posición y el error):
+     desarrollada a medida para visualizar de un vistazo los resultados de los
+     modelos y comparar predicción vs. baseline sobre el mapa.
 - Anuncio honesto del hallazgo transversal (tono investigador): la persistencia
   ("mañana = hoy") es un rival sorprendentemente fuerte; el valor del trabajo está
   en la calibración probabilística, en aislar el régimen migratorio y en
   caracterizar un techo estructural de la predicción a un día. (Sin cifras aquí;
   se entregan en los capítulos.)
-- **Figura candidata F1 (conceptual):** diagrama de la escalera de modelos (las
-  cuatro fases y la limitación que cada una hereda y resuelve). TikZ standalone.
-  *Opcional, a confirmar con el autor.*
+- **Figura 1.1 (`fig:intro-hibrido`):** diagrama TikZ de dos vías (baseline vs.
+  predictor híbrido HMM+ML) que convergen en el visor interactivo. Fuente en
+  `figuras/intro_enfoque_hibrido.tex` → `.pdf`. Caption breve (no duplica el
+  cuerpo).
 
 ### 1.3 Objetivos del trabajo  (`sec:intro-objetivos`)
 - **Objetivo general:** diseñar y evaluar un enfoque híbrido (modelos
