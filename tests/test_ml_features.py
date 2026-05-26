@@ -308,12 +308,8 @@ def test_no_contaminacion_entre_aves():
     assert b_rows.loc[2, "is_hmm_obs_valid"]
 
 
-def test_attach_o3_state_and_split_suffix_a():
+def test_attach_o3_state_and_split_suffix_a() -> None:
     """Con suffix='a' pega el estado del HMM A renombrando el posterior."""
-    import pandas as pd
-
-    from tfg_aves.ml.features import attach_o3_state_and_split
-
     matrix = pd.DataFrame({
         "bird_id": ["A", "A"],
         "date_utc": pd.to_datetime(["2020-01-03", "2020-01-04"]),
