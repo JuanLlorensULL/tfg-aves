@@ -38,3 +38,48 @@ consumen como variable de entrada de alto nivel y que, a la vez, permite estrati
 por régimen el análisis del error del capítulo \ref{ch:o5}, separando el acierto de
 los días sedentarios del de los días de migración. El estado detectado es la pieza que
 conecta la fenología de la especie con los modelos predictivos del resto del trabajo.
+
+\section{Variables del movimiento}
+\label{sec:o3-features}
+
+El modelo no observa la posición directamente, sino un vector de variables que resume
+el movimiento de cada día y que es la observación $O_t$ que emite el estado oculto
+(capítulo \ref{ch:preliminares}, ecuación \ref{eq:prelim-emision}). La elección de esas
+variables determina qué puede separar el modelo: deben distinguir un día sedentario de
+uno de migración a partir de la geometría de la trayectoria, no de la posición
+absoluta. Se emplean dos variables cinemáticas, calculadas sobre las posiciones diarias
+del capítulo \ref{ch:o1}.
+
+La primera es el desplazamiento diario, \texttt{step\_in\_km}: la distancia de
+Haversine (ecuación \ref{eq:haversine}) entre la posición de ayer y la de hoy, en
+kilómetros y sin transformación. Es la señal primaria del régimen, porque separa por
+sí sola los dos modos del movimiento de la especie: un día sedentario recorre unos
+pocos kilómetros y uno de migración, cientos. Conservar la escala original en lugar de
+comprimirla con un logaritmo es una decisión deliberada que la sección
+\ref{sec:o3-modelo} justifica. La segunda es el cambio de rumbo,
+\texttt{cos\_turning\_in}: el coseno del ángulo entre el rumbo de hoy (el del tramo de
+ayer a hoy) y el del día anterior. Distingue la forma del movimiento: un valor próximo
+a $+1$ indica rumbo sostenido (trayectoria rectilínea, propia del vuelo migratorio
+dirigido), uno próximo a $-1$ una inversión de la marcha y uno próximo a $0$ un giro de
+90\textdegree. Se codifica como coseno, y no como el ángulo en valor absoluto, porque
+es una función suave en toda la recta que se ajusta mejor a la emisión gaussiana del
+modelo, mientras que el valor absoluto introduce en el cero un quiebro que distorsiona
+la distribución.
+
+Ambas variables son entrantes: describen el tramo ya recorrido hasta el día $t$ (de
+$t-1$ a $t$), no el que vendrá después (de $t$ a $t+1$). Así caracterizan el día con
+información disponible en el momento y no con la posición futura, una propiedad que la
+sección \ref{sec:o3-modelo} retoma al inferir el estado.
+
+Estas dos variables forman el vector de observación de un primer modelo, el cinemático
+(modelo A). Un segundo modelo (modelo B) añade tres variables de contexto ambiental y
+temporal: la cobertura de vegetación baja (\texttt{veg\_low}) y alta
+(\texttt{veg\_high}), tomadas de las covariables ambientales del conjunto Movebank, y
+las horas de luz (\texttt{daylight\_hours}), calculadas con una fórmula astronómica a
+partir de la latitud y la fecha. Estas tres variables se incorporan para tratar de
+reflejar mejor la realidad biológica de los patrones migratorios, que no dependen solo
+del movimiento sino también del hábitat y de la época del año. Las dos coberturas de
+vegetación se mantienen separadas, porque la baja (pastos, cultivos) y la alta (bosque)
+son biomas distintos que sumar en una sola variable confundiría. La comparación entre ambos modelos se resuelve en la sección
+\ref{sec:o3-resultados}; hasta entonces, el que incorpora el contexto es el de
+referencia.
