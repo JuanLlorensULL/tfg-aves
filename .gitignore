@@ -39,6 +39,7 @@ models/
 # --- Notas locales del autor (no publicadas) ----------------------------
 reports/ai-log/
 CLAUDE.md
+.claude/
 
 # --- Editors / OS -------------------------------------------------------
 .vscode/
