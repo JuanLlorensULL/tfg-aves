@@ -79,3 +79,33 @@ los días sin cambiar de lugar. El valor del trabajo no reside, por tanto, en un
 salto de exactitud sobre esa regla, sino en calibrar mejor la incertidumbre, en
 aislar el régimen de migración (donde la predicción sí aporta) y en caracterizar
 el techo estructural de predecir a un día con información local.
+
+\section{Objetivos del trabajo}
+\label{sec:intro-objetivos}
+
+El objetivo general del trabajo es diseñar y evaluar un enfoque híbrido, que
+combine modelos probabilísticos y aprendizaje supervisado, para predecir el
+desplazamiento diario de la gaviota sombría a partir de datos de seguimiento GPS.
+Reviste especial interés la comparación sistemática de las distintas soluciones
+desarrolladas, medidas todas con una métrica probabilística común y frente a
+baselines explícitas.
+
+Este objetivo general se concreta en cinco objetivos específicos:
+
+\begin{enumerate}
+  \item Transformar los registros GPS en bruto en una secuencia diaria homogénea
+  por individuo, con los huecos del seguimiento representados de forma explícita,
+  que sirva de base común a todos los modelos.
+  \item Establecer una baseline predictiva interpretable mediante cadenas de
+  Markov visibles, y fijar con ella el criterio de evaluación (el log-loss) y la
+  referencia de persistencia frente a la que se contrasta el resto de modelos.
+  \item Detectar el régimen de comportamiento de cada día (residente o en
+  migración) mediante un modelo oculto de Markov, comprobando que los estados
+  inferidos son coherentes con la fenología de la especie.
+  \item Predecir la posición del día siguiente con modelos de aprendizaje
+  supervisado (Random Forest, XGBoost y LightGBM) que integran el comportamiento
+  inferido y variables propias de cada individuo, empleando solo información
+  disponible antes del instante que se predice.
+  \item Desarrollar una herramienta de cartografía interactiva que permita
+  visualizar y comparar sobre el mapa los resultados de los modelos.
+\end{enumerate}
