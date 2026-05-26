@@ -116,6 +116,17 @@ def test_persistence_predicts_cell_id_t() -> None:
     assert expected_cols.issubset(out.columns)
 
 
+def test_persistence_state_col_a() -> None:
+    """state_col='state_a_causal' emite esa columna en vez de state_b_causal."""
+    matrix_test, cells = _matrix_test_for_baseline()
+    matrix_test = matrix_test.copy()
+    matrix_test["state_a_causal"] = [1, 0, 1]
+    out = compute_persistence_baseline(matrix_test, cells=cells, state_col="state_a_causal")
+    assert "state_a_causal" in out.columns
+    assert "state_b_causal" not in out.columns
+    assert list(out["state_a_causal"]) == [1, 0, 1]
+
+
 def test_evaluate_moves_only_filters_correctly():
     from tfg_aves.ml.evaluate import evaluate_moves_only
     preds = pd.DataFrame({
