@@ -12,6 +12,7 @@ Pipeline:
 
 from tfg_aves.ml.build import BuildO4Result, build_o4
 from tfg_aves.ml.build_l3 import BuildO4L3Result, build_o4_l3
+from tfg_aves.ml.build_l4 import BuildO4L4Result, build_o4_l4
 from tfg_aves.ml.evaluate import (
     compare_models,
     compute_markov_baseline,
@@ -37,6 +38,7 @@ from tfg_aves.ml.train import (
 
 __all__ = [
     "BuildO4L3Result",
+    "BuildO4L4Result",
     "BuildO4Result",
     "FEATURES_O4_CAUSAL",
     "add_cyclic_doy",
@@ -45,6 +47,7 @@ __all__ = [
     "build_feature_matrix",
     "build_o4",
     "build_o4_l3",
+    "build_o4_l4",
     "compare_models",
     "compute_markov_baseline",
     "compute_persistence_baseline",
