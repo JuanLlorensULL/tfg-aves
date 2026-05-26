@@ -306,3 +306,31 @@ def test_no_contaminacion_entre_aves():
     assert not np.isnan(b_rows.loc[2, "step_in_km"])
     assert not np.isnan(b_rows.loc[2, "cos_turning_in"])
     assert b_rows.loc[2, "is_hmm_obs_valid"]
+
+
+def test_attach_o3_state_and_split_suffix_a():
+    """Con suffix='a' pega el estado del HMM A renombrando el posterior."""
+    import pandas as pd
+
+    from tfg_aves.ml.features import attach_o3_state_and_split
+
+    matrix = pd.DataFrame({
+        "bird_id": ["A", "A"],
+        "date_utc": pd.to_datetime(["2020-01-03", "2020-01-04"]),
+        "lat": [40.0, 40.1], "lon": [-3.0, -2.9],
+    })
+    features_o3 = pd.DataFrame({
+        "bird_id": ["A", "A"],
+        "date_utc": pd.to_datetime(["2020-01-03", "2020-01-04"]),
+        "state_a_causal": [0, 1],
+        "posterior_a_migracion": [0.2, 0.8],
+        "state_b_causal": [1, 0],
+        "posterior_b_migracion": [0.9, 0.1],
+        "split": ["train", "test"],
+    })
+    out = attach_o3_state_and_split(matrix, features_o3, suffix="a")
+    assert "state_a_causal" in out.columns
+    assert "posterior_a_migracion_causal" in out.columns
+    assert "state_b_causal" not in out.columns
+    assert out["state_a_causal"].tolist() == [0, 1]
+    assert out["posterior_a_migracion_causal"].tolist() == [0.2, 0.8]

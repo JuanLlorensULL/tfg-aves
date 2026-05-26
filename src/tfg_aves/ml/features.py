@@ -108,22 +108,23 @@ def build_feature_matrix(
 
 
 def attach_o3_state_and_split(
-    matrix: pd.DataFrame, features_o3: pd.DataFrame,
+    matrix: pd.DataFrame, features_o3: pd.DataFrame, *, suffix: str = "b",
 ) -> pd.DataFrame:
-    """Pega state_b_causal/posterior_b_migracion_causal y split desde O3 (merge m:1).
+    """Pega state_<suffix>_causal/posterior_<suffix>_migracion_causal y split desde O3 (merge m:1).
 
-    O3 nombra el posterior ``posterior_b_migracion``; aquí se renombra al
-    nombre que consume O4 (``posterior_b_migracion_causal``). Lanza si alguna
-    fila candidata queda sin estado o sin etiqueta de split.
+    O3 nombra el posterior ``posterior_<suffix>_migracion``; aquí se renombra al
+    nombre que consume O4 (``posterior_<suffix>_migracion_causal``). ``suffix``
+    selecciona el modelo de la ablación de O3 ("b" = L3, "a" = L4). Lanza si
+    alguna fila candidata queda sin estado o sin etiqueta de split.
     """
+    state_col = f"state_{suffix}_causal"
+    post_src = f"posterior_{suffix}_migracion"
+    post_dst = f"{post_src}_causal"
     cols = features_o3[[
-        "bird_id", "date_utc", "state_b_causal", "posterior_b_migracion", "split",
-    ]].rename(columns={"posterior_b_migracion": "posterior_b_migracion_causal"})
+        "bird_id", "date_utc", state_col, post_src, "split",
+    ]].rename(columns={post_src: post_dst})
     merged = matrix.merge(cols, on=["bird_id", "date_utc"], how="left", validate="m:1")
-    missing = (
-        merged[["state_b_causal", "posterior_b_migracion_causal", "split"]]
-        .isna().any().any()
-    )
+    missing = merged[[state_col, post_dst, "split"]].isna().any().any()
     if missing:
         raise ValueError("Filas candidatas sin estado HMM causal o sin split tras el merge.")
     return merged
