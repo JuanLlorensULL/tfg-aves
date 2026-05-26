@@ -1,0 +1,30 @@
+\chapter{Preliminares}
+\label{ch:preliminares}
+
+Este capítulo reúne el contexto en la literatura y los fundamentos teóricos sobre
+los que se apoya el trabajo. Su propósito es servir de referencia: los capítulos
+de desarrollo emplean estas herramientas en su forma aplicada y remiten aquí, en
+lugar de reexplicarlas. Se presenta cada familia de modelos junto con el papel que
+desempeña en el problema, y se reserva para los capítulos correspondientes la
+justificación de las decisiones concretas (tamaño de celda, número de estados,
+hiperparámetros) y la definición de las métricas de evaluación.
+
+\section{El análisis y la predicción del movimiento animal}
+\label{sec:prelim-movimiento}
+
+El movimiento es uno de los procesos que articulan la vida de un animal, pues
+conecta su fisiología y su comportamiento con el entorno en el que habita. La
+ecología del movimiento propone un marco unificador para estudiarlo, que sitúa el
+desplazamiento de un organismo en el centro y lo relaciona con su estado interno,
+sus capacidades de navegación y locomoción y los factores externos que lo
+condicionan \cite{nathan2008}. La generalización de los dispositivos de
+geolocalización ha convertido esta disciplina en un campo intensivo en datos:
+repositorios como Movebank acumulan grandes volúmenes de trayectorias y han
+abierto el análisis del movimiento a las técnicas estadísticas y computacionales
+\cite{kays2015, demsar2015}.
+
+Con esa abundancia de datos, el interés se desplaza de describir trayectorias
+pasadas a modelarlas y anticipar posiciones futuras. Esa predicción exige combinar
+herramientas de naturaleza distinta, en lugar de depender de un único modelo, por
+la dificultad ya señalada del problema. Las secciones siguientes presentan los
+fundamentos de las que emplea este trabajo.
