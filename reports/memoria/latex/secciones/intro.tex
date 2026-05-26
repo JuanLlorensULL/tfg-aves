@@ -36,8 +36,8 @@ depender de la frecuencia irregular del seguimiento GPS y centra el problema en
 el desplazamiento, no en el muestreo.
 
 Predecir ese desplazamiento es difícil porque el movimiento alterna regímenes muy
-distintos (días de residencia casi inmóvil y días de migración de cientos de
-kilómetros) y porque cada ave sigue su propia ruta, de modo que un patrón
+distintos (días casi inmóviles y días de migración de cientos de kilómetros) y
+porque cada ave sigue su propia ruta, de modo que un patrón
 aprendido de la población no describe sin más a un individuo concreto. A ello se
 añade una tensión metodológica: los modelos probabilísticos clásicos son
 interpretables pero limitados, mientras que el aprendizaje automático capta
@@ -62,7 +62,7 @@ La baseline es una cadena de Markov visible, que estima la posición del día
 siguiente a partir de la celda actual; es interpretable y fija el criterio de
 comparación común al resto de modelos. El predictor híbrido, por su parte,
 encadena dos modelos: un modelo oculto de Markov infiere para cada día un estado
-de comportamiento no observado (residente o en migración), y ese estado alimenta,
+de comportamiento no observado (estacionario o en migración), y ese estado alimenta,
 como una variable más, a los modelos de aprendizaje supervisado (Random Forest,
 XGBoost y LightGBM), que predicen el desplazamiento incorporando además variables
 propias de cada individuo. Esa unión de un modelo probabilístico de comportamiento
@@ -99,7 +99,7 @@ Este objetivo general se concreta en cinco objetivos específicos:
   \item Establecer una baseline predictiva interpretable mediante cadenas de
   Markov visibles, y fijar con ella el criterio de evaluación (el log-loss) y la
   referencia de persistencia frente a la que se contrasta el resto de modelos.
-  \item Detectar el régimen de comportamiento de cada día (residente o en
+  \item Detectar el régimen de comportamiento de cada día (estacionario o en
   migración) mediante un modelo oculto de Markov, comprobando que los estados
   inferidos son coherentes con la fenología de la especie.
   \item Predecir la posición del día siguiente con modelos de aprendizaje

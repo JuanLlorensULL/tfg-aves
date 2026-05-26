@@ -48,6 +48,24 @@
 | H13 | Predicciones LOBO almacenadas como referencia del error | Entregable | §4.1, §4.6 cierre | **O5** (análisis comparativo del error) |
 | H14 | Teoría general de cadenas de Markov finitas | Frontera con Preliminares | §4.1 (remite a cap. 2) | **Cap. 2 Preliminares** (aún sin redactar) |
 
+## Decisiones y hilos sembrados en la Introducción (cap. 1)
+
+> Redactada tras O1–O5 (2026-05-26). La introducción fija la narrativa global del
+> trabajo y algunas convenciones que los capítulos de desarrollo deben respetar.
+
+| # | Decisión / hilo | Dónde (intro) | A respetar en |
+|---|---|---|---|
+| I1 | Estados del HMM = **"estacionario" / "migración"** (NO "residente"; "residente" era la propuesta de 3 estados descartada). Confirmado en `hmm/causal.py` y `05_o3_hmm.md`. | §1.2, §1.3 | **Cap. 5 (HMM)** debe usar estos nombres |
+| I2 | Espina dorsal = enfoque híbrido: Markov visible = **baseline**; **el HMM alimenta al ML** (HMM+ML = predictor híbrido) que busca superar la baseline; más una herramienta de cartografía interactiva. | §1.2 + fig. 1.1 | Caps. 4–7 (deben encajar con esta arquitectura) |
+| I3 | **Énfasis comparativo** (interés central, instrucción de la tutora): comparar las soluciones desarrolladas con métrica común y baselines explícitas. | §1.3 (obj. general) | Caps. 4–7 |
+| I4 | Objetivo 5 = herramienta de cartografía interactiva (el análisis espacial/estacional del error se retiró del enunciado del objetivo, por decisión del autor). | §1.3 | Cap. 7 |
+
+**Riesgo de coherencia a resolver (I1):** `desarrollo_o2.tex` usa "residente o en
+migración" (línea 398, handoff al HMM) y "casi residente" (línea 380). Para una
+sola narrativa conviene cambiarlos a "estacionario" cuando se revise el capítulo de
+Markov (allí no nombra el estado del HMM sino el régimen conductual, pero el término
+debe ser único en toda la memoria). **Pendiente de visto bueno del autor.**
+
 ## Notas
 
 - **H4 — riesgo de coherencia a resolver:** §3.1 afirma que de `fixes_clean.parquet`

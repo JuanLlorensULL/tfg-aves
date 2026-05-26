@@ -80,7 +80,7 @@
   1. **Cadena de Markov visible = baseline** probabilística interpretable; fija el
      criterio de comparación común (junto con la persistencia).
   2. **Predictor híbrido = HMM + ML:** el modelo oculto de Markov infiere el
-     estado de comportamiento (residente / migración) y ese estado **alimenta**,
+     estado de comportamiento (estacionario / migración) y ese estado **alimenta**,
      como una variable más, a los modelos de aprendizaje supervisado (RF, XGBoost,
      LightGBM), que añaden variables por individuo. Esa unión (probabilístico + ML)
      es el carácter híbrido, y busca **superar** la baseline.
@@ -97,11 +97,13 @@
   `figuras/intro_enfoque_hibrido.tex` → `.pdf`. Caption breve (no duplica el
   cuerpo).
 
-### 1.3 Objetivos del trabajo  (`sec:intro-objetivos`)
+### 1.3 Objetivos del trabajo  (`sec:intro-objetivos`)  [REDACTADA]
 - **Objetivo general:** diseñar y evaluar un enfoque híbrido (modelos
   probabilísticos + aprendizaje supervisado) para predecir el desplazamiento
-  diario de *Larus fuscus* a partir de datos GPS, con una métrica probabilística
-  común y baselines explícitas.
+  diario de *Larus fuscus* a partir de datos GPS. **Énfasis comparativo** (interés
+  central, instrucción de la tutora): comparar de forma sistemática las distintas
+  soluciones desarrolladas, con una métrica probabilística común y frente a
+  baselines explícitas (persistencia + Markov).
 - **Objetivos específicos** (5, descritos por contenido; NADA de jerga "O1/O2"):
   1. Construir, a partir de los registros GPS en bruto, una secuencia diaria
      homogénea por individuo, con los huecos representados de forma explícita.
@@ -113,9 +115,14 @@
   4. Predecir la posición del día siguiente con modelos supervisados que integran
      el comportamiento detectado y variables por individuo, sin fuga de
      información.
-  5. Cartografiar las predicciones de forma interactiva y analizar la estructura
-     espacial y estacional del error.
-- Cada objetivo específico remite (con `\ref`) a su capítulo (3–7).
+  5. Desarrollar una herramienta de cartografía interactiva para visualizar y
+     comparar sobre el mapa los resultados de los modelos. (El análisis de la
+     estructura espacial/estacional del error se retiró del objetivo por decisión
+     del autor.)
+- **Sin `\ref` a capítulos en la lista de objetivos** (decisión del autor,
+  coherente con haber quitado "Estructura de la memoria"): los objetivos se
+  describen por contenido y el índice mapea los capítulos. Evita además `??` a
+  capítulos aún sin redactar (`ch:o3/o4/o5`).
 
 > **Sin sección "Estructura de la memoria"** (decisión del autor): el índice ya
 > cumple esa función de mapa, y la lógica narrativa entre capítulos la da la
