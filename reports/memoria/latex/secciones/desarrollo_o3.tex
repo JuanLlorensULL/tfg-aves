@@ -83,3 +83,72 @@ vegetación se mantienen separadas, porque la baja (pastos, cultivos) y la alta 
 son biomas distintos que sumar en una sola variable confundiría. La comparación entre ambos modelos se resuelve en la sección
 \ref{sec:o3-resultados}; hasta entonces, el que incorpora el contexto es el de
 referencia.
+
+\section{Especificación y ajuste del modelo}
+\label{sec:o3-modelo}
+
+El estado oculto emite las observaciones mediante densidades gaussianas con covarianza
+diagonal (capítulo \ref{ch:preliminares}, ecuación \ref{eq:prelim-emision}): cada estado
+tiene su propia media y su propia varianza en cada variable, sin modelar correlaciones
+entre ellas. Es la elección habitual en los modelos ocultos de Markov aplicados al
+movimiento animal \cite{patterson2017}, más estable numéricamente que una covarianza
+completa y, sobre todo, más legible, pues la varianza por variable se interpreta
+directamente. Los parámetros se estiman con el algoritmo de Baum-Welch (sección
+\ref{sec:prelim-hmm}), que al ser un método de esperanza-maximización converge a óptimos
+locales; para mitigarlo, el ajuste se inicializa con k-means y se repite diez veces con
+semillas distintas, conservando el modelo de mayor verosimilitud en entrenamiento. Como
+la implementación asigna a los dos estados etiquetas internas arbitrarias según la
+semilla, tras el ajuste se reordenan de forma determinista: el estado con menor
+desplazamiento medio (\texttt{step\_in\_km}) recibe la etiqueta \emph{estacionario} y el
+otro, \emph{migración}, una regla biológicamente correcta y estable entre ejecuciones.
+
+El número de estados se fija en dos. Un tercer estado, que cabría interpretar como un
+régimen de forrajeo, no llega a aislar ese comportamiento: en lugar de separarlo, parte
+el régimen estacionario en dos agrupaciones casi inmóviles (del orden de 1 y de 14 km
+diarios) que juntas reúnen cerca del 90\,\% de los días, mientras la migración apenas
+cambia (figura \ref{fig:o3-nstates}). El estado añadido introduce ruido dentro del
+comportamiento sedentario sin describir un régimen nuevo, así que la partición en
+estacionario y migración es la que conserva la señal de comportamiento.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o3_fig01_nstates-decision.png}
+  \caption[Número de estados ocultos]{Proporción de observaciones (ave, día) asignada a
+  cada estado del modelo cinemático con dos y con tres estados, con el desplazamiento
+  medio del estado entre paréntesis. Con dos estados se separa un régimen estacionario
+  (unos 6 km diarios, el 85,6\,\% de los días) de uno de migración (del orden de 170 km,
+  el 14,4\,\%). Con tres estados no aparece un comportamiento nuevo: el estado adicional
+  fragmenta el régimen estacionario en dos agrupaciones casi inmóviles (en torno a 1 y a
+  14 km diarios) que reúnen cerca del 90\,\% de los días, mientras la migración apenas
+  cambia. Se adoptan dos estados.}
+  \label{fig:o3-nstates}
+\end{figure}
+
+Las variables entran al modelo en sus unidades originales, sin estandarizar y sin
+comprimir el desplazamiento con un logaritmo. La razón es que el desplazamiento es
+precisamente la variable que separa los dos regímenes, y lo hace por su escala: sus dos
+modos, el sedentario y el migratorio, distan dos órdenes de magnitud, uno de pocos
+kilómetros y otro de cientos. Estandarizar igualaría las varianzas de todas las variables
+y comprimir con un logaritmo reduciría esa separación natural a un factor pequeño, con lo
+que la inicialización por k-means dejaría de agrupar por desplazamiento y pasaría a
+hacerlo por la combinación de las variables de contexto, que codifican estación y bioma.
+Una versión preliminar que sí estandarizaba lo confirmó: producía estados que
+clasificaban como migración casi todos los días de pleno invierno, cuando la especie
+permanece en sus áreas de invernada, una incoherencia biológica que delató el problema.
+Conservar la escala en kilómetros, como ya había observado una iteración anterior del
+trabajo, devuelve al desplazamiento el papel dominante que le corresponde; el contraste
+entre el modelo cinemático y el que añade contexto sirvió además para confirmar que la
+separación nace del movimiento y no del entorno.
+
+Ajustado el modelo, el estado de cada día se infiere por filtrado (la distribución
+$P(\text{estado}_t \mid O_{1:t})$, que usa solo la observación pasada y presente, sección
+\ref{sec:prelim-hmm}) y no por suavizado, que emplearía toda la secuencia incluido el
+futuro. La distinción importa porque este estado se usará como variable de entrada de los
+modelos predictivos del capítulo \ref{ch:o4}: un estado decodificado mirando al futuro
+filtraría en la predicción información del desplazamiento que se quiere anticipar. El
+resultado se materializa en un único entregable, \texttt{features.parquet}, con la
+etiqueta de estado y las probabilidades posteriores de cada régimen para los dos modelos,
+junto con una partición temporal por ave (los primeros días de cada individuo para el
+ajuste y el último 20\,\% para prueba, separados en el tiempo para no mezclar días
+contiguos) que los capítulos siguientes reutilizan sin recalcular. Todo el proceso, del
+cálculo de las variables a la escritura, lo encadena un único orquestador reproducible.

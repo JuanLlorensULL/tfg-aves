@@ -77,10 +77,14 @@ planteamiento se integra en un preámbulo de ~4 párrafos tras `\chapter`, que c
 - `GaussianHMM`, `covariance_type='diag'` (remite a eq. `eq:prelim-emision`;
   práctica estándar en movimiento animal, Patterson et al. 2017 / moveHMM;
   just. 9.3).
-- `n_components = 2`: barrido D1 (**fig01**). AIC/BIC decrecen monótonamente con
-  n (171 171 → 150 569 → 147 450 en AIC para n=2,3,4), pero n>2 no admite
-  etiquetado biológico claro con las features disponibles; n=2 alinea con la
-  pregunta binaria y maximiza interpretabilidad (9.7).
+- `n_components = 2`: justificación breve, respaldada por **fig01 regenerada**
+  (`o3_fig01_nstates-decision`: proporciones por estado n=2 vs n=3). Recalculado
+  sobre datos reales (modelo A):
+  con n=3 el estado "forrajeo" no se aísla; el régimen estacionario se parte en
+  dos agrupaciones casi inmóviles (μ≈0,7 km → 45,8 % y μ≈14 km → 43,7 %; juntas
+  ~90 %), mientras la migración (μ≈224 km) queda en 10,5 %. El estado extra es
+  ruido dentro del sedentario, no un régimen nuevo. (n=2: estac. 85,6 % / migr.
+  14,4 %.) Verificado el 2026-05-26 ajustando n=2 y n=3 con `fit_hmm_with_restarts`.
 - Ajuste: k-means init + 10 restarts EM, retención del mejor LL en train
   (9.4, 9.5). Re-etiquetado determinista por menor `μ[step_in_km]`
   (estacionario = menor desplazamiento; 9.6), para reproducibilidad.
@@ -101,11 +105,11 @@ planteamiento se integra en un preámbulo de ~4 párrafos tras `\chapter`, que c
   frases, remitiendo a la distinción filtrado/suavizado de §2.3. SIN narrar el
   arco "suavizado→filtrado" ni el 91,1 %.
 - Entregable (nota breve): `features.parquet` con estados, posteriores y columna
-  **`split`** (temporal por ave, 80/10/20; just. 9.8). O3 es la fuente única;
-  el cap. 6 y el cap. 7 la consumen sin recomputar.
+  **`split`** (temporal por ave: `train_frac=0.8`, `val_frac_of_train=0.1` →
+  **72 % train / 8 % val / 20 % test**; NO 80/10/20). O3 es la fuente única;
+  el cap. 6 y el cap. 7 la consumen sin recomputar (just. 9.8).
 - Nota de ingeniería breve: paquete `tfg_aves.hmm`, `build_o3()` reproducible
-  (`random_state=0`).
-- **Figura: fig01** (barrido n estados).
+  (`random_state=0`). Sin figura en esta sección.
 
 ### §5.3 Los estados descubiertos: resultados y validación biológica (`sec:o3-resultados`)
 - Medias gaussianas por estado (Modelo B causal): `μ[step]` **6,5 vs 162,7 km**
@@ -149,7 +153,7 @@ planteamiento se integra en un preámbulo de ~4 párrafos tras `\chapter`, que c
 
 | Fig | Artefacto | Sección | Estado |
 |---|---|---|---|
-| fig01 | nstates-aic-bic-sweep | §5.2 | **núcleo** (decisión n=2) |
+| fig01 | nstates-decision | §5.2 | **núcleo** (decisión n=2: proporciones por estado n=2 vs n=3) |
 | fig02 | features-by-state-a | §5.3 | **núcleo** (separación cinemática) |
 | fig04 | state-vs-biology | §5.3 | **núcleo** (validación estacional + justifica B) |
 | fig09 | all-birds-spatial-by-state | §5.3 | **núcleo** (validación espacial) |
@@ -160,7 +164,7 @@ planteamiento se integra en un preámbulo de ~4 párrafos tras `\chapter`, que c
 | fig08 | bird-trajectory-by-state | — | mención (1 ave; fig09 lo cubre) |
 | fig10 | state-proportion-pie | — | omitida (dato a texto) |
 
-Total núcleo: **4 figuras** (fig01, fig02, fig04, fig09). A vs B sin figura propia.
+Total núcleo: **4 figuras** (fig01 regenerada, fig02, fig04, fig09). A vs B sin figura propia.
 
 ## Bibliografía a añadir/usar (verificar metadatos)
 - `wikelski2015` (dataset Movebank) — ya `% verificar` en biblio.
