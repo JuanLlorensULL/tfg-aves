@@ -28,3 +28,46 @@ pasadas a modelarlas y anticipar posiciones futuras. Esa predicción exige combi
 herramientas de naturaleza distinta, en lugar de depender de un único modelo, por
 la dificultad ya señalada del problema. Las secciones siguientes presentan los
 fundamentos de las que emplea este trabajo.
+
+\section{Cadenas de Markov}
+\label{sec:prelim-markov}
+
+Una cadena de Markov es el modelo probabilístico más sencillo para una secuencia de
+estados en la que el futuro depende del pasado solo a través del presente. Aplicada
+al movimiento, describe el desplazamiento entre zonas discretas del espacio con
+pocos parámetros y una interpretación directa, lo que la convierte en una
+referencia natural frente a la que medir modelos más complejos.
+
+Formalmente, sea $\{X_t\}_{t \geq 0}$ un proceso estocástico que toma valores en un
+espacio de estados finito $S = \{1, \dots, N\}$. El proceso es una cadena de Markov
+de primer orden si satisface la propiedad de Markov, es decir, si el estado
+siguiente depende únicamente del estado actual y no de toda la historia previa:
+
+\begin{equation}
+  P(X_{t+1} = j \mid X_t = i,\, X_{t-1} = i_{t-1}, \dots, X_0 = i_0)
+  = P(X_{t+1} = j \mid X_t = i),
+  \label{eq:prelim-markov}
+\end{equation}
+
+para todo par de estados $i, j \in S$. Cuando esta probabilidad no depende del
+instante $t$, la cadena es homogénea y queda completamente determinada por la
+matriz de transición $P = (p_{ij})$, con $p_{ij} = P(X_{t+1} = j \mid X_t = i)$.
+Cada fila de $P$ es una distribución de probabilidad sobre los estados de destino,
+de modo que $p_{ij} \geq 0$ y $\sum_{j} p_{ij} = 1$ para todo estado de origen
+\cite{norris1997}. La probabilidad de transitar entre dos estados en $n$ pasos es
+la entrada correspondiente de la potencia $P^{n}$ (ecuaciones de
+Chapman-Kolmogorov), lo que permite propagar la distribución de estados a varios
+pasos vista.
+
+Las probabilidades de transición no se conocen de antemano, sino que se estiman a
+partir de las transiciones observadas. El estimador de máxima verosimilitud de
+$p_{ij}$ es la frecuencia relativa de las transiciones del estado $i$ al $j$,
+
+\begin{equation}
+  \hat{p}_{ij} = \frac{n_{ij}}{\sum_{k} n_{ik}},
+  \label{eq:prelim-mle}
+\end{equation}
+
+donde $n_{ij}$ es el número de transiciones observadas de $i$ a $j$. El capítulo
+\ref{ch:o2} parte de este estimador y lo ajusta para que los destinos aún no
+observados no reciban probabilidad nula.
