@@ -71,3 +71,65 @@ $p_{ij}$ es la frecuencia relativa de las transiciones del estado $i$ al $j$,
 donde $n_{ij}$ es el número de transiciones observadas de $i$ a $j$. El capítulo
 \ref{ch:o2} parte de este estimador y lo ajusta para que los destinos aún no
 observados no reciban probabilidad nula.
+
+\section{Modelos ocultos de Markov}
+\label{sec:prelim-hmm}
+
+Un modelo oculto de Markov (\textit{hidden Markov model}, HMM) extiende la cadena de
+Markov al caso en que el estado no se observa directamente. El proceso evoluciona
+entre estados ocultos según una cadena de Markov y, en cada instante, emite una
+observación que depende solo del estado actual. En el análisis del movimiento esto
+permite inferir un estado de comportamiento no observado (por ejemplo, reposo frente
+a desplazamiento activo) a partir de variables derivadas de la trayectoria, como la
+distancia recorrida o el cambio de rumbo; es un enfoque consolidado para segmentar
+trayectorias de animales \cite{langrock2012}.
+
+Un HMM con $K$ estados ocultos queda definido por dos procesos acoplados. La cadena
+oculta $\{S_t\}$, con $S_t \in \{1, \dots, K\}$, es una cadena de Markov gobernada
+por una distribución inicial $\pi$ y una matriz de transición $A = (a_{ij})$, con
+$a_{ij} = P(S_{t+1} = j \mid S_t = i)$. El proceso de observación $\{O_t\}$ se liga a
+los estados mediante las densidades de emisión $b_i(o) = P(O_t = o \mid S_t = i)$. El
+modelo descansa en dos supuestos de independencia condicional: la sucesión de estados
+es markoviana y cada observación depende únicamente del estado que la genera
+(figura \ref{fig:prelim-hmm}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{prelim_hmm.pdf}
+  \caption[Estructura de un modelo oculto de Markov]{Estructura de dependencias de un
+  modelo oculto de Markov. La cadena de estados ocultos $S_t$ evoluciona según la
+  matriz de transición $A$, y cada estado genera una observación $O_t$ a través de su
+  densidad de emisión. Las observaciones son condicionalmente independientes dado el
+  estado que las produce.}
+  \label{fig:prelim-hmm}
+\end{figure}
+
+Cuando las observaciones son continuas, como las variables del movimiento, las
+emisiones se modelan habitualmente con densidades gaussianas. Con covarianza
+diagonal, cada estado $i$ emite según
+
+\begin{equation}
+  b_i(o) = \mathcal{N}(o;\, \mu_i, \Sigma_i),
+  \label{eq:prelim-emision}
+\end{equation}
+
+con un vector de medias $\mu_i$ y una matriz de covarianza diagonal $\Sigma_i$ propios
+del estado; la diagonalidad supone que, fijado el estado, las componentes de la
+observación no covarían. Es la forma que adopta el capítulo \ref{ch:o3}.
+
+Sobre un HMM se plantean tres problemas canónicos \cite{rabiner1989}. El de
+\emph{evaluación} calcula la verosimilitud de una secuencia de observaciones,
+$P(O \mid \lambda)$, mediante el algoritmo \textit{forward}, que acumula de forma
+recursiva la probabilidad de las observaciones hasta cada instante. El de
+\emph{decodificación} busca la secuencia de estados que mejor explica las
+observaciones: el algoritmo de Viterbi entrega la secuencia globalmente más probable,
+mientras que el filtrado \textit{forward} proporciona, para cada instante, la
+distribución del estado dada la observación pasada y presente, $P(S_t \mid O_{1:t})$.
+El de \emph{aprendizaje} estima los parámetros $\lambda = (\pi, A, B)$ a partir de las
+observaciones, sin conocer los estados, mediante el algoritmo de Baum-Welch, una
+instancia del método de esperanza-maximización.
+
+La distinción entre filtrado (que usa solo el pasado y el presente) y suavizado (que
+usa toda la secuencia, incluido el futuro) es relevante para la predicción. El
+capítulo \ref{ch:o3} infiere el estado de comportamiento de cada día por filtrado,
+de modo que la detección no emplee información posterior al instante que se predice.
