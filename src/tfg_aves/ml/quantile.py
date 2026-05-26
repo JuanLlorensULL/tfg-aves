@@ -282,10 +282,11 @@ def build_regression_predictions(
     cells: pd.DataFrame,
     *,
     k_top: int = 3,
+    state_col: str = "state_b_causal",
 ) -> pd.DataFrame:
     """Ensambla predicciones con el MISMO esquema que la clasificación
     (true_cell, pred_cell_top1, pred_cell_topk, pred_prob_top1, pred_dist_km,
-    state_b_causal) MÁS columnas de regresión (pred_lat, pred_lon,
+    la columna de estado) MÁS columnas de regresión (pred_lat, pred_lon,
     dist_native_km, dlat_p*/dlon_p*, in_interval_lat, in_interval_lon).
 
     - pred_cell_top1 = celda contenedora del punto p50 (discretización).
@@ -333,7 +334,7 @@ def build_regression_predictions(
         "pred_cell_topk": topk,
         "pred_prob_top1": np.nan,
         "pred_dist_km": pred_dist_km,
-        "state_b_causal": meta["state_b_causal"].to_numpy(),
+        state_col: meta[state_col].to_numpy(),
         "pred_lat": pred_lat,
         "pred_lon": pred_lon,
         "dist_native_km": dist_native_km,

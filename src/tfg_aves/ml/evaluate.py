@@ -171,6 +171,7 @@ def evaluate_global(
 
 def compute_persistence_baseline(
     matrix_test: pd.DataFrame, *, cells: pd.DataFrame,
+    state_col: str = "state_b_causal",
 ) -> pd.DataFrame:
     """Persistencia trivial: mañana = hoy."""
     centroids = _cell_centroid_lookup(cells)
@@ -190,7 +191,7 @@ def compute_persistence_baseline(
                 strict=True,
             )
         ],
-        "state_b_causal": matrix_test["state_b_causal"].values,
+        state_col: matrix_test[state_col].values,
     })
 
 

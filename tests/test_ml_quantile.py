@@ -184,3 +184,28 @@ def test_build_regression_predictions_schema():
     assert {"state", "top1", "dist_median_km"}.issubset(tbl.columns)
     mo = evaluate_moves_only(preds, np.array([1, 0]))
     assert {"top1", "dist_median_km", "n_obs"}.issubset(mo)
+
+
+def test_build_regression_predictions_state_col_a():
+    """state_col='state_a_causal' emite esa columna en vez de state_b_causal."""
+    from tfg_aves.ml.quantile import build_regression_predictions
+
+    cells = pd.DataFrame({
+        "cell_id": ["80_-6", "80_-5"],
+        "lat_c": [40.25, 40.25], "lon_c": [-2.75, -2.25],
+    })
+    qp = pd.DataFrame({
+        "dlat_p10": [0.0], "dlat_p50": [0.05], "dlat_p90": [0.1],
+        "dlon_p10": [0.0], "dlon_p50": [0.05], "dlon_p90": [0.1],
+    })
+    meta = pd.DataFrame({
+        "bird_id": ["A"], "date_utc": pd.to_datetime(["2020-01-03"]),
+        "lat": [40.2], "lon": [-2.8],
+        "lat_t_next": [40.26], "lon_t_next": [-2.74],
+        "cell_id_t_next": ["80_-6"],
+        "state_a_causal": [1],
+    })
+    out = build_regression_predictions(qp, meta, cells, state_col="state_a_causal")
+    assert "state_a_causal" in out.columns
+    assert "state_b_causal" not in out.columns
+    assert out["state_a_causal"].tolist() == [1]
