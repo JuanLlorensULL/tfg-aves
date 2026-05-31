@@ -203,4 +203,287 @@ distribución es degenerada (asigna toda la masa a una celda) y no produce
 del trabajo persigue. La \emph{cadena de Markov de primer orden con estacionalidad
 mensual}, ajustada sobre el conjunto de entrenamiento de este capítulo, es el rival
 con distribución probabilística completa: un modelo no lineal supervisado debe, al
-menos, mejorarlo en \textit{log-loss} para justificar su mayor complejidad.
+menos, mejorarlo para justificar su mayor complejidad.
+
+\section{Predicción categórica de la celda}
+\label{sec:o4-categorica}
+
+La primera formulación es la natural por simetría con el capítulo \ref{ch:o2}: el
+objetivo de la predicción es la celda de 0,5\textdegree{} del día siguiente, tratada
+como una categoría más entre las 871 celdas activas que las posiciones del conjunto
+de entrenamiento ocupan en algún momento. La rejilla y el horizonte son los mismos
+que en la cadena de Markov, de modo que el \textit{top-1}, el \textit{top-3} y la
+distancia mediana del modelo supervisado son directamente comparables con los de los
+dos baselines. La pregunta operativa que esta sección responde no es sólo si el
+supervisado bate a los baselines, sino dónde y por qué falla, porque ese diagnóstico
+es el que motiva la reformulación de la sección \ref{sec:o4-cuantiles}.
+
+\subsection{Planteamiento del problema}
+\label{sec:o4-cat-planteamiento}
+
+Cada par (ave, día~$t$) del conjunto candidato de la sección \ref{sec:o4-datos} se
+convierte en un ejemplo de entrenamiento o de evaluación: la entrada son las diez
+variables de la sección \ref{sec:o4-features} en el día $t$, la etiqueta es el
+identificador de la celda que la posición de $t+1$ ocupa. Las tres familias de la
+sección \ref{sec:o4-modelos} se ajustan en modo \emph{poblacional}: un único modelo
+sobre las 82 aves, sin la identidad del individuo (\texttt{bird\_id}) entre las
+variables. La decisión es deliberada y se sostiene desde dos argumentos. El primero
+es de uso: el modelo poblacional cubre tanto a las aves ya observadas en
+entrenamiento como a un ave nueva no vista, y no hace falta un modelo distinto por
+individuo. El segundo es empírico, y se cierra en la sección
+\ref{sec:o4-cat-diagnostico}: un clasificador entrenado únicamente con los datos del
+ave de mayor histórico no supera al poblacional evaluado sobre las mismas
+observaciones, lo que indica que la distribución poblacional ya captura la
+heterogeneidad inter-individual sin necesidad de personalizar.
+
+\subsection{Resultados globales y descarte de LightGBM}
+\label{sec:o4-cat-globales}
+
+La comparativa global sobre el conjunto de prueba se resume en la tabla
+\ref{tab:o4-cat-globales} y se visualiza en la figura \ref{fig:o4-cat-modelos}. El
+bosque aleatorio y XGBoost rinden de forma casi indistinguible entre sí en las
+cuatro métricas y quedan en la misma banda; LightGBM, sobre los mismos datos, se
+separa visiblemente por uno o dos órdenes de magnitud en \textit{log-loss} y en
+distancia mediana, valores incompatibles con los de las otras dos familias.
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \begin{tabular}{lrrrr}
+    \toprule
+    \textbf{Modelo} & \textbf{\textit{top-1}} & \textbf{\textit{top-3}} & \textbf{\textit{log-loss}} & \textbf{Dist.\,mediana (km)}\\
+    \midrule
+    Persistencia       & 0,778 & 0,778 &       & 20,9 \\
+    Cadena de Markov   & 0,552 & 0,637 &       & 24,7 \\
+    Bosque aleatorio   & 0,576 & 0,732 & 5,49  & 24,1 \\
+    XGBoost            & 0,582 & 0,702 & 5,60  & 24,3 \\
+    LightGBM           & 0,359 & 0,579 & 13,12 & 147,7 \\
+    \bottomrule
+  \end{tabular}
+  \caption[Métricas globales sobre el conjunto de prueba]{Métricas globales sobre el
+  conjunto de prueba (3\,960 pares (ave, día), el último 20\,\% de los días de cada
+  ave). El \textit{log-loss} se computa sobre las 871 celdas activas del
+  entrenamiento; los baselines no producen una distribución comparable y se dejan en
+  blanco en esa columna. La distancia es la mediana entre el centroide de la celda
+  predicha y la posición real. La persistencia domina las cuatro métricas
+  comparables y LightGBM queda visiblemente separado por su divergencia en
+  validación interna (figura \ref{fig:o4-cat-curvas}).}
+  \label{tab:o4-cat-globales}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig04_models-comparison.png}
+  \caption[Comparativa global de los modelos supervisados y los baselines]{Métricas
+  globales sobre el conjunto de prueba (3\,960 pares (ave, día), $20\,\%$ último de
+  cada ave) de las tres familias supervisadas en modo poblacional (bosque aleatorio,
+  XGBoost y LightGBM) frente a los dos baselines del capítulo \ref{ch:o2}
+  (persistencia y cadena de Markov de primer orden). Los cinco paneles muestran, de
+  izquierda a derecha, el \textit{top-1} y el \textit{top-3} globales, la mediana de
+  la distancia en kilómetros, el \textit{log-loss} sobre las 871 celdas activas y el
+  \textit{top-1} restringido a los días en los que el ave cambia efectivamente de
+  celda. La persistencia domina las métricas globales y LightGBM queda
+  visiblemente separado por su \textit{log-loss} y su distancia anómalos, coherentes
+  con la divergencia diagnosticada en la figura \ref{fig:o4-cat-curvas}.}
+  \label{fig:o4-cat-modelos}
+\end{figure}
+
+La separación de LightGBM no es una variabilidad estadística sino un fallo de ajuste
+diagnosticable, que la figura \ref{fig:o4-cat-curvas} expone. La curva del
+\textit{log-loss} sobre la validación interna empieza ya por encima del valor que
+daría una distribución uniforme sobre las 871 celdas ($\log 871 \approx 6{,}77$) y
+sube de forma monótona desde la primera iteración hasta estabilizarse en torno a 30,
+lo que activa la parada temprana en la iteración 1; XGBoost, sobre los mismos datos y
+con un esquema de regularización análogo, desciende como cabe esperar y se detiene en
+torno a la iteración 330. La interpretación es que la configuración conservadora de
+LightGBM, pensada para evitar el sobreajuste sobre datos tabulares de complejidad
+moderada, no extrae señal generalizable de un objetivo de muy alta cardinalidad y
+distribución desbalanceada como el del problema categórico aquí planteado: con 871
+clases activas en entrenamiento y un peso fuertemente desigual entre ellas, las hojas
+de pequeño soporte y la división del crecimiento por hojas que caracterizan a
+LightGBM no consiguen aproximar la distribución condicional, mientras que el
+crecimiento por niveles y la regularización explícita de XGBoost sí lo hacen. La
+familia se descarta como candidato sobre la formulación categórica; en la sección
+\ref{sec:o4-cuantiles}, cuando el objetivo deja de ser categórico, vuelve a ser
+viable y se reincorpora a la comparativa.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig03_learning-curves.png}
+  \caption[Curvas de aprendizaje sobre la validación interna]{Evolución del
+  \textit{log-loss} sobre la validación interna a lo largo de las iteraciones de
+  \textit{boosting} para XGBoost (izquierda) y LightGBM (derecha), en modo
+  poblacional. La línea vertical punteada marca la iteración en la que la parada
+  temprana (paciencia de 50) detiene el entrenamiento. XGBoost desciende
+  monótonamente hasta estabilizarse en torno a la iteración 330; LightGBM, en
+  cambio, arranca ya por encima del valor de una distribución uniforme sobre las 871
+  clases activas ($\log 871 \approx 6{,}77$) y crece sin pausa, lo que indica que su
+  configuración conservadora no extrae señal generalizable de este objetivo
+  multiclase de alta cardinalidad y distribución desbalanceada.}
+  \label{fig:o4-cat-curvas}
+\end{figure}
+
+\subsection{Dónde y por qué falla el modelo}
+\label{sec:o4-cat-error}
+
+La lectura global de la tabla \ref{tab:o4-cat-globales} es asimétrica según el rival.
+Frente a la cadena de Markov, las dos familias supervisadas que quedan ganan en las
+tres métricas comparables (\textit{top-1}, \textit{top-3} y distancia mediana), con
+una mejora modesta pero consistente que confirma que las variables del HMM y la no
+linealidad del modelo aportan algo sobre la transición monoparamétrica de Markov.
+Frente a la persistencia, en cambio, los dos modelos supervisados pierden en todas
+las métricas globales: la persistencia iguala su \textit{top-1} con su \textit{top-3}
+(su distribución es degenerada, asigna toda la masa a una celda y los dos coinciden)
+y, aun así, supera al mejor supervisado por 20 puntos en \textit{top-1} y por
+3\,km en distancia mediana. El \textit{log-loss} del mejor supervisado (5,49) es
+informativo en términos absolutos (mejor que el 6,77 de una distribución uniforme
+sobre las 871 clases activas), pero la persistencia no produce distribución
+comparable y no participa en esa columna.
+
+La asimetría tiene una causa estructural directa: en el conjunto de prueba el ave
+permanece en la misma celda el 77,8\,\% de los días, una moda absoluta del objetivo
+que la persistencia explota por construcción y que cualquier modelo que asigne masa a
+un movimiento paga proporcionalmente en \textit{top-1}. Es la geometría del problema
+antes que el algoritmo. El desglose por régimen del HMM y por movimiento real, en la
+tabla \ref{tab:o4-cat-estado} y en la figura \ref{fig:o4-cat-estado}, refina esta
+lectura.
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \begin{tabular}{lcccccc}
+    \toprule
+     & \multicolumn{2}{c}{\textbf{Estacionario}} & \multicolumn{2}{c}{\textbf{Migración}} & \multicolumn{2}{c}{\textbf{Movim.~real}}\\
+     & \multicolumn{2}{c}{$n=3\,509$} & \multicolumn{2}{c}{$n=451$} & \multicolumn{2}{c}{$n=880$}\\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+    \textbf{Modelo} & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med.\\
+    \midrule
+    Persistencia       & 0,841 & 19,5 & 0,284 &  52 & 0,000 & 44 \\
+    Cadena de Markov   & 0,607 & 23,7 & 0,120 & 1\,068 & 0,089 & 79 \\
+    Bosque aleatorio   & 0,632 & 23,0 & 0,137 & 205 & 0,164 & 56 \\
+    XGBoost            & 0,639 & 23,1 & 0,140 & 154 & 0,175 & 55 \\
+    \bottomrule
+  \end{tabular}
+  \caption[Acierto y distancia desagregados por régimen del HMM y por movimiento
+  real]{Acierto (\textit{top-1}) y mediana de la distancia en kilómetros sobre el
+  conjunto de prueba, desagregados por el régimen del HMM causal (\emph{estacionario}
+  y \emph{migración}, según \texttt{state\_b\_causal} del capítulo \ref{ch:o3}) y
+  restringidos a los días en que la celda de $t+1$ difiere de la de $t$
+  (\emph{movim.~real}). Se omite LightGBM, descartado en la sección anterior. La
+  persistencia bate al supervisado también dentro del régimen de migración del HMM;
+  el margen del supervisado vive en los días de movimiento real, donde la
+  persistencia acierta cero por construcción.}
+  \label{tab:o4-cat-estado}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig07_error-by-state-poblacional.png}
+  \caption[Error desagregado por régimen del HMM]{Acierto del modelo poblacional
+  (XGBoost) desagregado por el régimen del HMM causal del capítulo \ref{ch:o3}, en
+  el conjunto de prueba. El régimen \emph{estacionario} cubre 3\,509 días
+  (88,6\,\% del conjunto) y el régimen \emph{migración}, 451 días (11,4\,\%). El
+  \textit{top-1} cae de 0,64 en estacionario a 0,14 en migración; el patrón es el
+  mismo para el bosque aleatorio (tabla \ref{tab:o4-cat-estado}). Los días informativos
+  para la predicción son una minoría y son precisamente donde el modelo pierde casi
+  toda su capacidad predictiva.}
+  \label{fig:o4-cat-estado}
+\end{figure}
+
+Dos lecturas. La primera, la propia caída en migración: el \textit{top-1} de los
+supervisados se desploma de 0,64 a 0,14 entre los dos regímenes, y la distancia
+mediana cuando fallan se dispara de 23 a más de 150\,km. Los días informativos para
+la predicción son la minoría y son precisamente donde el modelo pierde casi toda su
+capacidad predictiva. La segunda, que la persistencia bate al supervisado también
+dentro del régimen de migración del HMM, podría parecer contradictoria con la
+motivación de incorporar el régimen como variable, pero es coherente con la
+definición causal del estado: la etiqueta \texttt{state\_b\_causal} se asigna a
+partir del paso \emph{entrante} ($t\!-\!1 \to t$), de modo que un día puede
+pertenecer al régimen de migración por haber llegado tras un desplazamiento grande,
+sin que el ave haya iniciado otro desplazamiento durante $t$ ni vaya a iniciarlo en
+$t+1$. En esos días, una fracción importante de los 451 marcados como migración, la
+persistencia sigue acertando.
+
+El espacio donde un modelo predictivo aporta algo que la persistencia no puede dar
+por construcción es, por tanto, el de los \emph{días de movimiento real}: los 880
+días del conjunto de prueba en los que la celda de $t+1$ difiere de la de $t$
+(el 22,2\,\% del total). Allí la persistencia acierta cero \textit{top-1} y los
+supervisados aciertan entre 0,16 y 0,18, con una distancia mediana cuando fallan en
+torno a los 55\,km (una celda y media de la rejilla, frente a los 79\,km de Markov).
+El margen es modesto, pero existe; es el único contexto en el que el modelo
+supervisado supera al baseline trivial.
+
+\subsection{De dónde sale la señal}
+\label{sec:o4-cat-importancia}
+
+La descomposición por importancia relativa de las variables, en la figura
+\ref{fig:o4-cat-importancia}, ordena cuantitativamente las tres fuentes de
+información de las que dispone el modelo. La posición acapara la mayor parte: la
+latitud y la longitud suman 0,75 de la importancia normalizada en el modelo
+poblacional, lo que reproduce numéricamente la dominación del régimen estacionario
+detectada en la sección anterior. El bloque de variables del HMM contribuye 0,05
+(la probabilidad de migración) más 0,03 (la etiqueta de estado), una suma modesta
+pero coherente: el aporte del HMM al modelo supervisado pasa principalmente por la
+\emph{probabilidad blanda} del régimen, que matiza el comportamiento del clasificador
+en la franja ambigua entre los días claramente estacionarios y los claramente
+migratorios, mientras que la \emph{etiqueta dura} del estado, que en su mayor parte
+sólo replica información ya recogida en la probabilidad, pesa poco más de la mitad que
+aquella y no llega a ser determinante. El bloque del ciclo anual (seno y coseno del
+día del año) suma 0,09 y la cinemática entrante (desplazamiento, rumbo y giro)
+alrededor de 0,09. Las variables del HMM, por tanto, están en el mismo orden de
+magnitud que el ciclo anual y la cinemática: aportan señal real al supervisado,
+modesta y principalmente a través del posterior blando.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig09_feature-importance-winners.png}
+  \caption[Importancia relativa de las variables]{Importancia relativa de las diez
+  variables predictivas para el modelo poblacional (XGBoost, izquierda) y para el
+  bosque aleatorio entrenado únicamente con el ave 91916A (derecha; ver
+  \ref{sec:o4-cat-diagnostico}). En ambos casos la posición (latitud y longitud)
+  acapara la mayor parte de la importancia (0,75 en el poblacional, 0,63 en el
+  modelo individual). Las variables del HMM aportan 0,05 (probabilidad de migración)
+  más 0,03 (etiqueta de estado) en el modelo poblacional y suben a 0,13 más 0,004
+  en el modelo individual, donde la señal geográfica se reduce y el régimen blando
+  pasa a tener un peso mayor. La etiqueta dura del estado pesa siempre menos que la
+  probabilidad blanda; el aporte del HMM al supervisado pasa principalmente por esta última.}
+  \label{fig:o4-cat-importancia}
+\end{figure}
+
+\subsection{Diagnóstico del techo y cierre del alcance}
+\label{sec:o4-cat-diagnostico}
+
+La formulación categórica permite, por tanto, situar dos causas estructurales del
+techo de rendimiento que las dos secciones siguientes recogen. La primera es que el
+objetivo categórico desperdicia la geometría del espacio: un error que predice una
+celda vecina (un desplazamiento de unas decenas de kilómetros) se penaliza
+exactamente igual que un error que predice una celda en el otro extremo del dominio
+(varios miles), y el modelo no recibe ninguna información sobre la distancia entre
+clases en su función de pérdida. Bajo esta restricción, los días de movimiento real
+quedan condenados a un \textit{top-1} bajo, porque acertar la celda exacta de
+destino es un problema más estricto que predecir la dirección y la magnitud del
+desplazamiento. La sección \ref{sec:o4-cuantiles} reformula el objetivo justamente
+para devolverle al modelo la información geométrica que la formulación categórica
+descarta. La segunda causa es de horizonte y de variables: a un día con variables
+locales (posición, cinemática del tramo entrante, ciclo anual y régimen del HMM) le
+falta el predictor causal de un evento migratorio (la disponibilidad de vientos
+favorables, la historia multi-día del desplazamiento, el destino al que el ave se
+dirige), y ninguna combinación de algoritmo y arquitectura puede inventar lo que las
+variables no contienen. Esta segunda causa es común a las dos formulaciones del
+capítulo y se argumenta de forma cuantitativa, ya con los resultados de ambas a la
+vista, en la sección \ref{sec:o4-sintesis}.
+
+Un último apunte sobre el alcance del entrenamiento cierra esta sección y deja
+zanjada la elección poblacional anunciada en la sección
+\ref{sec:o4-cat-planteamiento}. Un bosque aleatorio entrenado únicamente con los
+1\,458 días de entrenamiento del ave de mayor histórico (91916A) y evaluado sobre
+sus 406 días de prueba alcanza un \textit{top-1} de 0,660 y un \textit{log-loss} de
+4,33; el modelo poblacional restringido a las mismas 406 observaciones obtiene
+\textit{top-1} 0,653 y \textit{log-loss} 2,72, prácticamente igual en acierto y
+sensiblemente mejor en calidad probabilística. La heterogeneidad inter-individual
+que el capítulo \ref{ch:o1} anticipaba y el capítulo \ref{ch:o3} cuantificaba existe,
+pero la distribución poblacional ya la captura tan bien como un modelo dedicado al
+individuo con más datos posible, sin la complejidad ni la falta de escalabilidad de
+entrenar un modelo por ave. La formulación continua de la sección siguiente confirma
+este resultado con un experimento análogo y diferente, y la sección
+\ref{sec:o4-sintesis} consolida el cierre.
