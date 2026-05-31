@@ -794,3 +794,42 @@ al individuo más favorable tan bien como un modelo dedicado, y la heterogeneida
 inter-individual del conjunto, real, no justifica el coste de entrenar un modelo por
 ave ni la pérdida de escalabilidad a las 80 aves con menos histórico. El modelo
 canónico del capítulo, en sus dos formulaciones, es el poblacional.
+
+\section{Síntesis y entrega al capítulo siguiente}
+\label{sec:o4-sintesis}
+
+El capítulo ha planteado dos formulaciones del mismo problema de predicción del
+movimiento diario y las ha comparado contra los dos baselines heredados del
+capítulo \ref{ch:o2}. La formulación categórica caracteriza el techo del enfoque y
+diagnostica sus causas; la formulación continua corrige la limitación geométrica de
+la primera y entrega, además, una banda de incertidumbre interpretable. En las dos,
+el modelo canónico es el poblacional: las pruebas con un clasificador y un regresor
+entrenados únicamente con el ave de mayor histórico convergen en la misma
+conclusión y cierran la decisión global vs per-individuo que el capítulo
+\ref{ch:o1} dejó sembrada y el capítulo \ref{ch:o3} arrastró.
+
+Las dos formulaciones convergen también en un mismo límite, que el capítulo no
+puede salvar y que merece nombrarse con precisión: la predicción a un horizonte de
+un día con variables locales no contiene el predictor causal de un evento
+migratorio (la disponibilidad de vientos favorables, la historia multi-día del
+desplazamiento, el destino al que el ave se dirige). No es una limitación del
+algoritmo (la convergencia entre las tres familias sobre la regresión de cuantiles
+de la sección \ref{sec:o4-q-precision} lo confirma) ni de la formulación del
+objetivo (la regresión continua recupera ya la información geométrica que la
+clasificación descartaba): es del planteamiento del problema a esta escala. El
+trabajo futuro que se deriva es el de incorporar esas tres piezas (las variables de
+viento ECMWF descartadas en el capítulo \ref{ch:o1}, la historia multi-día como
+secuencia de entrada y una noción explícita del destino), todas fuera del alcance
+temporal del trabajo.
+
+El producto que el capítulo entrega al capítulo \ref{ch:o5} es la predicción del
+modelo recomendado (la regresión de cuantiles con LightGBM en modo poblacional, con
+XGBoost como alternativa equivalente) sobre el conjunto de prueba: para cada par
+(ave, día) un punto $(\mathrm{lat}_t + p_{50,\mathrm{lat}}, \mathrm{lon}_t +
+p_{50,\mathrm{lon}})$, un intervalo $[p_{10}, p_{90}]$ por componente con cobertura
+empírica próxima al 80\,\% nominal, y la etiqueta de régimen del HMM causal del
+capítulo \ref{ch:o3}. Los mapas del capítulo siguiente cartografían sobre esos tres
+elementos el error de la predicción y lo estratifican por régimen y por mes, lo que
+cierra la cadena Markov $\to$ HMM $\to$ predicción supervisada con la
+visualización del comportamiento del modelo allí donde el error existe y allí donde
+no.
