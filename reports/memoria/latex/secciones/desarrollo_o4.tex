@@ -1,0 +1,206 @@
+\chapter{Predicción supervisada del movimiento diario}
+\label{ch:o4}
+
+El capítulo anterior cerró con un modelo no supervisado que separaba los dos regímenes
+de comportamiento de \textit{Larus fuscus}, los días sedentarios de los de migración,
+pero que no predecía dónde estaría el ave al día siguiente. Este capítulo retoma esa
+pregunta, ya pendiente desde el final del capítulo \ref{ch:o2}, y la responde con
+modelos supervisados que combinan tres fuentes de información: la posición diaria del
+capítulo \ref{ch:o1}, la cinemática del tramo recién recorrido y la etiqueta de
+régimen producida por el HMM del capítulo \ref{ch:o3}. La pregunta concreta es la
+misma que en la cadena de Markov visible, dado dónde está hoy el ave, ¿dónde estará
+mañana?, pero la respuesta dispone ahora de variables adicionales y de algoritmos no
+lineales, y se evalúa contra los dos mismos rivales: la persistencia trivial y la
+cadena de Markov de primer orden.
+
+El capítulo plantea dos formulaciones del problema. La primera es la natural por
+simetría con el capítulo de Markov, una clasificación de la celda del día siguiente
+sobre la misma rejilla de 0,5\textdegree; sirve para caracterizar el techo del
+enfoque y diagnosticar dónde falla. La segunda reformula el objetivo como una
+regresión continua del desplazamiento diario y añade una banda de incertidumbre
+interpretable, que es la salida natural para llevar la predicción a un mapa. Las dos
+formulaciones se entrenan sobre las mismas variables y la misma partición temporal y
+se comparan contra los mismos baselines, de modo que cualquier diferencia entre ellas
+es atribuible al planteamiento del problema y no a la preparación de los datos.
+
+El producto del capítulo, una predicción por ave y día con su banda de incertidumbre,
+alimenta los mapas del capítulo \ref{ch:o5}, que cartografían el error y lo
+estratifican por régimen y por mes. La preparación común a las dos formulaciones
+(datos, variables, familias, métricas y baselines) se fija en la sección
+\ref{sec:o4-diseno} y no se vuelve a tocar; las dos formulaciones se desarrollan en
+las secciones \ref{sec:o4-categorica} y \ref{sec:o4-cuantiles}, y la
+\ref{sec:o4-sintesis} consolida el techo común y deja definido lo que recibe el
+capítulo siguiente.
+
+\section{Datos, variables y diseño experimental}
+\label{sec:o4-diseno}
+
+\subsection{Entrada y partición temporal}
+\label{sec:o4-datos}
+
+Las dos formulaciones del capítulo parten de los mismos dos entregables: la tabla
+diaria del capítulo \ref{ch:o1} (una posición por ave y día natural, con los huecos
+representados de forma explícita) y la tabla de cinemática y régimen del capítulo
+\ref{ch:o3} (la cinemática entrante de cada día, la etiqueta de estado del HMM causal
+y su probabilidad asociada, más la columna \texttt{split} que asigna cada fila a
+entrenamiento, validación o prueba). La partición temporal del HMM se reutiliza
+intacta, sin volver a inducirla, para garantizar que el HMM y los modelos
+supervisados se evalúan sobre los mismos días futuros de las mismas aves.
+
+Sobre esa unión se construye el conjunto candidato del capítulo. Cada fila es un par
+(ave, día $t$) con su día siguiente $t+1$ disponible: el día $t$ debe tener
+cinemática válida del HMM, su posición y la de $t+1$ deben caer en una celda activa
+de la rejilla del capítulo \ref{ch:o2}, y el día $t+1$ debe ser el día natural
+inmediatamente posterior al $t$ (los pares que atraviesan un hueco calendario se
+descartan, para evitar que el modelo aprenda transiciones inexistentes). El resultado
+son 20\,188 pares candidatos, repartidos en 14\,598 de entrenamiento, 1\,630 de
+validación interna y 3\,960 de prueba, una proporción 72/8/20 que las 82 aves
+mantienen en los tres subconjuntos. Sobre estos pares se entrenan y se evalúan todos
+los modelos del capítulo, supervisados y baselines, de modo que la comparación es en
+igualdad estricta.
+
+La elección de partición es deliberada. La alternativa más exigente, dejar fuera del
+entrenamiento todas las observaciones de un ave (\textit{leave-one-bird-out}),
+reproduce el fallo diagnosticado en el capítulo \ref{ch:o2}: en ese protocolo, una
+fracción importante de los orígenes del conjunto de prueba no estaba representada en
+el entrenamiento y la cadena de Markov caía a la distribución marginal del mes. La
+partición temporal por ave que se adopta aquí evalúa, en cambio, el escenario
+operativo del capítulo \ref{ch:o5}: predecir el futuro próximo de aves cuyo
+comportamiento histórico se ha observado en el pasado. En este protocolo, la fracción
+de orígenes del conjunto de prueba que el entrenamiento no ha visto baja al 10,7\,\%
+(y la de destinos no vistos al 11,1\,\%), lo que sitúa al modelo en un régimen
+razonable para juzgar su capacidad predictiva real, sin el sesgo pesimista del
+\textit{leave-one-bird-out} ni el optimista de una partición aleatoria.
+
+\subsection{Variables predictivas}
+\label{sec:o4-features}
+
+El modelo dispone de diez variables, que se agrupan en tres bloques. La posición
+actual del ave aporta el contexto geográfico (\texttt{lat}, \texttt{lon}). El ciclo
+anual se codifica con una pareja de variables cíclicas
+($\sin\!\tfrac{2\pi\, \mathrm{doy}}{365}$, $\cos\!\tfrac{2\pi\, \mathrm{doy}}{365}$,
+donde \textit{doy} es el día del año), que evita la discontinuidad artificial del 31
+de diciembre al 1 de enero. El movimiento reciente se resume con la cinemática del
+tramo entrante $t\!-\!1 \!\to\! t$ del capítulo \ref{ch:o3}, ya definida allí en sus
+términos: el desplazamiento del tramo (\texttt{step\_in\_km}), su dirección codificada
+como seno y coseno del rumbo (\texttt{sin\_bearing\_in}, \texttt{cos\_bearing\_in}) y
+el coseno del giro respecto al tramo anterior (\texttt{cos\_turning\_in}). Y la salida
+del HMM aporta el régimen como dos variables, la etiqueta de estado
+(\texttt{state\_b\_causal}) y la probabilidad de migración del día
+(\texttt{posterior\_b\_migracion\_causal}), ambas decodificadas por filtrado
+\textit{forward-only}.
+
+Todas las variables respetan un mismo criterio de diseño: ninguna observa el día
+$t+1$ que se quiere predecir. Es un criterio firme. Una variable que dependa de la
+posición de $t+1$ filtra el objetivo y produce métricas optimistas que no
+corresponden al uso real del modelo, en el que el día $t+1$ aún no se ha observado.
+La cinemática entrante satisface el criterio porque resume el movimiento ya
+recorrido hasta el final del día $t$, la inercia real con la que el ave llega al
+arranque del día siguiente; la cinemática \emph{saliente} ($t \!\to\! t\!+\!1$), en
+cambio, lo violaría. La etiqueta de régimen del HMM también lo satisface por la
+construcción causal del capítulo \ref{ch:o3}: el filtrado \textit{forward-only} computa
+la probabilidad del estado en $t$ a partir únicamente de las observaciones hasta $t$,
+sin mirar al futuro.
+
+\subsection{Familias supervisadas y configuración}
+\label{sec:o4-modelos}
+
+El capítulo compara las tres familias de aprendizaje basadas en árboles introducidas
+en el capítulo \ref{ch:preliminares}, sección \ref{sec:prelim-ml}: bosques aleatorios
+\cite{breiman2001}, XGBoost \cite{chen2016} y LightGBM \cite{ke2017}. Es la
+comparativa comprometida en la introducción y la que cierra la simetría con los
+modelos no supervisados de los capítulos anteriores: tres algoritmos de capacidad
+similar, ajustados al mismo problema, los mismos datos y la misma métrica.
+
+Cada familia se entrena con una configuración fija y conservadora de hiperparámetros,
+sin barrido por rejilla. La configuración se resume en la tabla
+\ref{tab:o4-hyperparams}. El criterio es metodológico, no de comodidad: un barrido por
+rejilla optimiza el rendimiento sobre el conjunto de validación interna, lo que
+introduce un sesgo de selección sobre esa misma validación que infla las métricas
+reportadas y dificulta separar la mejora real del azar entre configuraciones próximas.
+El control del sobreajuste se delega aquí en tres mecanismos independientes: los
+hiperparámetros conservadores (profundidad acotada, hojas con soporte mínimo y muestreo
+estocástico de filas y columnas en \textit{boosting}), la parada temprana basada en la
+validación interna (los modelos de \textit{boosting} fijan un máximo de 1\,000
+iteraciones y detienen el entrenamiento si la pérdida en validación no mejora en 50
+iteraciones consecutivas) y el diagnóstico explícito de la diferencia entre el error
+en entrenamiento y en validación.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Familia} & \textbf{Hiperparámetro} & \textbf{Valor} \\
+    \midrule
+    \multirow{3}{*}{Bosque aleatorio}
+      & \texttt{n\_estimators}    & 300 \\
+      & \texttt{max\_depth}       & 12 \\
+      & \texttt{min\_samples\_leaf} & 10 \\
+    \midrule
+    \multirow{6}{*}{XGBoost}
+      & \texttt{learning\_rate}   & 0,05 \\
+      & \texttt{max\_depth}       & 6 \\
+      & \texttt{min\_child\_weight} & 10 \\
+      & \texttt{subsample}        & 0,8 \\
+      & \texttt{colsample\_bytree} & 0,8 \\
+      & \texttt{n\_estimators}    & 1\,000 con parada temprana a 50 \\
+    \midrule
+    \multirow{5}{*}{LightGBM}
+      & \texttt{learning\_rate}   & 0,05 \\
+      & \texttt{num\_leaves}      & 31 \\
+      & \texttt{min\_child\_samples} & 20 \\
+      & \texttt{subsample} / \texttt{colsample\_bytree} & 0,8 / 0,8 \\
+      & \texttt{n\_estimators}    & 1\,000 con parada temprana a 50 \\
+    \bottomrule
+  \end{tabular}
+  \caption[Configuración de hiperparámetros]{Configuración fija de hiperparámetros por
+  familia, compartida por las dos formulaciones del capítulo. Los valores son
+  conservadores y reflejan el consenso de la literatura aplicada para datos tabulares
+  de tamaño moderado; el control del sobreajuste se delega en la combinación de la
+  configuración, la parada temprana sobre la validación interna y el diagnóstico
+  \textit{train-test}.}
+  \label{tab:o4-hyperparams}
+\end{table}
+
+\subsection{Métricas y baselines}
+\label{sec:o4-metricas}
+
+Las métricas de evaluación son las mismas del capítulo \ref{ch:o2}, para que la
+comparación entre capítulos sea directa. La proporción de aciertos en el primer
+intento (\textit{top-1}) y entre los tres primeros (\textit{top-3}) mide la precisión
+puntual sobre la celda; la mediana de la distancia geográfica entre el centroide de la
+celda predicha y la posición real cuantifica, en kilómetros, cuánto se desvía cuando
+falla. El logaritmo de la pérdida (\textit{log-loss}), heredado del cierre del capítulo de
+Markov, evalúa la calidad probabilística completa de la distribución que cada modelo
+entrega sobre las celdas, no sólo el acierto del primer intento, y por tanto complementa
+a las métricas de precisión puntual con una dimensión que éstas no recogen. La elección
+entre familias dentro de cada formulación pondera todas estas métricas en conjunto,
+sin que una sola decida por sí sola: una familia con mejor \textit{log-loss} pero
+distancia mediana sensiblemente peor o un sobreajuste marcado no se prefiere a una
+alternativa más equilibrada. La formulación continua de la sección
+\ref{sec:o4-cuantiles} no produce una distribución categórica nativa y se evalúa con
+sus propias métricas geométricas allí.
+
+El análisis del error se desagrega en cuatro cortes que se aplican a las dos
+formulaciones. El \emph{global} resume el comportamiento sobre todo el conjunto de
+prueba. Los cortes por régimen del HMM, \emph{estacionario} y \emph{migración},
+distinguen los días en los que el ave permanece en su zona de los de desplazamiento
+dirigido (3\,509 frente a 451 días en el conjunto de prueba, según
+\texttt{state\_b\_causal}); separar estos dos regímenes es necesario porque, como ya
+mostró el capítulo \ref{ch:o2}, una métrica global está dominada por el régimen
+mayoritario y oculta el comportamiento del modelo donde el problema es realmente
+informativo. El cuarto corte, \emph{días de movimiento real}, selecciona los días en
+los que la celda de $t+1$ difiere de la de $t$; es el escenario en el que la
+persistencia trivial vale cero por construcción y donde un modelo predictivo tiene
+sentido.
+
+Los dos baselines del capítulo \ref{ch:o2} se reutilizan, reentrenados sobre la misma
+partición temporal por ave para que la comparación sea en igualdad. La
+\emph{persistencia} predice que mañana el ave seguirá en la celda de hoy; su
+distribución es degenerada (asigna toda la masa a una celda) y no produce
+\textit{log-loss} comparable, pero sigue siendo la referencia exigente que el resto
+del trabajo persigue. La \emph{cadena de Markov de primer orden con estacionalidad
+mensual}, ajustada sobre el conjunto de entrenamiento de este capítulo, es el rival
+con distribución probabilística completa: un modelo no lineal supervisado debe, al
+menos, mejorarlo en \textit{log-loss} para justificar su mayor complejidad.
