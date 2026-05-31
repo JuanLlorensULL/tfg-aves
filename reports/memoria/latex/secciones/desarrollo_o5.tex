@@ -1,0 +1,89 @@
+\chapter{Visualización del movimiento en mapas interactivos}
+\label{ch:o5}
+
+El capítulo anterior entregó, para cada par (ave, día) del conjunto de prueba, una
+predicción continua del movimiento del día siguiente, con un punto central y una banda
+de incertidumbre por componente. Este capítulo describe la herramienta que lleva esa
+predicción al mapa: un módulo de visualización que representa sobre el territorio las
+rutas de las aves y su predicción, y que permite explorar de forma interactiva, en
+kilómetros y de un vistazo, el error de cada predicción. La herramienta no entrena
+ningún modelo nuevo ni reabre el análisis cuantitativo del error, ya realizado en el
+capítulo \ref{ch:o4}; su aportación es hacer ese comportamiento tangible y explorable,
+y con ella se cierra la cadena que recorre la memoria, de la cadena de Markov visible al
+modelo oculto y de este a la predicción supervisada. Las secciones siguientes describen
+qué ofrece la herramienta y cómo se usa, y después, brevemente, cómo se ha construido.
+
+\section{Funcionalidades y uso}
+\label{sec:o5-funcionalidades}
+
+La herramienta es una aplicación web interactiva (figura \ref{fig:o5-app}) que se abre
+directamente en el navegador, sin instalación ni servidor, y que representa sobre el mapa
+el recorrido real y la predicción del modelo para cualquiera de las ochenta y dos aves
+del conjunto de prueba. Toma como base la predicción recomendada del capítulo
+\ref{ch:o4} y reúne en un único panel lateral las funcionalidades de exploración que se
+resumen a continuación:
+
+\begin{itemize}
+  \item \textbf{Selección de ave.} Cualquiera de las aves del conjunto, ordenadas por
+  histórico, más una vista «Todas» que dibuja a la vez las rutas reales de todas ellas
+  (un color por ave, con resalte al pasar el ratón y acceso a la vista individual al
+  pulsar sobre una de las rutas).
+  \item \textbf{Predicción del día y error en kilómetros.} Para el ave elegida se
+  superponen su posición real, el punto predicho a un día y su banda de incertidumbre
+  $[p_{10}, p_{90}]$; una lectura destacada muestra el error de ese día en kilómetros,
+  esto es, la distancia entre la predicción y la posición real. Esta lectura cumple
+  directamente el cometido de analizar visualmente el error de predicción.
+  \item \textbf{Reproducción temporal.} Una ventana de días (con inicio y fin
+  ajustables) y los controles habituales de reproducir, pausar, avanzar o retroceder un
+  día y regular la velocidad; al reproducir, la estela de la predicción va creciendo
+  sobre el mapa.
+  \item \textbf{Capas conmutables.} La trayectoria real completa del ave (coloreada por
+  año), el punto del baseline de Markov de primer orden con su propio error, y el estado
+  de comportamiento del modelo oculto del capítulo \ref{ch:o3} (estacionario o
+  migración).
+\end{itemize}
+
+El uso típico es inmediato: se abre el fichero en el navegador, se elige un ave, se
+ajusta la ventana de días y se pulsa reproducir para seguir, día a día, cómo la
+predicción persigue a la posición real, leyendo en todo momento el error en kilómetros.
+Para que esa lectura no sea ambigua, la herramienta fija un código de color estable, con
+el error siempre en rojo, la posición real en verde y la predicción en granate. La misma
+herramienta incluye, además, una demostración de predicción encadenada a varios pasos,
+etiquetada como ilustrativa por las razones de calibración que se explican más adelante.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o5_prediccion_app.png}
+  \caption[Aplicación interactiva de visualización de la predicción]{Captura de la
+  aplicación interactiva a medida. El panel lateral reúne la selección de ave, la
+  ventana y los controles de reproducción y los conmutadores de capas; el mapa muestra,
+  para el día actual, la posición real, la predicción a un día con su banda de
+  incertidumbre y la lectura del error en kilómetros. El fichero es una página web
+  autónoma, de la que aquí se reproduce una captura estática.}
+  \label{fig:o5-app}
+\end{figure}
+
+\section{Desarrollo}
+\label{sec:o5-desarrollo}
+
+El módulo se implementa en el paquete \texttt{tfg\_aves.viz}, con el mismo patrón que el
+resto del trabajo: el cálculo de los agregados, en módulos de cómputo puro, se separa
+del renderizado. La aplicación es una plantilla HTML que contiene todo el código de la
+interfaz (estilos y lógica de cliente, sobre la biblioteca de mapas Leaflet) y en la que
+se inyecta, como datos embebidos en formato JSON, la predicción de cada ave; que sea una
+página estática sin servidor es posible porque las predicciones del conjunto de prueba
+están precalculadas.
+
+Sobre qué datos se dibujan se toman tres decisiones técnicas. La herramienta cartografía
+el predictor recomendado por el capítulo \ref{ch:o4} (la regresión de cuantiles con
+LightGBM en modo poblacional). La incertidumbre se dibuja como
+el rectángulo $[p_{10}, p_{90}]$ de cada eje, y no como una elipse, porque es la
+representación fiel de unos cuantiles estimados por componente. Y el horizonte de la
+vista es de un solo día, el único en el que la banda está calibrada; el encadenamiento a
+varios pasos se ofrece únicamente como la demostración ilustrativa ya mencionada.
+
+% ===========================================================================
+% PENDIENTE (no redactar hasta aprobación de las secciones anteriores):
+%   \section{Síntesis ...}   -> cierre breve: qué hace evidente la herramienta,
+%                               límites, enganche con conclusiones.
+% ===========================================================================

@@ -164,6 +164,40 @@ sola narrativa conviene cambiarlos a "estacionario" cuando se revise el capítul
 Markov (allí no nombra el estado del HMM sino el régimen conductual, pero el término
 debe ser único en toda la memoria). **Pendiente de visto bueno del autor.**
 
+## Hilos cerrados y sembrados en la visualización en mapas (cap. 7)
+
+> Actualizado al cerrar el capítulo de visualización (2026-05-31). Capítulo
+> **breve, orientado a la herramienta**: §7.1 (funcionalidades y uso de la
+> aplicación interactiva) + §7.2 (desarrollo). Por decisión del autor NO repite
+> el análisis cuantitativo del error (vive en el cap. 6): sin sección de error
+> ni tablas; el error en kilómetros se lee sobre el mapa. Sin síntesis (§7.3)
+> aparte. Figura única: captura de la app (`o5_prediccion_app.png`).
+
+**Cerrados en el capítulo 7:**
+
+| # | Hilo | Cómo se cierra |
+|---|---|---|
+| I4 | Objetivo = herramienta de cartografía interactiva | La aplicación web interactiva (82 aves, predicción a un día con banda, reproducción temporal, capas conmutables) materializa el objetivo. |
+| H17 | Banda de incertidumbre `[p10,p90]` | Se lleva al mapa como el rectángulo de incertidumbre por eje. |
+| H19 | Predictor recomendado (regresión de cuantiles, LightGBM poblacional) | Es la base de datos de la aplicación. |
+| H18 | Predicciones etiquetadas con el régimen del HMM | Se usan como capa conmutable (estado estacionario/migración), no para una estratificación cuantitativa (que queda en el cap. 6). |
+
+**No retomados en el capítulo 7** (por decisión del autor; el análisis del error vive en el cap. 6):
+
+| # | Hilo | Estado |
+|---|---|---|
+| H5 | Lectura del error según la posición roost-a-roost | Pertenece a la interpretación del error del cap. 6. |
+| H6 | Error por mes (cruce con fenología) | El desglose estacional del error queda en el cap. 6. |
+| H13 | Predicciones LOBO de Markov como referencia del error | El baseline de Markov aparece como capa conmutable en la app, sin comparación cuantitativa. |
+| H4 | Mapas intradía desde `fixes_clean.parquet` | No realizado; la herramienta trabaja con las posiciones diarias. |
+
+**Arrastrados a conclusiones (cap. 9):**
+
+| # | Hilo | Estado |
+|---|---|---|
+| H10 | Persistencia como baseline | En la app final se retiró la capa de persistencia (se muestra el baseline de Markov); la persistencia sigue siendo la referencia conceptual del cap. 6. |
+| H20 | Techo estructural (horizonte de un día con variables locales) | Sigue pendiente para el cap. 9 (trabajo futuro: secuencia, viento, multi-paso). |
+
 ## Notas
 
 - **H4 — riesgo de coherencia a resolver:** §3.1 afirma que de `fixes_clean.parquet`
