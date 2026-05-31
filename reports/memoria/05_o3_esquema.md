@@ -1,6 +1,8 @@
 # Capítulo 5 — Detección de comportamiento con HMM: subesquema de redacción
 
-> **Estado:** PROPUESTA, pendiente de aprobación del autor.
+> **Estado:** REDACTADO y auditado (2026-05-31). Estructura final = preámbulo + §5.1 +
+> §5.2 + §5.3 con cierre integrado. Auditoría de organización y verificadora aplicadas
+> al cierre (cambios menores, ninguna afirmación falseada).
 > **Fuente de verdad** del esquema del capítulo (sincronizar con cada poda).
 > Fichero LaTeX destino: `latex/secciones/desarrollo_o3.tex` (label `ch:o3`).
 > Notas de respaldo: `05_o3_hmm.md`. Teoría del HMM: cap. 2 §2.3 (`sec:prelim-hmm`).
@@ -154,17 +156,17 @@ planteamiento se integra en un preámbulo de ~4 párrafos tras `\chapter`, que c
 | Fig | Artefacto | Sección | Estado |
 |---|---|---|---|
 | fig01 | nstates-decision | §5.2 | **núcleo** (decisión n=2: proporciones por estado n=2 vs n=3) |
-| fig02 | features-by-state-a | §5.3 | **núcleo** (separación cinemática) |
-| fig04 | state-vs-biology | §5.3 | **núcleo** (validación estacional + justifica B) |
+| fig07 | feature-influence-cohens-d | §5.3 | **núcleo** (d de Cohen: step/cos dominan, contexto pequeño) |
+| fig04 | state-vs-biology | §5.3 | **núcleo** (validación estacional/latitud) |
 | fig09 | all-birds-spatial-by-state | §5.3 | **núcleo** (validación espacial) |
-| fig03 | features-by-state-b | — | mención (alternativa a fig02) |
+| fig02 | features-by-state-a | — | no usada (se usa fig03, modelo B) |
 | fig05 | ab-agreement | — | demotada (98,1 % a texto) |
 | fig06 | per-bird-state-proportions | — | demotada |
-| fig07 | feature-influence-cohens-d | — | demotada (Cohen's d a texto) |
+| fig03 | features-by-state-b | — | no usada (sustituida por fig07, más legible) |
 | fig08 | bird-trajectory-by-state | — | mención (1 ave; fig09 lo cubre) |
 | fig10 | state-proportion-pie | — | omitida (dato a texto) |
 
-Total núcleo: **4 figuras** (fig01 regenerada, fig02, fig04, fig09). A vs B sin figura propia.
+Total núcleo: **4 figuras** (fig01, fig07, fig04, fig09). fig07 (d de Cohen) sustituye a fig03 como 5.2. A vs B sin figura propia.
 
 ## Bibliografía a añadir/usar (verificar metadatos)
 - `wikelski2015` (dataset Movebank) — ya `% verificar` en biblio.
