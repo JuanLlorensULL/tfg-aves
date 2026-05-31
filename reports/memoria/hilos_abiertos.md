@@ -75,6 +75,41 @@ y, si se desea, nombrar en §2.1 la especie/caso. No bloqueantes; el autor decid
 mantener el capítulo lean (se eliminó a propósito el párrafo-panorama de las tres
 familias por repetir §1.2).
 
+## Hilos cerrados y sembrados en el HMM (cap. 5)
+
+> Actualizado al cerrar el capítulo del HMM (2026-05-31). Estructura preámbulo + §5.1
+> (variables del movimiento) + §5.2 (especificación y ajuste) + §5.3 (estados
+> descubiertos, con cierre integrado, sin sección de conclusiones aparte). Auditado con
+> dos agentes (organización + verificador): APTO CON CAMBIOS MENORES, aplicados al
+> cierre (poda de redundancia preámbulo p1↔p2, remisión a §2.3 para filtrado/suavizado,
+> retirada del meta-comentario "iteración anterior", split 72/8/20 explicitado, cifras
+> de Cohen una sola vez, handoff a H7 explícito, caption fig01 reconciliado con el
+> cierre causal). Ninguna afirmación factual falseada; la causalidad del decode
+> (forward-only) verificada contra `causal.py`.
+
+**Cerrados en el HMM:**
+
+| # | Hilo | Cómo se cierra |
+|---|---|---|
+| H11 | Régimen de comportamiento (residente vs migración) | §5.3 cierre: el HMM con dos estados ocultos recupera sin supervisión los dos regímenes (estacionario / migración) que la cadena visible promediaba; validación por coherencia fenológica con *Larus fuscus* (fig04, fig09). |
+| P1 | Teoría del HMM | §5.1–§5.3 la **referencian** (`sec:prelim-hmm`, `eq:prelim-emision`) sin reexplicarla. El filtrado forward-only del decode se anuncia como aplicación causal de esa teoría. |
+| I1 | Estados "estacionario / migración" | Honrado en todo el capítulo, incluido el código (`causal.py:191-193`). |
+
+**Arrastrados (siguen abiertos para los capítulos siguientes):**
+
+| # | Hilo | Estado tras el HMM |
+|---|---|---|
+| H7 | Heterogeneidad inter-individual del tracking | §5.3 cierre lo arrastra explícitamente al **cap. 6 (ML)** ("donde se retomará la heterogeneidad inter-individual que el capítulo \ref{ch:o1} dejó sembrada"). El HMM es global por diseño (cinemática comparable entre aves); el ML decidirá poblacional vs personalizado. |
+| H9 | log-loss como criterio | El HMM no lo evalúa (validación no supervisada); el cap. 6 lo hereda intacto de Markov. |
+| H10 | Baseline de persistencia | Igual: ni se usa ni se redefine en el HMM; sigue como referencia a batir en el cap. 6. |
+
+**Sembrados en el HMM (para capítulos posteriores):**
+
+| # | Hilo | Tipo | En el HMM | Se retoma en |
+|---|---|---|---|---|
+| H15 | `features.parquet` con `state_a_causal`, `state_b_causal`, posteriores `posterior_b_*` y columna `split` (72 % train / 8 % val / 20 % test por ave, sin solapamiento temporal) | Entregable | §5.2 final | **Cap. 6** (lo consume como variable de entrada de alto nivel y reutiliza el split sin recalcular) y **cap. 7** (estratifica el error por régimen) |
+| H16 | Modelo B canónico (cinemática + contexto), A como alternativa reversible (98,1 % de acuerdo) | Decisión de diseño | §5.3 cierre A/B | **Cap. 6 / cap. 7** consumen `state_b_causal` por defecto; cambio a `state_a_causal` documentado como ablación reversible |
+
 ## Decisiones y hilos sembrados en la Introducción (cap. 1)
 
 > Redactada tras O1–O5 (2026-05-26). La introducción fija la narrativa global del
