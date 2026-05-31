@@ -198,6 +198,32 @@ debe ser único en toda la memoria). **Pendiente de visto bueno del autor.**
 | H10 | Persistencia como baseline | En la app final se retiró la capa de persistencia (se muestra el baseline de Markov); la persistencia sigue siendo la referencia conceptual del cap. 6. |
 | H20 | Techo estructural (horizonte de un día con variables locales) | Sigue pendiente para el cap. 9 (trabajo futuro: secuencia, viento, multi-paso). |
 
+## Hilos recogidos en el análisis de impacto (cap. 8)
+
+> Redactado el 2026-06-01. Capítulo **breve, sin subsecciones** (decisión del
+> autor): prosa corrida que acota el impacto a dos contextos con peso real
+> (medioambiental y científico-metodológico), trata el resto de pasada, omite el
+> bloque de efectos adversos y cierra con los Objetivos de Desarrollo Sostenible.
+> Sin figuras ni tablas, sin citas nuevas (capítulo interpretativo). Driver de
+> preview: `_preview_impacto.tex`.
+
+**Recogidos (sin cerrar; el impacto los interpreta, no los resuelve):**
+
+| # | Hilo | Cómo se recoge |
+|---|---|---|
+| H20 | Techo estructural | Reformulado como aportación científica (tercera de tres): caracterizarlo con datos orienta el esfuerzo futuro. La resolución (trabajo futuro: secuencia, viento, multi-paso) sigue para el cap. 9. |
+| H19 | Predictor recomendado con banda de incertidumbre calibrada | Es el núcleo del aporte medioambiental realista: señalar el régimen de migración con incertidumbre, no predecir el destino con precisión. Remite al cap. \ref{ch:o5} (herramienta). |
+
+**Decisiones del capítulo:**
+
+- Aporte medioambiental redactado en tono realista (no sobrevende): se eliminaron
+  por petición del autor las frases sobre la dificultad de batir la persistencia,
+  sobre el uso de datos ya publicados como decisión de impacto, y el ejemplo
+  concreto de la circularidad geográfica del HMM (el autor lo marcó como inexacto).
+- La **coherencia biológica como criterio de validación** se mantiene como segunda
+  aportación, pero enunciada en general (sin el ejemplo del HMM).
+- ODS: objetivo 15 (principal), 13 (clima) y 4 (divulgación, de pasada).
+
 ## Notas
 
 - **H4 — riesgo de coherencia a resolver:** §3.1 afirma que de `fixes_clean.parquet`
