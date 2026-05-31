@@ -110,6 +110,42 @@ familias por repetir §1.2).
 | H15 | `features.parquet` con `state_a_causal`, `state_b_causal`, posteriores `posterior_b_*` y columna `split` (72 % train / 8 % val / 20 % test por ave, sin solapamiento temporal) | Entregable | §5.2 final | **Cap. 6** (lo consume como variable de entrada de alto nivel y reutiliza el split sin recalcular) y **cap. 7** (estratifica el error por régimen) |
 | H16 | Modelo B canónico (cinemática + contexto), A como alternativa reversible (98,1 % de acuerdo) | Decisión de diseño | §5.3 cierre A/B | **Cap. 6 / cap. 7** consumen `state_b_causal` por defecto; cambio a `state_a_causal` documentado como ablación reversible |
 
+## Hilos cerrados y sembrados en la predicción supervisada (cap. 6)
+
+> Actualizado al cerrar el capítulo de predicción supervisada (2026-05-31).
+> Estructura: preámbulo + §6.1 (datos, variables y diseño) + §6.2 (predicción
+> categórica) + §6.3 (predicción continua con cuantiles) + §6.4 (síntesis). Sin
+> auditoría (queda a decisión del autor). Modelo de dos etapas excluido por
+> decisión del autor (no relevante para la narrativa central). Naming firme: en
+> prosa, títulos y captions no aparece nunca «L1/L2/L3» ni «línea 1/2/3»; las dos
+> formulaciones se nombran descriptivamente.
+
+**Cerrados en el capítulo 6:**
+
+| # | Hilo | Cómo se cierra |
+|---|---|---|
+| H7 | Heterogeneidad inter-individual | §6.2.5 y §6.3.4: una prueba en cada formulación con un clasificador y un regresor entrenados únicamente con el ave de mayor histórico (91916A) muestra que el modelo poblacional ya la captura tan bien como un modelo dedicado. Modelo canónico poblacional, sin `bird_id`. |
+| H12 | Rutas individuales no vistas en train | Cerrado conjuntamente con H7 por la misma evidencia. La heterogeneidad existe pero la distribución poblacional la cubre sin necesidad de personalizar. |
+| P2 | Teoría ML (RF, boosting, regresión cuantílica) | §6.1.3 referencia §\ref{sec:prelim-ml} sin reexplicar; §6.3.1 referencia §\ref{sec:prelim-cuantil} y la ecuación \ref{eq:prelim-pinball}. |
+
+**Arrastrados (siguen abiertos para el capítulo 7):**
+
+| # | Hilo | Estado tras el capítulo 6 |
+|---|---|---|
+| H9 | log-loss como criterio principal | §6.1.4 lo consume como métrica probabilística complementaria de las de precisión; la elección entre familias pondera todas las métricas en conjunto. Sigue como referencia transversal. |
+| H10 | Persistencia como baseline a batir | §6.2 confirma la dificultad estructural de batirla; §6.3 la iguala en agregado (distancia mediana 20,9\,km empatada, *top-1* a una o dos décimas) y revierte la pérdida amplia que la formulación categórica acumulaba. Sigue invicta en *top-1* global y en el régimen de migración. Se retoma en el cap. 7 sobre el mapa. |
+| H15 | `features.parquet` + columna `split` (72/8/20 por ave) | §6.1.1 lo consume sin recalcular. Sigue siendo el entregable transversal del cap. 5. |
+| H16 | Modelo B canónico del HMM | §6.1.2 lo consume (`state_b_causal`, `posterior_b_migracion_causal`). |
+
+**Sembrados en el capítulo 6 (para el capítulo 7):**
+
+| # | Hilo | Tipo | En el capítulo 6 | Se retoma en |
+|---|---|---|---|---|
+| H17 | Banda de incertidumbre `[p10, p90]` calibrada (cobertura empírica ≈ 80\,\% nominal) | Entregable | §6.3.3, §6.3.4, §6.4 | **Cap. 7** (capa de incertidumbre sobre el mapa) |
+| H18 | Predicciones del modelo recomendado etiquetadas con el régimen del HMM | Entregable | §6.4 (entrega final) | **Cap. 7** (estratificación del error por régimen y por mes) |
+| H19 | Modelo recomendado = regresión de cuantiles con LightGBM en modo poblacional, con XGBoost como alternativa equivalente | Decisión de diseño | §6.3.4 (modelo recomendado), §6.4 | **Cap. 7** lo consume como predictor base |
+| H20 | Techo estructural común del enfoque: horizonte de un día con variables locales no contiene el predictor causal de un evento migratorio (viento, historia multi-día, destino) | Limitación → trabajo futuro | §6.4 (sin algoritmo ni reformulación que lo salve) | **Cap. 9 (conclusiones / trabajo futuro)** lo recoge y propone las tres direcciones |
+
 ## Decisiones y hilos sembrados en la Introducción (cap. 1)
 
 > Redactada tras O1–O5 (2026-05-26). La introducción fija la narrativa global del

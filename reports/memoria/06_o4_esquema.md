@@ -1,10 +1,12 @@
 # Capítulo 6 — Predicción supervisada del movimiento diario
 
-> **Estado:** esquema, pendiente de aprobación.
-> **Fecha:** 2026-05-31. Sembrado tras cerrar el capítulo del HMM.
+> **Estado:** **ENTREGADO** (2026-05-31). Aprobado sección a sección; commits
+> 9e86c81 (preámbulo + §6.1), 00b2435 (§6.2), 7cc7865 (§6.3), ff6a2ef (§6.4).
+> Hilos cerrados/sembrados sincronizados en `reports/memoria/hilos_abiertos.md`.
+> El capítulo no pasó por la auditoría dos agentes (decisión del autor).
 > **Fuente única de los datos:** `reports/memoria/06_o4_ml.md` (notas vivas) +
 > artefactos en `reports/figures/` y `reports/tables/` (slugs `o4_*`). Toda
-> cifra se recalculará contra `data/processed/o4/` antes de escribir.
+> cifra se recalculó contra `data/processed/o4/` antes de escribir.
 
 ## Por qué este esquema y no otro
 
