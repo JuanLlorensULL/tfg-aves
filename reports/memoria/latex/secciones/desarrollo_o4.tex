@@ -187,9 +187,9 @@ formulaciones. El \emph{global} resume el comportamiento sobre todo el conjunto 
 prueba. Los cortes por régimen del HMM, \emph{estacionario} y \emph{migración},
 distinguen los días en los que el ave permanece en su zona de los de desplazamiento
 dirigido (3\,509 frente a 451 días en el conjunto de prueba, según
-\texttt{state\_b\_causal}); separar estos dos regímenes es necesario porque, como ya
-mostró el capítulo \ref{ch:o2}, una métrica global está dominada por el régimen
-mayoritario y oculta el comportamiento del modelo donde el problema es realmente
+\texttt{state\_b\_causal}); separar estos dos regímenes es necesario porque una
+métrica global está dominada por la moda mayoritaria del objetivo (los días
+estacionarios) y oculta el comportamiento del modelo donde el problema es realmente
 informativo. El cuarto corte, \emph{días de movimiento real}, selecciona los días en
 los que la celda de $t+1$ difiere de la de $t$; es el escenario en el que la
 persistencia trivial vale cero por construcción y donde un modelo predictivo tiene
@@ -292,10 +292,10 @@ La separación de LightGBM no es una variabilidad estadística sino un fallo de 
 diagnosticable, que la figura \ref{fig:o4-cat-curvas} expone. La curva del
 \textit{log-loss} sobre la validación interna empieza ya por encima del valor que
 daría una distribución uniforme sobre las 871 celdas ($\log 871 \approx 6{,}77$) y
-sube de forma monótona desde la primera iteración hasta estabilizarse en torno a 30,
+sube de forma monótona desde la primera iteración hasta estabilizarse en torno a 32,
 lo que activa la parada temprana en la iteración 1; XGBoost, sobre los mismos datos y
 con un esquema de regularización análogo, desciende como cabe esperar y se detiene en
-torno a la iteración 330. La interpretación es que la configuración conservadora de
+torno a la iteración 320. La interpretación es que la configuración conservadora de
 LightGBM, pensada para evitar el sobreajuste sobre datos tabulares de complejidad
 moderada, no extrae señal generalizable de un objetivo de muy alta cardinalidad y
 distribución desbalanceada como el del problema categórico aquí planteado: con 871
@@ -315,7 +315,7 @@ viable y se reincorpora a la comparativa.
   \textit{boosting} para XGBoost (izquierda) y LightGBM (derecha), en modo
   poblacional. La línea vertical punteada marca la iteración en la que la parada
   temprana (paciencia de 50) detiene el entrenamiento. XGBoost desciende
-  monótonamente hasta estabilizarse en torno a la iteración 330; LightGBM, en
+  monótonamente hasta estabilizarse en torno a la iteración 320; LightGBM, en
   cambio, arranca ya por encima del valor de una distribución uniforme sobre las 871
   clases activas ($\log 871 \approx 6{,}77$) y crece sin pausa, lo que indica que su
   configuración conservadora no extrae señal generalizable de este objetivo
@@ -491,28 +491,19 @@ este resultado con un experimento análogo y diferente, y la sección
 \section{Predicción continua del desplazamiento con cuantiles}
 \label{sec:o4-cuantiles}
 
-La sección anterior dejó dos causas estructurales del techo de rendimiento. La
-segunda (el horizonte a un día con variables locales) es común a las dos
-formulaciones del capítulo y se argumenta de forma cuantitativa, ya con los
-resultados de ambas a la vista, en la sección \ref{sec:o4-sintesis}. La primera
-(que el objetivo categórico desperdicia la geometría del espacio) sí admite una
-respuesta de modelado, y esta sección la desarrolla: si se reformula el problema
-como una regresión del desplazamiento diario en lugar de una clasificación de la
-celda, el modelo recibe la geometría que la formulación categórica descartaba y, al
-estimarse en forma de cuantiles, entrega además una banda de incertidumbre
-interpretable que la clasificación no podía dar.
-
-La reformulación produce dos ganancias importantes respecto a la sección
-\ref{sec:o4-categorica}. Una cuantitativa: con las mismas variables, la misma
-partición temporal y los mismos hiperparámetros conservadores, el acierto
-\textit{top-1} sube 18 puntos a nivel global y la distancia mediana del error en los
-días de migración del HMM se reduce a un tercio. Otra cualitativa: la predicción
-sale del modelo como un punto del plano acompañado de un intervalo $[p_{10},
-p_{90}]$ por componente, lo que abre la puerta a llevar al mapa del capítulo
-\ref{ch:o5} no sólo un punto sino una región de incertidumbre interpretable. La
-sección desarrolla la reformulación, cuantifica esas dos ganancias y caracteriza la
-calidad de la banda; los baselines del capítulo se mantienen como referencia
-común, sin cambios respecto a la sección \ref{sec:o4-diseno}.
+Esta sección desarrolla una respuesta de modelado a la primera de las dos causas
+del techo diagnosticadas en la sección \ref{sec:o4-cat-diagnostico}, la que es
+salvable sin cambiar el horizonte ni las variables: reformular el problema como una
+regresión del desplazamiento diario en lugar de una clasificación de la celda. Con
+las mismas variables, la misma partición temporal y los mismos hiperparámetros
+conservadores, la reformulación devuelve al modelo la información geométrica del
+espacio que la formulación categórica descartaba (el acierto \textit{top-1} sube 18
+puntos a nivel global y la distancia mediana del error en los días de migración del
+HMM se reduce a un tercio) y, al estimarse en forma de cuantiles, entrega además
+una predicción que sale del modelo como un punto del plano acompañado de un
+intervalo $[p_{10}, p_{90}]$ por componente, una banda de incertidumbre
+interpretable que la clasificación no podía dar y que el capítulo \ref{ch:o5} lleva
+al mapa.
 
 \subsection{Reformulación del objetivo y arquitectura del modelo}
 \label{sec:o4-q-planteamiento}
