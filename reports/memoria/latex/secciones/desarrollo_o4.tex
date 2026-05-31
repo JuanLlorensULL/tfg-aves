@@ -487,3 +487,310 @@ individuo con más datos posible, sin la complejidad ni la falta de escalabilida
 entrenar un modelo por ave. La formulación continua de la sección siguiente confirma
 este resultado con un experimento análogo y diferente, y la sección
 \ref{sec:o4-sintesis} consolida el cierre.
+
+\section{Predicción continua del desplazamiento con cuantiles}
+\label{sec:o4-cuantiles}
+
+La sección anterior dejó dos causas estructurales del techo de rendimiento. La
+segunda (el horizonte a un día con variables locales) es común a las dos
+formulaciones del capítulo y se argumenta de forma cuantitativa, ya con los
+resultados de ambas a la vista, en la sección \ref{sec:o4-sintesis}. La primera
+(que el objetivo categórico desperdicia la geometría del espacio) sí admite una
+respuesta de modelado, y esta sección la desarrolla: si se reformula el problema
+como una regresión del desplazamiento diario en lugar de una clasificación de la
+celda, el modelo recibe la geometría que la formulación categórica descartaba y, al
+estimarse en forma de cuantiles, entrega además una banda de incertidumbre
+interpretable que la clasificación no podía dar.
+
+La reformulación produce dos ganancias importantes respecto a la sección
+\ref{sec:o4-categorica}. Una cuantitativa: con las mismas variables, la misma
+partición temporal y los mismos hiperparámetros conservadores, el acierto
+\textit{top-1} sube 18 puntos a nivel global y la distancia mediana del error en los
+días de migración del HMM se reduce a un tercio. Otra cualitativa: la predicción
+sale del modelo como un punto del plano acompañado de un intervalo $[p_{10},
+p_{90}]$ por componente, lo que abre la puerta a llevar al mapa del capítulo
+\ref{ch:o5} no sólo un punto sino una región de incertidumbre interpretable. La
+sección desarrolla la reformulación, cuantifica esas dos ganancias y caracteriza la
+calidad de la banda; los baselines del capítulo se mantienen como referencia
+común, sin cambios respecto a la sección \ref{sec:o4-diseno}.
+
+\subsection{Reformulación del objetivo y arquitectura del modelo}
+\label{sec:o4-q-planteamiento}
+
+El objetivo de la predicción deja de ser el identificador discreto de la celda y
+pasa a ser el desplazamiento del ave entre dos días consecutivos, expresado en
+grados: $\Delta\mathrm{lat} = \mathrm{lat}(t\!+\!1) - \mathrm{lat}(t)$ y
+$\Delta\mathrm{lon} = \mathrm{lon}(t\!+\!1) - \mathrm{lon}(t)$. La elección de la
+parametrización cartesiana frente a la polar (distancia, rumbo) es deliberada y
+evita la discontinuidad angular en $\pm 180^\circ$, que rompería la suavidad del
+objetivo para los pasos de orientación este-oeste y obligaría a un tratamiento
+especial. Las dos componentes se predicen por separado y de forma independiente, con
+un modelo por componente.
+
+Para acompañar cada predicción puntual de una banda de incertidumbre se ajustan, para
+cada componente, tres cuantiles condicionales en lugar de la media: $p_{10}$, $p_{50}$
+y $p_{90}$. La estimación minimiza la pérdida cuantílica
+(capítulo \ref{ch:preliminares}, sección \ref{sec:prelim-cuantil},
+ecuación \ref{eq:prelim-pinball}), que penaliza de forma asimétrica los errores por
+exceso y por defecto según el cuantil buscado y, en su agregado sobre los tres
+cuantiles, permite ajustar simultáneamente la mediana condicional $p_{50}$ (la
+predicción puntual del desplazamiento) y los dos extremos del intervalo
+$[p_{10}, p_{90}]$ (una banda de incertidumbre con cobertura nominal del 80\,\%). La
+monotonía $p_{10} \leq p_{50} \leq p_{90}$ no la garantiza el ajuste cuando cada
+cuantil se estima con un modelo independiente y se fuerza, cuando es necesario, por
+ordenación a posteriori; la fracción de filas afectadas y las diferencias entre
+familias se analizan en la sección \ref{sec:o4-q-incertidumbre}.
+
+Las tres familias del capítulo se comparan también en esta formulación. XGBoost y
+LightGBM minimizan directamente la pérdida cuantílica para cada cuantil, mientras
+que el bosque aleatorio, cuyos árboles parten por reducción de la varianza y no
+optimizan directamente esa pérdida, obtiene los cuantiles \emph{a posteriori} como
+cuantiles empíricos de la distribución de los valores del objetivo en cada hoja, en
+la formulación de bosque de regresión cuantílica de \cite{meinshausen2006}. La
+ablación per-individuo, que en la formulación categórica se ensayó con un bosque
+aleatorio entrenado únicamente con el ave de mayor histórico, se repite aquí con
+XGBoost y se comenta en la sección \ref{sec:o4-q-cierre}.
+
+Para comparar con la formulación categórica de la sección \ref{sec:o4-categorica} y
+con los baselines, la predicción puntual $p_{50}$ se discretiza al \textit{grid} de
+0,5\textdegree{} (un \textit{top-1 mapeado} que cuenta como acierto las
+predicciones cuyo punto cae en la celda real) y la distancia se reporta tanto
+\emph{nativa} (la distancia entre el punto predicho y la posición real, sin
+discretizar) como \emph{vía centroide} (entre el centroide de la celda en la que cae
+el punto predicho y la posición real, comparable con la distancia mediana de la
+sección \ref{sec:o4-categorica}).
+
+\subsection{La mejora respecto a la formulación categórica}
+\label{sec:o4-q-precision}
+
+La tabla \ref{tab:o4-q-precision} pone lado a lado el mejor modelo de la sección
+\ref{sec:o4-categorica} (XGBoost categórico), las tres familias de la regresión de
+cuantiles y la persistencia trivial sobre el conjunto de prueba, desagregados por
+régimen del HMM y por movimiento real. La figura \ref{fig:o4-q-distancia} visualiza
+la distribución completa de la distancia entre el punto predicho y la posición
+real para las tres familias de cuantiles.
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \begin{tabular}{lcccccccc}
+    \toprule
+     & \multicolumn{2}{c}{\textbf{Global}} & \multicolumn{2}{c}{\textbf{Estacionario}} & \multicolumn{2}{c}{\textbf{Migración}} & \multicolumn{2}{c}{\textbf{Movim.~real}}\\
+     & \multicolumn{2}{c}{$n=3\,960$} & \multicolumn{2}{c}{$n=3\,509$} & \multicolumn{2}{c}{$n=451$} & \multicolumn{2}{c}{$n=880$}\\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+    \textbf{Modelo} & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med.\\
+    \midrule
+    \multicolumn{9}{l}{\emph{Formulación categórica (sección \ref{sec:o4-categorica}, referencia)}}\\
+    XGBoost categórico  & 0,582 & 24,3 & 0,639 & 23,1 & 0,140 & 154 & 0,175 & 55 \\
+    \midrule
+    \multicolumn{9}{l}{\emph{Formulación continua (esta sección)}}\\
+    Bosque aleatorio    & 0,771 & 20,9 & 0,842 & 19,2 & 0,217 &  62 & 0,049 & 42 \\
+    XGBoost             & 0,763 & 20,9 & 0,833 & 19,2 & 0,217 &  59 & 0,100 & 41 \\
+    LightGBM            & 0,762 & 20,9 & 0,835 & 19,2 & 0,197 &  60 & 0,085 & 41 \\
+    \midrule
+    \multicolumn{9}{l}{\emph{Baseline}}\\
+    Persistencia        & 0,778 & 20,9 & 0,841 & 19,5 & 0,284 &  52 & 0,000 & 45 \\
+    \bottomrule
+  \end{tabular}
+  \caption[Comparativa entre las dos formulaciones del capítulo y los baselines]{Acierto
+  (\textit{top-1 mapeado} al \textit{grid} 0,5\textdegree) y mediana de la distancia
+  vía centroide en kilómetros sobre el conjunto de prueba, para el mejor modelo de
+  la formulación categórica, las tres familias de la regresión de cuantiles
+  (modo poblacional) y la persistencia trivial. La predicción puntual de la
+  formulación continua es el $p_{50}$ de cada componente, llevado al \textit{grid}
+  0,5\textdegree{} para comparar con la formulación categórica. La reformulación
+  sube el \textit{top-1} global de 0,58 a 0,76--0,77, baja la distancia mediana
+  global de 24,3 a 20,9\,km y reduce a un tercio la distancia mediana del error en
+  los días de migración del HMM (de 154 a unos 60\,km). Entre familias, las tres
+  son prácticamente indistinguibles en los cuatro cortes.}
+  \label{tab:o4-q-precision}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig26_distance-distribution.png}
+  \caption[Distribución de la distancia entre el punto predicho y la posición
+  real]{Distribución de la distancia vía centroide entre la predicción puntual
+  ($p_{50}$) y la posición real, sobre el conjunto de prueba, para las tres
+  familias de la regresión de cuantiles y la persistencia trivial (modo
+  poblacional). Las distribuciones coinciden en el grueso (la masa concentrada por
+  debajo de los 50\,km, atribuible a los días estacionarios) y se separan en la cola
+  (los días de movimiento real). La diferencia entre las tres familias supervisadas
+  es pequeña a lo largo de toda la distribución.}
+  \label{fig:o4-q-distancia}
+\end{figure}
+
+El primer mensaje de la tabla es la magnitud de la mejora respecto a la formulación
+categórica. La sola reformulación del objetivo, con las mismas variables, el mismo
+\textit{split} y los mismos hiperparámetros, levanta el \textit{top-1} global de
+0,58 a 0,76 (18 puntos absolutos, un 31\,\% relativo), baja la distancia mediana
+global de 24,3 a 20,9\,km y, en el corte más exigente del capítulo, reduce a un
+tercio la distancia mediana del error en los días de migración del HMM, de 154 a
+unos 60\,km. La mejora se reproduce en los días estacionarios (\textit{top-1} de
+0,64 a 0,83--0,84) y en la distancia mediana de los días de movimiento real (de
+55 a 41\,km). El mecanismo es geométrico: como el desplazamiento real es
+\emph{nulo} el 77,8\,\% de los días de prueba, el regresor aprende a predecir un
+desplazamiento próximo a cero en esos días, su $p_{50}$ recae en la celda de
+origen y reproduce el acierto de los \textit{self-loops} que la formulación
+categórica no fijaba con su argmax sobre 871 clases. Más en general, la pérdida
+cuantílica penaliza el error en distancia (no por igual a todas las clases
+incorrectas) y empuja al modelo hacia predicciones geométricamente cercanas, que es
+exactamente lo que el problema requiere. La única métrica que se mueve a la baja en
+la transición es el \textit{top-1} del corte de movimiento real (de 0,18 a 0,05--
+0,10), una contrapartida coherente con el mismo mecanismo (el regresor «se atreve»
+menos a apostar fuera de la celda de origen), que la mejora dramática de la
+distancia en ese mismo corte compensa con holgura.
+
+El segundo mensaje es la convergencia entre familias. Sobre el conjunto de prueba el
+\textit{top-1} global queda entre 0,762 (LightGBM) y 0,771 (bosque aleatorio), una
+banda de menos de un punto, con la distancia mediana indistinguible (20,9\,km en
+las tres). El mismo patrón se repite en los cuatro cortes de la
+tabla \ref{tab:o4-q-precision} y en la figura \ref{fig:o4-q-distancia}, donde las
+tres distribuciones se superponen tanto en el grueso como en la cola. Bajo la
+formulación continua, la elección de familia es secundaria para la precisión: tres
+algoritmos con mecanismos distintos (\textit{bagging} no paramétrico en el bosque
+aleatorio, \textit{boosting} de árboles por niveles en XGBoost y \textit{boosting}
+por hojas en LightGBM) llegan al mismo lugar.
+
+Como consecuencia secundaria de la convergencia, LightGBM no diverge aquí. La misma
+familia que en la sección \ref{sec:o4-cat-globales} se separó del resto y se
+descartó como candidato sobre el problema multiclase de 871 clases activas, sobre
+la regresión de cuantiles (con seis modelos, uno por cuantil y eje, en lugar de un
+único multiclase de muy alta cardinalidad) se ajusta sin patología y rinde
+indistinguiblemente del bosque aleatorio y de XGBoost. La división del crecimiento
+por hojas y el soporte mínimo conservador no extraen señal generalizable de un
+objetivo de 871 clases con peso fuertemente desigual, pero sí de seis regresiones
+cuantílicas escalares cada una. La familia se reincorpora a la comparativa de esta
+sección en igualdad con las otras dos, y la elección del modelo recomendado para
+los mapas se argumenta en la sección \ref{sec:o4-q-cierre} desde la calidad
+probabilística, no desde la precisión.
+
+Frente a la persistencia trivial, la formulación continua se sitúa en una posición
+muy distinta a la categórica. Aquélla perdía en todas las métricas globales por un
+margen amplio; ésta empata en distancia mediana (20,9\,km en las tres familias y en
+la persistencia) y queda apenas una o dos décimas por debajo en \textit{top-1}
+global. La persistencia conserva una pequeña ventaja en \textit{top-1} y en la
+distancia mediana del régimen de migración, por la misma razón estructural ya
+diagnosticada (la moda dominante de los \textit{self-loops}), pero la diferencia
+deja de ser cualitativa: la formulación continua iguala en agregado a la
+referencia exigente del capítulo mientras añade una dimensión que la persistencia
+no entrega, la banda de incertidumbre que la sección \ref{sec:o4-q-incertidumbre}
+caracteriza.
+
+\subsection{Banda de incertidumbre y monotonía de los cuantiles}
+\label{sec:o4-q-incertidumbre}
+
+La precisión de la predicción puntual es sólo una de las dimensiones que la
+formulación de cuantiles entrega. La otra, ausente por completo en la formulación
+categórica, es la \emph{incertidumbre calibrada}: para cada predicción, los
+extremos $p_{10}$ y $p_{90}$ delimitan un intervalo que se espera contenga la
+posición real el 80\,\% del tiempo si la calibración es correcta. La tabla
+\ref{tab:o4-q-incertidumbre} resume las tres métricas que evalúan esta dimensión y
+la figura \ref{fig:o4-q-calibracion} la visualiza para la cobertura.
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Modelo} & \textbf{Cobertura lat / lon} & \textbf{\textit{Pinball} lat / lon} & \textbf{Cruces de cuantil} \\
+    \midrule
+    Bosque aleatorio  & 0,862 / 0,859 & 0,081 / 0,062 & 0 \\
+    XGBoost           & 0,849 / 0,840 & 0,081 / 0,063 & 54 \\
+    LightGBM          & 0,836 / 0,788 & 0,079 / 0,062 & 202 \\
+    \bottomrule
+  \end{tabular}
+  \caption[Calidad probabilística de las tres familias]{Métricas de calidad
+  probabilística sobre el conjunto de prueba (3\,960 pares, modo poblacional).
+  \emph{Cobertura}: fracción empírica de filas en las que la posición real cae
+  dentro del intervalo $[p_{10}, p_{90}]$ predicho, por eje (objetivo nominal del
+  80\,\%). \emph{Pinball}: pérdida cuantílica promedio sobre los tres cuantiles, por
+  eje. \emph{Cruces de cuantil}: número de filas en las que la ordenación
+  $p_{10} \leq p_{50} \leq p_{90}$ no se respetaba antes de la corrección a
+  posteriori. Las tres familias tienen una \textit{pinball} prácticamente igual; se
+  diferencian en la calibración (LightGBM es el más cercano al nominal) y en la
+  coherencia interna de los cuantiles (el bosque aleatorio no cruza por
+  construcción).}
+  \label{tab:o4-q-incertidumbre}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{o4_fig25_calibration-coverage.png}
+  \caption[Cobertura empírica del intervalo de predicción]{Cobertura empírica del
+  intervalo $[p_{10}, p_{90}]$ frente al objetivo nominal del 80\,\%, por familia y
+  por eje, sobre el conjunto de prueba en modo poblacional. Una cobertura próxima al
+  80\,\% indica una banda de incertidumbre bien calibrada. LightGBM queda más cerca
+  del nominal (con una ligera infracobertura en longitud), XGBoost se sitúa unos
+  puntos por encima y el bosque aleatorio sobrecubre, con bandas más anchas en
+  ambas direcciones.}
+  \label{fig:o4-q-calibracion}
+\end{figure}
+
+Las tres familias comparten una pérdida cuantílica prácticamente idéntica (en torno
+a 0,08 para la latitud y 0,06 para la longitud), lo que confirma que el ajuste de
+los tres cuantiles es de calidad equivalente en la métrica que el problema
+optimiza, pero se separan en las dos métricas que la métrica de ajuste no captura
+directamente: la calibración empírica del intervalo y la coherencia interna de los
+cuantiles. LightGBM queda más cerca del 80\,\% nominal (0,84 y 0,79), XGBoost se
+sitúa unos puntos por encima (0,85 y 0,84) y el bosque aleatorio sobrecubre (0,86 y
+0,86), con bandas más anchas que las otras dos. La interpretación es directa: el
+bosque aleatorio entrega una incertidumbre conservadora, en el sentido de que su
+intervalo contiene la posición real con más frecuencia de la que dice, mientras que
+LightGBM la entrega más ajustada al nivel anunciado.
+
+La columna de cruces de cuantil refleja una diferencia estructural entre las
+familias, no un detalle de implementación. XGBoost y LightGBM ajustan un modelo
+independiente por cuantil y por eje, y nada en su entrenamiento garantiza que la
+ordenación $p_{10} \leq p_{50} \leq p_{90}$ se respete para todas las observaciones,
+de modo que aparecen 54 cruces en XGBoost y 202 en LightGBM, corregibles a
+posteriori por simple ordenación pero no eliminables \emph{a priori}. El bosque
+aleatorio de cuantiles, en cambio, extrae los tres cuantiles de la misma
+distribución empírica de cada hoja, y la ordenación se respeta por construcción:
+cero cruces. Es una propiedad estructural del \textit{bagging} no paramétrico en
+este problema, no una mejora de ajuste.
+
+\subsection{Balance, alcance del entrenamiento y modelo recomendado}
+\label{sec:o4-q-cierre}
+
+El balance de la formulación continua es claro respecto a las dos referencias del
+capítulo. Frente a la formulación categórica de la sección \ref{sec:o4-categorica},
+la mejora es sustancial y se reproduce en todos los cortes salvo en el
+\textit{top-1} de los días de movimiento real: el acierto global sube 18 puntos,
+la distancia mediana global baja unos 3\,km y la distancia mediana en los días de
+migración se reduce a un tercio. Frente a la persistencia trivial, la formulación
+continua iguala el agregado (la distancia mediana global coincide en 20,9\,km y el
+\textit{top-1} queda una o dos décimas por debajo), revierte por completo la
+pérdida amplia que la formulación categórica acumulaba contra ese baseline y, sobre
+todo, añade la dimensión que la persistencia no puede dar: una banda de
+incertidumbre calibrada $[p_{10}, p_{90}]$ con cobertura empírica próxima al
+80\,\% nominal (sección \ref{sec:o4-q-incertidumbre}). Sobre los mapas del capítulo
+\ref{ch:o5}, esa banda se traduce en una región geográfica interpretable que
+ninguna de las alternativas anteriores podía producir.
+
+La elección del modelo recomendado para los mapas del capítulo siguiente pondera
+las tres dimensiones que la tabla \ref{tab:o4-q-precision} y la tabla
+\ref{tab:o4-q-incertidumbre} resumen, sin que ninguna decida en solitario. En
+precisión las tres familias son indistinguibles, así que la decisión se traslada a
+la calidad probabilística: LightGBM es el más cercano al 80\,\% nominal de
+cobertura, XGBoost queda como alternativa equivalente con un margen pequeño de
+sobrecobertura, y el bosque aleatorio entrega bandas perceptiblemente más anchas
+con una garantía estructural de monotonía de los cuantiles. Para los mapas del
+capítulo \ref{ch:o5}, el modelo recomendado es la regresión de cuantiles con
+LightGBM, por entregar la banda mejor calibrada al nivel anunciado, con XGBoost
+como alternativa equivalente.
+
+Un último apunte sobre el alcance del entrenamiento, paralelo al que cierra la
+sección \ref{sec:o4-cat-diagnostico}, confirma la decisión poblacional. Un regresor
+de cuantiles de XGBoost entrenado únicamente con los 1\,458 días de entrenamiento
+del ave de mayor histórico (91916A) y evaluado sobre sus 406 días de prueba alcanza
+un \textit{top-1 mapeado} de 0,685 y una distancia mediana vía centroide de
+14,6\,km; el modelo poblacional restringido a las mismas 406 observaciones obtiene
+\textit{top-1} 0,687 y distancia mediana 14,4\,km, indistinguible del individual en
+ambas métricas. Dos experimentos con diseños distintos (una clasificación categórica
+en la sección \ref{sec:o4-cat-diagnostico} y una regresión de cuantiles aquí)
+convergen, por tanto, en la misma conclusión: la distribución poblacional ya captura
+al individuo más favorable tan bien como un modelo dedicado, y la heterogeneidad
+inter-individual del conjunto, real, no justifica el coste de entrenar un modelo por
+ave ni la pérdida de escalabilidad a las 80 aves con menos histórico. El modelo
+canónico del capítulo, en sus dos formulaciones, es el poblacional.
