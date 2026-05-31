@@ -86,20 +86,30 @@ coincidir):
 
 | Elemento | Color |
 |---|---|
-| p50 (predicción) y banda | azul cielo `#4dabf7` (banda translúcida) |
-| posición real | ámbar `#f59f00` |
+| p50 (predicción) y banda | granate `#c92a2a` (banda translúcida) |
+| posición real | verde `#2f9e44` |
 | Markov (rombo) | violeta `#9775fa` |
 | **error (p50→real)** | **rojo `#fa5252`** — *el error SIEMPRE en rojo* |
 | estacionario (estado O3) | azul marino `#1b3a6b` |
 | migración (estado O3) | **magenta `#d6336c`** |
 | rutas "Todas" | paleta categórica 16 colores (cíclica) |
 | ruta por año | ámbar + violeta + verde-azulado + naranja + rosa + cian |
+| **acento de la UI** (controles) | azul cielo `#4dabf7` (`--accent`, NO es un color de dato) |
 
 **Conflictos resueltos (regla del autor):** el **error se queda rojo**;
-por eso **migración pasó de rojo a magenta** (no puede haber dos rojos), y
-el **p50 (azul cielo) se separó del estacionario (azul marino)** (no dos
-azules confundibles). La paleta por año arranca en el ámbar de "real" y
-**evita el rojo puro** para no chocar con el error.
+por eso **migración es magenta** (no puede haber dos rojos). A petición del
+autor (2026-05-31) la **posición real pasó a verde `#2f9e44` y el p50
+predicho a granate `#c92a2a`**: granate (oscuro) y rojo puro (`#fa5252`, el
+error) son distinguibles, así que el error sigue siendo el rojo puro y la
+regla se respeta. La paleta por año **evita el rojo puro** para no chocar con
+el error.
+
+**Acento de la UI separado de los datos (2026-05-31):** los controles
+(relleno del slider de dos topes, bordes al pasar el ratón, botones,
+checkboxes, `accent-color`) usan la variable propia **`--accent` (azul cielo
+`#4dabf7`)**, no `--p50`. Así el punto predicho puede cambiar de color sin
+arrastrar consigo la interfaz. `--p50` queda reservado al dato (punto p50 +
+banda + sus entradas de leyenda).
 
 ## Leyenda ("el índice") — por secciones
 
