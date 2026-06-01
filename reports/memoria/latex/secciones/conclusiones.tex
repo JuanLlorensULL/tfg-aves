@@ -1,4 +1,60 @@
 \chapter{Conclusiones y trabajo futuro}
+\label{ch:conclusiones}
 
-Resumen de resultados obtenidos en el trabajo, conclusiones sobre los mismos y
-potencial trabajo futuro si existiera.
+\section{Conclusiones}
+\label{sec:concl-conclusiones}
+
+Este trabajo se propuso predecir el desplazamiento diario de la gaviota sombría a
+partir de su rastro GPS, mediante un enfoque híbrido que combina modelos
+probabilísticos y aprendizaje automático, y comparar de forma sistemática las
+soluciones desarrolladas bajo una métrica común y frente a baselines explícitas. Ese
+objetivo general se ha alcanzado: el sistema encadena las distintas piezas en un flujo
+coherente y las evalúa todas con el mismo criterio, de modo que su comparación es
+directa.
+
+Los cinco objetivos específicos planteados en la introducción
+(\ref{sec:intro-objetivos}) se han cumplido. La preparación de los datos transformó los
+registros GPS en bruto en una secuencia diaria homogénea por individuo, con los huecos
+del seguimiento representados de forma explícita, que ha servido de base común a todos
+los modelos (capítulo \ref{ch:o1}). Sobre ella, la cadena de Markov visible estableció
+una baseline interpretable y fijó el criterio de evaluación, el log-loss, junto con la
+referencia de persistencia frente a la que se contrasta el resto (capítulo
+\ref{ch:o2}). El modelo oculto de Markov recuperó sin supervisión los dos regímenes de
+comportamiento, estacionario y de migración, y se validó por su coherencia con la
+fenología conocida de la especie (capítulo \ref{ch:o3}). Los modelos de aprendizaje
+supervisado predijeron el desplazamiento empleando únicamente información disponible
+antes del instante predicho e incorporando el régimen inferido, y entregaron una
+predicción acompañada de una banda de incertidumbre bien calibrada (capítulo
+\ref{ch:o4}). Por último, la herramienta de cartografía interactiva permite visualizar y
+comparar sobre el mapa las predicciones de los distintos modelos (capítulo
+\ref{ch:o5}).
+
+De la comparación sistemática se extrae la conclusión central del trabajo. Los modelos
+de aprendizaje supervisado se construyeron con el propósito de superar a la baseline de
+Markov, y lo logran: la mejoran de forma consistente bajo el criterio común de
+evaluación. Sobre esa base, reformular el problema como una regresión de cuantiles
+permitió ir un paso más allá, al recuperar la precisión en la predicción del destino
+diario que la primera formulación discretizada había cedido y, sobre todo, al entregar
+una banda de incertidumbre bien calibrada, una salida directamente cartografiable que la
+herramienta interactiva lleva al mapa. El enfoque híbrido funciona, por tanto, como un
+sistema integrado y cumple lo que se propuso.
+
+La evaluación delimita además, con datos, hasta dónde puede llegar la predicción a esta
+escala: el horizonte de un día con información puramente local marca un techo
+estructural, porque la posición y el contexto de una jornada no contienen el predictor de
+un evento migratorio (el viento, la historia de varios días, el destino). Lejos de ser
+una limitación del diseño, caracterizar ese techo orienta el trabajo futuro y sitúa el
+valor del enfoque donde de verdad aporta: en la incertidumbre calibrada y en distinguir los días en que el ave
+está migrando, que son los pocos en los que predecir su desplazamiento aporta
+información real, frente a los muchos días en que apenas se mueve.
+
+El trabajo deja, además, dos lecciones metodológicas que trascienden este caso concreto
+y cuya proyección se analiza en el capítulo \ref{ch:impacto}: el diseño causal de las
+variables, que exige que toda variable predictiva sea calculable sin observar el futuro,
+y el uso de la coherencia biológica como criterio de validación, que contrasta cada
+resultado contra la fenología de la especie antes de darlo por bueno.
+
+\section{Trabajo futuro}
+\label{sec:concl-futuro}
+
+\todo[inline]{Trabajo futuro: modelos de secuencia, viento causal, multi-paso + reabribles.}
