@@ -1,6 +1,45 @@
 \chapter*{Resumen}
 
-\todo[inline]{Aquí va el resumen del trabajo. Extensión máxima 2 páginas.}
+La proliferación de los dispositivos de geolocalización ha transformado el estudio
+del movimiento animal: el cuello de botella de la disciplina se ha desplazado de
+registrar dónde ha estado un animal a anticipar dónde estará. Este trabajo aborda
+esa pregunta sobre una especie concreta, la gaviota sombría (\textit{Larus fuscus}),
+un migrante de larga distancia cuyo corredor une las zonas de cría del norte de
+Europa con las áreas de invernada del este de África, a partir de datos públicos de
+seguimiento GPS. El problema se plantea a escala diaria: dada la posición de un
+individuo hoy, predecir dónde estará mañana.
+
+Para ello se diseña y evalúa un enfoque híbrido que combina modelos probabilísticos
+y aprendizaje automático. A partir de los registros GPS en bruto se construye una
+secuencia diaria homogénea de posiciones por individuo, con los huecos del
+seguimiento representados de forma explícita, que sirve de base común a todos los
+modelos. Sobre ella se articulan tres piezas. Una cadena de Markov visible establece
+una baseline interpretable y fija el criterio de evaluación común, frente a la
+referencia trivial de suponer que el animal permanecerá donde está. Un modelo oculto
+de Markov infiere, sin supervisión, el régimen de comportamiento de cada día
+(estacionario o en migración) y se valida por su coherencia con la fenología de la
+especie. Ese régimen alimenta, como una variable más, a modelos de aprendizaje
+supervisado (Random Forest, XGBoost y LightGBM), que predicen el desplazamiento
+empleando únicamente información disponible antes del instante que se predice. Por
+último, una herramienta de cartografía interactiva permite visualizar y comparar
+sobre el mapa las predicciones de los distintos modelos.
+
+El enfoque aporta en tres frentes complementarios. Calibra la incertidumbre de cada
+predicción mediante una banda que la herramienta interactiva traslada al mapa; aísla
+el régimen de migración, que es donde anticipar el desplazamiento resulta
+verdaderamente informativo, frente a los largos periodos estacionarios propios de la
+especie; y caracteriza con datos el techo estructural que impone predecir a un día con
+información puramente local, un límite inherente al horizonte del problema más que a un
+modelo concreto. La formulación del problema como regresión de cuantiles es la que
+mejor concilia la precisión de la posición estimada con una incertidumbre bien
+calibrada.
+
+La contribución del trabajo es triple: la caracterización rigurosa de un límite
+estructural de la predicción a corto plazo, una herramienta interactiva para comparar
+modelos sobre el territorio, y un criterio metodológico transversal, el de exigir
+coherencia biológica a todo resultado antes de darlo por válido. De ahí se derivan las
+líneas de trabajo futuro, que apuntan a modelos de secuencia, a la incorporación del
+viento y a la predicción a varios pasos.
 
 \begin{otherlanguage}{english}
   \chapter*{Abstract}
