@@ -57,4 +57,29 @@ resultado contra la fenología de la especie antes de darlo por bueno.
 \section{Trabajo futuro}
 \label{sec:concl-futuro}
 
-\todo[inline]{Trabajo futuro: modelos de secuencia, viento causal, multi-paso + reabribles.}
+El techo estructural identificado no es un punto final, sino una guía sobre dónde
+concentrar el esfuerzo. Las tres direcciones siguientes atacan directamente la causa de
+ese límite: la ausencia, en la información de un solo día, del predictor de un evento
+migratorio.
+
+La primera es incorporar memoria temporal de varios días mediante modelos de secuencia.
+El planteamiento actual resume el pasado en la posición y el contexto de la jornada
+anterior, de modo que no puede captar la antesala de una migración, que se gesta a lo
+largo de varios días. Arquitecturas pensadas para series temporales, como las redes
+recurrentes o los modelos basados en mecanismos de atención, permitirían que la
+predicción de cada día dependiera de una ventana histórica más amplia, y son el camino
+natural para ensanchar el horizonte local que hoy limita la predicción.
+
+La segunda es introducir variables meteorológicas, y en particular el viento, con un
+diseño causal. El viento es un determinante físico del desplazamiento de un ave
+migratoria, y su disponibilidad en los mismos repositorios que los datos de seguimiento
+lo convierte en un candidato inmediato. Una exploración preliminar con esta variable no
+resultó concluyente, pero quedó pendiente de rehacerse bajo la disciplina causal adoptada
+en el resto del trabajo, empleando solo la información disponible antes del instante que
+se predice; completar ese rediseño es una línea de mejora concreta.
+
+La tercera es extender la predicción a varios pasos, anticipando no solo la posición del
+día siguiente sino una trayectoria a un horizonte mayor, y propagando la incertidumbre a
+lo largo de ese horizonte. La banda calibrada que el modelo ya entrega a un día es la base
+sobre la que construir esa propagación, de modo que la predicción a varios pasos siga
+siendo honesta respecto a su propia confianza.

@@ -60,5 +60,5 @@ Tres direcciones centrales en profundidad (H20) + reabribles en una frase:
   línea base quedó pendiente de rework causal): el viento es un predictor físico del
   desplazamiento migratorio.
 - **Predicción multi-paso / a horizontes mayores**, propagando la incertidumbre.
-- Reabribles (una frase): resolución intradía desde `fixes_clean.parquet` (H4), ampliar
-  el conjunto de aves (H8), personalización por individuo si crece el histórico (H7/H12).
+- (El párrafo de reabribles intradía/más aves/personalización se redactó pero el autor
+  decidió retirarlo: el capítulo cierra con las tres direcciones centrales.)
