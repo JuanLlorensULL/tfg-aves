@@ -224,6 +224,41 @@ debe ser único en toda la memoria). **Pendiente de visto bueno del autor.**
   aportación, pero enunciada en general (sin el ejemplo del HMM).
 - ODS: objetivo 15 (principal), 13 (clima) y 4 (divulgación, de pasada).
 
+## Hilos cerrados en las conclusiones (cap. 9)
+
+> Redactado el 2026-06-01. Capítulo de **dos secciones** (decisión del autor): §9.1
+> Conclusiones (fusiona el balance de los cinco objetivos con la conclusión de
+> investigación) y §9.2 Trabajo futuro (tres direcciones centrales en profundidad). Sin
+> figuras ni tablas, cualitativo (sin cifras), por decisión del autor. Tono positivo a
+> petición del autor: lidera con el logro (el ML supera a Markov; la regresión de
+> cuantiles recupera la precisión del destino y entrega la banda calibrada) y presenta el
+> techo estructural como hallazgo caracterizado, no como limitación. Auditado con dos
+> agentes (organización + verificador escéptico): APTO; verificador confirmó todas las
+> afirmaciones contra tablas/código; se aplicó el único hallazgo menor (poda de la
+> redundancia interna del techo entre §9.1 y la apertura de §9.2) y la mejora de estilo
+> del `\ref`. Driver de preview: `_preview_conclusiones.tex`.
+
+**Cerrados en el capítulo 9:**
+
+| # | Hilo | Cómo se cierra |
+|---|---|---|
+| H20 | Techo estructural | §9.2 lo convierte en las tres direcciones concretas de trabajo futuro (modelos de secuencia, viento con diseño causal, predicción multi-paso), cada una atacando la causa del límite. Cierra el arrastre desde el cap. 6 y el cap. 8. |
+| H10 | Persistencia como baseline | §9.1 la recoge de pasada ("frente a los muchos días en que apenas se mueve"), sin nombrarla ni sobre-centrar el discurso en ella (decisión del autor). |
+
+**Decisiones del capítulo:**
+
+- Reenfoque positivo de la conclusión central (a petición del autor): el énfasis recae en
+  que los modelos supervisados se construyeron para superar a Markov y lo logran, y en que
+  la regresión de cuantiles mejora el resultado; el techo estructural es un hallazgo que
+  orienta, no un fracaso.
+- Las tres aportaciones metodológicas se **referencian** al cap. \ref{ch:impacto} sin
+  reexplicarlas (evita redundancia con el impacto).
+- Se retiró el párrafo de reabribles (intradía, más aves, personalización): el capítulo
+  cierra con las tres direcciones centrales.
+- La expresión "aislar el régimen de migración" se sustituyó por lenguaje llano
+  ("distinguir los días en que el ave está migrando…") de forma coherente en conclusiones,
+  resumen, abstract e impacto.
+
 ## Notas
 
 - **H4 — riesgo de coherencia a resolver:** §3.1 afirma que de `fixes_clean.parquet`
