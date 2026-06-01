@@ -44,7 +44,45 @@ viento y a la predicción a varios pasos.
 \begin{otherlanguage}{english}
   \chapter*{Abstract}
 
-  \todo[inline]{Abstract of the Final Degree Project. Maximum length: 2 pages.}
+  The proliferation of geolocation devices has transformed the study of animal
+  movement: the field's bottleneck has shifted from recording where an animal has
+  been to anticipating where it will be. This work addresses that question for a
+  specific species, the lesser black-backed gull (\textit{Larus fuscus}), a
+  long-distance migrant whose corridor connects the breeding grounds of northern
+  Europe with the wintering areas of eastern Africa, using publicly available GPS
+  tracking data. The problem is posed at a daily scale: given an individual's
+  position today, predict where it will be tomorrow.
+
+  To this end, a hybrid approach combining probabilistic models and machine learning
+  is designed and evaluated. From the raw GPS records, a homogeneous daily sequence of
+  positions is built for each individual, with tracking gaps represented explicitly,
+  which serves as a common basis for all models. Three components are articulated on
+  top of it. A visible Markov chain establishes an interpretable baseline and fixes
+  the common evaluation criterion, against the trivial reference of assuming that the
+  animal will remain where it is. A hidden Markov model infers, in an unsupervised
+  manner, each day's behavioural regime (stationary or migrating) and is validated by
+  its consistency with the species' phenology. That regime feeds, as one further
+  feature, supervised learning models (Random Forest, XGBoost and LightGBM), which
+  predict the displacement using only information available before the instant being
+  predicted. Finally, an interactive cartography tool makes it possible to visualise
+  and compare the predictions of the different models on the map.
+
+  The approach contributes on three complementary fronts. It calibrates the
+  uncertainty of each prediction through a band that the interactive tool carries onto
+  the map; it isolates the migration regime, which is where anticipating the
+  displacement becomes genuinely informative, as opposed to the long stationary
+  periods typical of the species; and it characterises, with data, the structural
+  ceiling imposed by predicting one day ahead with purely local information, a limit
+  inherent to the problem's horizon rather than to any particular model. Casting the
+  problem as quantile regression is what best reconciles the precision of the
+  estimated position with well-calibrated uncertainty.
+
+  The contribution of this work is threefold: the rigorous characterisation of a
+  structural limit of short-term prediction, an interactive tool to compare models
+  over the territory, and a cross-cutting methodological criterion, namely requiring
+  biological consistency of every result before accepting it as valid. From these
+  follow the lines of future work, which point towards sequence models, the
+  incorporation of wind, and multi-step prediction.
 \end{otherlanguage}
 
 

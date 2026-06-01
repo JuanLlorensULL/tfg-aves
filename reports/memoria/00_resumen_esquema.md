@@ -56,4 +56,11 @@ multi-paso.
 ## Estructura del Abstract (EN)
 Espejo fiel del resumen ES (mismos 4 párrafos, misma terminología técnica en inglés:
 visible Markov chain, hidden Markov model, supervised learning, quantile regression,
-persistence baseline, log-loss). Sin keywords (decisión del autor).
+persistence baseline). Sin keywords (decisión del autor). **Ortografía británica**
+consistente (behavioural, visualise, characterise), por decisión del autor.
+
+## Estado: CERRADO (2026-06-01)
+Resumen (ES) y Abstract (EN) redactados, aprobados y committeados. P3 reformulado a
+petición del autor para liderar con las aportaciones (no con la dificultad de batir la
+persistencia, que queda solo de pasada en P2 como referencia del baseline). Una página
+densa por idioma, cero rayas, sin cifras. Driver de preview: `_preview_resumen.tex`.
