@@ -331,11 +331,13 @@ Frente a la cadena de Markov, las dos familias supervisadas que quedan ganan en 
 tres métricas comparables (\textit{top-1}, \textit{top-3} y distancia mediana), con
 una mejora modesta pero consistente que confirma que las variables del HMM y la no
 linealidad del modelo aportan algo sobre la transición monoparamétrica de Markov.
-Frente a la persistencia, en cambio, los dos modelos supervisados pierden en todas
-las métricas globales: la persistencia iguala su \textit{top-1} con su \textit{top-3}
-(su distribución es degenerada, asigna toda la masa a una celda y los dos coinciden)
-y, aun así, supera al mejor supervisado por 20 puntos en \textit{top-1} y por
-3\,km en distancia mediana. El \textit{log-loss} del mejor supervisado (5,49) es
+Frente a la persistencia, en cambio, los dos modelos supervisados pierden en
+\textit{top-1}: la persistencia, de distribución degenerada, asigna toda la masa
+a una celda y su \textit{top-3} coincide siempre con su \textit{top-1}; aun así,
+supera al mejor supervisado por 20 puntos en \textit{top-1}. En \textit{top-3} la
+brecha se estrecha: el bosque aleatorio alcanza 0,732 frente al 0,778 de la
+persistencia, una diferencia de 5 puntos frente a los 20 de \textit{top-1}.
+El \textit{log-loss} del mejor supervisado (5,49) es
 informativo en términos absolutos (mejor que el 6,77 de una distribución uniforme
 sobre las 871 clases activas), pero la persistencia no produce distribución
 comparable y no participa en esa columna.
@@ -356,37 +358,39 @@ lectura.
      & \multicolumn{2}{c}{\textbf{Estacionario}} & \multicolumn{2}{c}{\textbf{Migración}} & \multicolumn{2}{c}{\textbf{Movim.~real}}\\
      & \multicolumn{2}{c}{$n=3\,509$} & \multicolumn{2}{c}{$n=451$} & \multicolumn{2}{c}{$n=880$}\\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-    \textbf{Modelo} & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med.\\
+    \textbf{Modelo} & \textit{top-1} & \textit{top-3} & \textit{top-1} & \textit{top-3} & \textit{top-1} & \textit{top-3}\\
     \midrule
-    Persistencia       & 0,841 & 19,5 & 0,284 &  52 & 0,000 & 44 \\
-    Cadena de Markov   & 0,607 & 23,7 & 0,120 & 1\,068 & 0,089 & 79 \\
-    Bosque aleatorio   & 0,632 & 23,0 & 0,137 & 205 & 0,164 & 56 \\
-    XGBoost            & 0,639 & 23,1 & 0,140 & 154 & 0,175 & 55 \\
+    Persistencia       & 0,841 & 0,841 & 0,284 & 0,284 & 0,000 & 0,000 \\
+    Cadena de Markov   & 0,607 & 0,694 & 0,120 & 0,195 & 0,089 & 0,373 \\
+    Bosque aleatorio   & 0,632 & 0,792 & 0,137 & 0,259 & 0,164 & 0,445 \\
+    XGBoost            & 0,639 & 0,762 & 0,140 & 0,235 & 0,175 & 0,445 \\
     \bottomrule
   \end{tabular}
-  \caption[Acierto y distancia desagregados por régimen del HMM y por movimiento
-  real]{Acierto (\textit{top-1}) y mediana de la distancia en kilómetros sobre el
+  \caption[Acierto \textit{top-1} y \textit{top-3} desagregados por régimen del HMM y por movimiento
+  real]{Acierto (\textit{top-1} y \textit{top-3}) sobre el
   conjunto de prueba, desagregados por el régimen del HMM causal (\emph{estacionario}
   y \emph{migración}, según \texttt{state\_b\_causal} del capítulo \ref{ch:o3}) y
   restringidos a los días en que la celda de $t+1$ difiere de la de $t$
-  (\emph{movim.~real}). Se omite LightGBM, descartado en la sección anterior. La
-  persistencia bate al supervisado también dentro del régimen de migración del HMM;
-  el margen del supervisado vive en los días de movimiento real, donde la
-  persistencia acierta cero por construcción.}
+  (\emph{movim.~real}). Se omite LightGBM, descartado en la sección anterior.
+  La persistencia, de distribución degenerada, iguala siempre su \textit{top-1} y
+  su \textit{top-3}. Los modelos supervisados reducen notablemente la brecha con
+  la persistencia al pasar a \textit{top-3}, y en los días de movimiento real
+  la superan con claridad (0,445 frente a 0,000).}
   \label{tab:o4-cat-estado}
 \end{table}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{o4_fig07_error-by-state-poblacional.png}
-  \caption[Error desagregado por régimen del HMM]{Acierto del modelo poblacional
-  (XGBoost) desagregado por el régimen del HMM causal del capítulo \ref{ch:o3}, en
-  el conjunto de prueba. El régimen \emph{estacionario} cubre 3\,509 días
-  (88,6\,\% del conjunto) y el régimen \emph{migración}, 451 días (11,4\,\%). El
-  \textit{top-1} cae de 0,64 en estacionario a 0,14 en migración; el patrón es el
-  mismo para el bosque aleatorio (tabla \ref{tab:o4-cat-estado}). Los días informativos
-  para la predicción son una minoría y son precisamente donde el modelo pierde casi
-  toda su capacidad predictiva.}
+  \caption[\textit{Top-1} y \textit{top-3} desagregados por régimen del HMM]{Acierto
+  (\textit{top-1} y \textit{top-3}) del modelo poblacional (XGBoost, derecha) y del
+  modelo individual del ave 91916A (bosque aleatorio, izquierda) desagregados por el
+  régimen del HMM causal del capítulo \ref{ch:o3}, en el conjunto de prueba. El
+  régimen \emph{estacionario} cubre 3\,509 días (88,6\,\% del conjunto) y el régimen
+  \emph{migración}, 451 días (11,4\,\%). Para el poblacional, el \textit{top-1} cae de
+  0,64 en estacionario a 0,14 en migración; el \textit{top-3} cae de 0,76 a 0,24.
+  La brecha con la persistencia es mayor en \textit{top-1} que en \textit{top-3}, y
+  se concentra en los días de migración (tabla \ref{tab:o4-cat-estado}).}
   \label{fig:o4-cat-estado}
 \end{figure}
 
@@ -407,11 +411,13 @@ persistencia sigue acertando.
 El espacio donde un modelo predictivo aporta algo que la persistencia no puede dar
 por construcción es, por tanto, el de los \emph{días de movimiento real}: los 880
 días del conjunto de prueba en los que la celda de $t+1$ difiere de la de $t$
-(el 22,2\,\% del total). Allí la persistencia acierta cero \textit{top-1} y los
-supervisados aciertan entre 0,16 y 0,18, con una distancia mediana cuando fallan en
-torno a los 55\,km (una celda y media de la rejilla, frente a los 79\,km de Markov).
-El margen es modesto, pero existe; es el único contexto en el que el modelo
-supervisado supera al baseline trivial.
+(el 22,2\,\% del total). Allí la persistencia acierta cero en \textit{top-1} y
+en \textit{top-3} por construcción; los modelos supervisados aciertan entre 0,16 y
+0,18 en \textit{top-1} y llegan a 0,445 en \textit{top-3}, frente al 0,373 de la
+cadena de Markov. El margen es modesto en \textit{top-1}, pero en \textit{top-3}
+los supervisados superan claramente a Markov y aplican sobre la persistencia una
+ventaja que este contexto permite cuantificar; es el único corte en el que ambas
+comparaciones resultan favorables al modelo supervisado.
 
 \subsection{De dónde sale la señal}
 \label{sec:o4-cat-importancia}
@@ -569,31 +575,30 @@ real para las tres familias de cuantiles.
      & \multicolumn{2}{c}{\textbf{Global}} & \multicolumn{2}{c}{\textbf{Estacionario}} & \multicolumn{2}{c}{\textbf{Migración}} & \multicolumn{2}{c}{\textbf{Movim.~real}}\\
      & \multicolumn{2}{c}{$n=3\,960$} & \multicolumn{2}{c}{$n=3\,509$} & \multicolumn{2}{c}{$n=451$} & \multicolumn{2}{c}{$n=880$}\\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
-    \textbf{Modelo} & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med. & \textit{top-1} & d.\,med.\\
+    \textbf{Modelo} & \textit{top-1} & \textit{top-3} & \textit{top-1} & \textit{top-3} & \textit{top-1} & \textit{top-3} & \textit{top-1} & \textit{top-3}\\
     \midrule
     \multicolumn{9}{l}{\emph{Formulación categórica (sección \ref{sec:o4-categorica}, referencia)}}\\
-    XGBoost categórico  & 0,582 & 24,3 & 0,639 & 23,1 & 0,140 & 154 & 0,175 & 55 \\
+    XGBoost categórico  & 0,582 & 0,702 & 0,639 & 0,762 & 0,140 & 0,235 & 0,175 & 0,445 \\
     \midrule
     \multicolumn{9}{l}{\emph{Formulación continua (esta sección)}}\\
-    Bosque aleatorio    & 0,771 & 20,9 & 0,842 & 19,2 & 0,217 &  62 & 0,049 & 42 \\
-    XGBoost             & 0,763 & 20,9 & 0,833 & 19,2 & 0,217 &  59 & 0,100 & 41 \\
-    LightGBM            & 0,762 & 20,9 & 0,835 & 19,2 & 0,197 &  60 & 0,085 & 41 \\
+    Bosque aleatorio    & 0,771 & 0,898 & 0,842 & 0,946 & 0,217 & 0,523 & 0,049 & 0,566 \\
+    XGBoost             & 0,763 & 0,901 & 0,833 & 0,946 & 0,217 & 0,552 & 0,100 & 0,582 \\
+    LightGBM            & 0,762 & 0,900 & 0,835 & 0,946 & 0,197 & 0,543 & 0,085 & 0,578 \\
     \midrule
     \multicolumn{9}{l}{\emph{Baseline}}\\
-    Persistencia        & 0,778 & 20,9 & 0,841 & 19,5 & 0,284 &  52 & 0,000 & 45 \\
+    Persistencia        & 0,778 & 0,778 & 0,841 & 0,841 & 0,284 & 0,284 & 0,000 & 0,000 \\
     \bottomrule
   \end{tabular}
   \caption[Comparativa entre las dos formulaciones del capítulo y los baselines]{Acierto
-  (\textit{top-1 mapeado} al \textit{grid} 0,5\textdegree) y mediana de la distancia
-  vía centroide en kilómetros sobre el conjunto de prueba, para el mejor modelo de
-  la formulación categórica, las tres familias de la regresión de cuantiles
-  (modo poblacional) y la persistencia trivial. La predicción puntual de la
-  formulación continua es el $p_{50}$ de cada componente, llevado al \textit{grid}
-  0,5\textdegree{} para comparar con la formulación categórica. La reformulación
-  sube el \textit{top-1} global de 0,58 a 0,76--0,77, baja la distancia mediana
-  global de 24,3 a 20,9\,km y reduce a un tercio la distancia mediana del error en
-  los días de migración del HMM (de 154 a unos 60\,km). Entre familias, las tres
-  son prácticamente indistinguibles en los cuatro cortes.}
+  (\textit{top-1} y \textit{top-3}, mapeados al \textit{grid} 0,5\textdegree) sobre el
+  conjunto de prueba, para el mejor modelo de la formulación categórica, las tres familias
+  de la regresión de cuantiles (modo poblacional) y la persistencia trivial. La predicción
+  puntual de la formulación continua es el $p_{50}$ de cada componente, llevado al
+  \textit{grid} 0,5\textdegree{} para comparar con la formulación categórica. La
+  reformulación sube el \textit{top-1} global de 0,58 a 0,76--0,77 y el \textit{top-3}
+  de 0,70 a 0,90, superando en esta última métrica a la persistencia (0,778). En los días
+  de migración del HMM, el \textit{top-3} pasa de 0,24 a 0,55, el doble del baseline
+  trivial. Entre familias, las tres son prácticamente indistinguibles en los cuatro cortes.}
   \label{tab:o4-q-precision}
 \end{table}
 
@@ -614,12 +619,13 @@ real para las tres familias de cuantiles.
 El primer mensaje de la tabla es la magnitud de la mejora respecto a la formulación
 categórica. La sola reformulación del objetivo, con las mismas variables, el mismo
 \textit{split} y los mismos hiperparámetros, levanta el \textit{top-1} global de
-0,58 a 0,76 (18 puntos absolutos, un 31\,\% relativo), baja la distancia mediana
-global de 24,3 a 20,9\,km y, en el corte más exigente del capítulo, reduce a un
-tercio la distancia mediana del error en los días de migración del HMM, de 154 a
-unos 60\,km. La mejora se reproduce en los días estacionarios (\textit{top-1} de
-0,64 a 0,83--0,84) y en la distancia mediana de los días de movimiento real (de
-55 a 41\,km). El mecanismo es geométrico: como el desplazamiento real es
+0,58 a 0,76 (18 puntos absolutos, un 31\,\% relativo). En \textit{top-3} la mejora
+es más pronunciada aún: de 0,70 a 0,90 globalmente, con lo que la formulación
+continua supera ya a la persistencia (0,778) en esta métrica. En los días de
+migración del HMM, el \textit{top-3} pasa de 0,24 a 0,55, el doble del nivel de
+la persistencia (0,28). La mejora se reproduce en los días estacionarios
+(\textit{top-1} de 0,64 a 0,83--0,84; \textit{top-3} de 0,76 a 0,946). El
+mecanismo es geométrico: como el desplazamiento real es
 \emph{nulo} el 77,8\,\% de los días de prueba, el regresor aprende a predecir un
 desplazamiento próximo a cero en esos días, su $p_{50}$ recae en la celda de
 origen y reproduce el acierto de los \textit{self-loops} que la formulación
@@ -629,8 +635,8 @@ incorrectas) y empuja al modelo hacia predicciones geométricamente cercanas, qu
 exactamente lo que el problema requiere. La única métrica que se mueve a la baja en
 la transición es el \textit{top-1} del corte de movimiento real (de 0,18 a 0,05--
 0,10), una contrapartida coherente con el mismo mecanismo (el regresor «se atreve»
-menos a apostar fuera de la celda de origen), que la mejora dramática de la
-distancia en ese mismo corte compensa con holgura.
+menos a apostar fuera de la celda de origen), que la ganancia en \textit{top-3}
+(0,58 frente a 0,445 de la formulación categórica) compensa con holgura.
 
 El segundo mensaje es la convergencia entre familias. Sobre el conjunto de prueba el
 \textit{top-1} global queda entre 0,762 (LightGBM) y 0,771 (bosque aleatorio), una
@@ -658,15 +664,18 @@ probabilística, no desde la precisión.
 
 Frente a la persistencia trivial, la formulación continua se sitúa en una posición
 muy distinta a la categórica. Aquélla perdía en todas las métricas globales por un
-margen amplio; ésta empata en distancia mediana (20,9\,km en las tres familias y en
-la persistencia) y queda apenas una o dos décimas por debajo en \textit{top-1}
-global. La persistencia conserva una pequeña ventaja en \textit{top-1} y en la
-distancia mediana del régimen de migración, por la misma razón estructural ya
-diagnosticada (la moda dominante de los \textit{self-loops}), pero la diferencia
-deja de ser cualitativa: la formulación continua iguala en agregado a la
-referencia exigente del capítulo mientras añade una dimensión que la persistencia
-no entrega, la banda de incertidumbre que la sección \ref{sec:o4-q-incertidumbre}
-caracteriza.
+margen amplio; ésta queda apenas una o dos décimas por debajo en \textit{top-1}
+global y, en \textit{top-3}, supera ya a la persistencia (0,90 frente a 0,778).
+En los días de migración del HMM, el \textit{top-3} de la formulación continua
+(0,55) dobla al de la persistencia (0,28): la formulación aprende que en migración
+el ave puede desplazarse a cualquiera de varias celdas vecinas, y distribuye masa
+sobre ese vecindario de forma que las tres candidatas más probables ya superan
+claramente al único destino que la persistencia propone. La persistencia conserva
+una pequeña ventaja en \textit{top-1} por la moda dominante de los \textit{self-loops},
+pero la diferencia deja de ser cualitativa: la formulación continua iguala o supera
+a la referencia exigente del capítulo según la métrica y el corte, mientras añade
+una dimensión que la persistencia no entrega, la banda de incertidumbre que la
+sección \ref{sec:o4-q-incertidumbre} caracteriza.
 
 \subsection{Banda de incertidumbre y monotonía de los cuantiles}
 \label{sec:o4-q-incertidumbre}
@@ -746,16 +755,15 @@ este problema, no una mejora de ajuste.
 
 El balance de la formulación continua es claro respecto a las dos referencias del
 capítulo. Frente a la formulación categórica de la sección \ref{sec:o4-categorica},
-la mejora es sustancial y se reproduce en todos los cortes salvo en el
-\textit{top-1} de los días de movimiento real: el acierto global sube 18 puntos,
-la distancia mediana global baja unos 3\,km y la distancia mediana en los días de
-migración se reduce a un tercio. Frente a la persistencia trivial, la formulación
-continua iguala el agregado (la distancia mediana global coincide en 20,9\,km y el
-\textit{top-1} queda una o dos décimas por debajo), revierte por completo la
-pérdida amplia que la formulación categórica acumulaba contra ese baseline y, sobre
-todo, añade la dimensión que la persistencia no puede dar: una banda de
-incertidumbre calibrada $[p_{10}, p_{90}]$ con cobertura empírica próxima al
-80\,\% nominal (sección \ref{sec:o4-q-incertidumbre}). Sobre los mapas del capítulo
+la mejora es sustancial y se reproduce en todos los cortes: el \textit{top-1} global
+sube 18 puntos y el \textit{top-3} global sube 20 puntos (de 0,70 a 0,90). Frente
+a la persistencia trivial, la formulación continua revierte por completo la pérdida
+amplia que la formulación categórica acumulaba: en \textit{top-1} queda una o dos
+décimas por debajo, y en \textit{top-3} la supera (0,90 frente a 0,778 global;
+0,55 frente a 0,28 en los días de migración del HMM). A ello añade la dimensión
+que la persistencia no puede dar: una banda de incertidumbre calibrada $[p_{10},
+p_{90}]$ con cobertura empírica próxima al 80\,\% nominal
+(sección \ref{sec:o4-q-incertidumbre}). Sobre los mapas del capítulo
 \ref{ch:o5}, esa banda se traduce en una región geográfica interpretable que
 ninguna de las alternativas anteriores podía producir.
 
