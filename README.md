@@ -8,10 +8,9 @@ de visualización interactiva sobre mapas.
 > Trabajo Fin de Grado — Facultad de Informática, UPM. Oferta 9519.
 > Autor: Juan Llorens. Tutora: Adriana Toni Delgado.
 
-## Resultados
+## Aplicación interactiva
 
-Los mapas y la aplicación interactiva de predicción están en `reports/figures/`.
-Para visualizarlos, descarga los ficheros `.html` y ábrelos en un navegador.
+El fichero `reports/figures/o5_prediccion_app.html` es una aplicación de predicción interactiva que permite seleccionar una gaviota y una fecha y visualizar sobre el mapa la posición predicha, el intervalo de incertidumbre y el error cometido. Descárgalo y ábrelo en un navegador.
 
 ## Estructura del proyecto
 
