@@ -1,0 +1,5 @@
+model,state,n,pct
+a_causal,estacionario,17844,86.31965944272446
+a_causal,migración,2828,13.680340557275542
+b_causal,estacionario,17804,86.12616099071208
+b_causal,migración,2868,13.873839009287925

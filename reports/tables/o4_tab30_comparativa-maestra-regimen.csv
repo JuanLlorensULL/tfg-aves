@@ -1,0 +1,21 @@
+regimen,modelo,n_obs,top1,top3,dist_mediana_km,dist_nativa_km
+global,Persistencia,4037,0.775,0.775,20.96,
+global,Markov(1),4037,0.548,0.632,24.9,
+global,L1 categórico (XGB),4037,0.581,0.701,24.35,
+global,L2 dos etapas (soft RF),4037,0.78,0.866,20.91,
+global,L3 cuantil,4037,0.764,0.896,20.93,2.89
+estacionario,Persistencia,3566,0.84,0.84,19.61,
+estacionario,Markov(1),3566,0.605,0.69,23.74,
+estacionario,L1 categórico (XGB),3566,0.639,0.762,23.09,
+estacionario,L2 dos etapas (soft RF),3566,0.846,0.93,19.41,
+estacionario,L3 cuantil,3566,0.837,0.943,19.25,2.3
+migración,Persistencia,471,0.282,0.282,52.41,
+migración,Markov(1),471,0.117,0.193,1098.44,
+migración,L1 categórico (XGB),471,0.142,0.234,164.52,
+migración,L2 dos etapas (soft RF),471,0.274,0.38,54.38,
+migración,L3 cuantil,471,0.208,0.539,62.68,60.92
+moves,Persistencia,908,0.0,0.0,44.62,
+moves,Markov(1),908,0.088,0.363,87.83,
+moves,L1 categórico (XGB),908,0.182,0.441,53.15,
+moves,L2 dos etapas (soft RF),908,0.036,0.406,42.99,
+moves,L3 cuantil,908,0.1,0.569,40.68,29.83

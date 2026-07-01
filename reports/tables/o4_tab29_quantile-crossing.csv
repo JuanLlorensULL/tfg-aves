@@ -1,0 +1,5 @@
+familia_modo,n_test,cruces_lat,cruces_lon,pct_lat,pct_lon
+XGBoost·poblacional,3960,38,16,0.9595959595959596,0.40404040404040403
+XGBoost·individual,406,21,2,5.172413793103448,0.49261083743842365
+LightGBM·poblacional,3960,49,153,1.2373737373737375,3.8636363636363638
+Random Forest·poblacional,3960,0,0,0.0,0.0

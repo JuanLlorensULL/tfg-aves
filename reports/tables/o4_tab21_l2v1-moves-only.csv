@@ -1,0 +1,7 @@
+version,modelo,modo,top1,dist_median_km
+L2-v0 causal,rf,personalizado,0.254,35.4885
+L2-v0 causal,xgb,poblacional,0.175,54.5905
+L2-v1 soft,rf,personalizado,0.0375,42.4512
+L2-v1 soft,rf,poblacional,0.0375,42.6524
+L2-v1 soft,xgb,personalizado,0.0432,42.9944
+L2-v1 soft,xgb,poblacional,0.0455,42.9944

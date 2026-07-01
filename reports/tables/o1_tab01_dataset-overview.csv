@@ -1,0 +1,8 @@
+metric,value
+n_fixes_total,89867
+n_birds,126
+fixes_per_bird_median,262
+fixes_per_bird_p10,26
+fixes_per_bird_p90,1533
+first_timestamp_utc,2009-05-25 00:05:00+00:00
+last_timestamp_utc,2015-08-27 09:00:00+00:00
