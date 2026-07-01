@@ -47,6 +47,11 @@ CLAUDE.md
 *.swp
 .DS_Store
 
+# --- Memoria (archivos generados, no versionados) -----------------------
+reports/memoria/latex/_preview_*.tex
+reports/memoria/latex/_preview_*.pdf
+reports/memoria/latex/tfg_etsiinf_JuanLlorens.pdf
+
 # --- Misc ---------------------------------------------------------------
 *.log
 .env
