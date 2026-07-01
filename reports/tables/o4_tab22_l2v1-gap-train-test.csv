@@ -1,5 +1,0 @@
-modelo,modo,top1_train,top1_test,gap
-rf,personalizado,0.6655,0.2955,0.3701
-rf,poblacional,0.6631,0.2955,0.3676
-xgb,personalizado,0.5,0.2807,0.2193
-xgb,poblacional,0.489,0.2773,0.2117
