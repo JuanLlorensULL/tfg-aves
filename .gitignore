@@ -20,6 +20,7 @@ env/
 # --- Notebooks ----------------------------------------------------------
 .ipynb_checkpoints/
 *.ipynb_checkpoints
+notebooks/*.ipynb
 
 # --- Data ---------------------------------------------------------------
 # The raw Movebank dataset is large and should be obtained from source
