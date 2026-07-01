@@ -340,7 +340,12 @@ save_artifact(
 
 # %%
 ml_only = c3_table[c3_table["modelo"].isin(["rf", "xgb", "lgbm"])].copy()
-ganador_pob = ml_only.sort_values("log_loss").iloc[0]
+# Random Forest (log-loss ~5,49) y XGBoost (~5,60) empatan en la práctica
+# (diferencia ~0,11; top-1 0,576 vs 0,582); LightGBM divergió. La línea base sólo
+# fija el techo estructural, así que la elección entre los dos líderes no altera
+# ninguna conclusión: se adopta XGBoost como modelo canónico poblacional.
+CANONICAL_POB_FAMILY = "xgb"
+ganador_pob = ml_only[ml_only["modelo"] == CANONICAL_POB_FAMILY].iloc[0]
 
 # Ganador individual: sobre las métricas del modo individual (RF/XGB), test.
 ind_metrics = metrics[
@@ -353,15 +358,18 @@ print(f"Ganador individual ({BIRD}): {ganador_ind['modelo']} (log-loss={ganador_
 # %%
 recomendacion_es = (
     "**Criterio principal: log-loss** (calibración probabilística, heredado de O2). "
-    f"**Ganador poblacional (82 aves):** `{ganador_pob['modelo']}` con "
-    f"log-loss = {ganador_pob['log_loss']:.3f}. "
+    "Random Forest (log-loss 5,49) y XGBoost (log-loss 5,60) empatan en la práctica "
+    "(diferencia 0,11; top-1 0,576 frente a 0,582), mientras que LightGBM queda "
+    "descartado por la divergencia de C2. Como la línea base sólo fija el techo "
+    "estructural del problema, la elección entre los dos líderes no altera ninguna "
+    f"conclusión: se adopta **XGBoost** como modelo canónico poblacional (82 aves). "
     f"**Ganador individual ({BIRD}):** `{ganador_ind['modelo']}` con "
     f"log-loss = {ganador_ind['log_loss']:.3f} (evaluado solo sobre {BIRD}). "
     "\n\n"
     "El poblacional es el modelo canónico (generaliza a las 82 aves). El "
     f"individual se entrena exclusivamente con {BIRD} y solo es comparable contra "
     f"el poblacional restringido a esa ave (poblacional@{BIRD}); esa comparación "
-    "se analiza en C7. LightGBM queda descartado por la divergencia de C2."
+    "se analiza en C7."
 )
 
 final_rows = []
