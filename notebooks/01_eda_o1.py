@@ -18,8 +18,7 @@
 #
 # Cuaderno de exploración para fijar los cuatro umbrales que parametrizan
 # `build_o1`: `max_speed_kmh`, `reference_hour_utc`, `tolerance_min` y
-# `min_valid_days`. Cada decisión se justifica con figura/tabla vía
-# `save_artifact` y queda registrada en `reports/INDEX.md`.
+# `min_valid_days`.
 
 # %%
 from __future__ import annotations
