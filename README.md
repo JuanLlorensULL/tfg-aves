@@ -47,8 +47,9 @@ uv sync
 ## Obtención de datos
 
 El dataset original proviene de **Movebank**, estudio
-*"Navigation experiments in lesser black-backed gulls (data from Wikelski et al. 2015)"*.
-Descárgalo y colócalo en `data/raw/migration_original.csv`.
+*"Navigation experiments in lesser black-backed gulls (data from Wikelski et al. 2015)"*
+([repositorio](https://datarepository.movebank.org/entities/datapackage/808c8032-8e24-4ec8-b0b7-91b39d46cb3a), licencia CC0).
+El fichero ya está incluido en `data/raw/migration_original.csv`.
 
 | | |
 |---|---|
