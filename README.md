@@ -66,19 +66,6 @@ uv run jupyter lab     # abrir cuadernos
 uv run ruff check src tests  # linter
 ```
 
-## Objetivos
-
-| | Objetivo | Horas |
-|---|---|---|
-| 1 | Preparación y limpieza de datos | 48 |
-| 2 | Predicción estadística con Markov | 40 |
-| 3 | Detección de comportamiento con HMM | 50 |
-| 4 | Predicción con Machine Learning (RF, XGBoost, LightGBM) | 65 |
-| 5 | Visualización en mapas y evaluación | 44 |
-|   | Escritura de la memoria | 40 |
-|   | Preparación de la defensa | 10 |
-|   | **Total** | **297** |
-
 ## Licencia
 
 MIT.
