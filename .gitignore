@@ -27,6 +27,7 @@ notebooks/*.ipynb
 # (see README). Interim and processed artefacts are reproducible from raw.
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/migration_original.csv
 data/interim/*
 !data/interim/.gitkeep
 data/processed/*
